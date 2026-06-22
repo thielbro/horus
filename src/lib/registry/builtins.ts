@@ -12,6 +12,12 @@ const flightGov = (t: ThemeMode) => (t === 'ghost' ? GHOST_GOV : '#FF9500');
 const cameraColor = (t: ThemeMode) => (t === 'ghost' ? '#B388FF' : '#00E676');
 const surveillanceColor = (t: ThemeMode) => (t === 'ghost' ? '#FF80AB' : '#FFAB00');
 
+// Cap on malware nodes woven into the botnet mesh (stability — mirrors OsirisMap's constant).
+const MAX_MESH_NODES = 750;
+
+// SEA-domain submarine-cable background arcs to drop (light blue noise from the source map).
+const SDK_IGNORED_CABLE_COLORS = new Set(['#9BB5CC', '#A0B8CD', '#8EABC2', '#9bb5cc', '#a0b8cd', '#8eabc2']);
+
 // Flight features with optional decimation (verbatim from OsirisMap's toFeatures helper).
 function flightFeatures(arr: any[], decimate = 1) {
   let filtered = arr || [];
@@ -41,7 +47,43 @@ export const BUILTIN_GROUPS: RegistryGroup[] = [
 
 export const BUILTIN_LAYERS: RegistryLayer[] = [
   // ── SDK ──
-  { id: 'sdk_sea', label: 'Maritime Lines', group: 'SDK', icon: 'Anchor', color: '#4FC3F7', countBuckets: ['sdk_entities'] },
+  {
+    id: 'sdk_sea', label: 'Maritime Lines', group: 'SDK', icon: 'Anchor', color: '#4FC3F7', countBuckets: ['sdk_entities'],
+    // Lattice sensor mesh — SEA uses real submarine-cable data; AIR/INTEL layers exist for
+    // curated routes (toggled via sdk_air / sdk_naval) and share the single sdk-links source.
+    styleLayers: [
+      { id: 'sdk-sea', source: 'sdk-links', type: 'line', filter: ['==',['get','domain'],'SEA'], paint: { 'line-color': ['coalesce', ['get', 'color'], '#1976D2'], 'line-width': ['interpolate',['linear'],['zoom'], 1, 0.8, 5, 1.5, 10, 2.5], 'line-opacity': ['interpolate',['linear'],['zoom'], 1, 0.3, 5, 0.5, 10, 0.7] } },
+      { id: 'sdk-air-atmo', source: 'sdk-links', type: 'line', filter: ['==',['get','domain'],'AIR'], paint: { 'line-color': '#4DD0E1', 'line-width': ['interpolate',['linear'],['zoom'], 1, 1.5, 5, 5, 10, 8], 'line-opacity': 0.04, 'line-blur': 3 } },
+      { id: 'sdk-air-glow', source: 'sdk-links', type: 'line', filter: ['==',['get','domain'],'AIR'], paint: { 'line-color': '#80DEEA', 'line-width': ['interpolate',['linear'],['zoom'], 1, 0.8, 5, 2, 10, 4], 'line-opacity': ['interpolate',['linear'],['zoom'], 1, 0.08, 5, 0.12, 10, 0.18], 'line-blur': 1 } },
+      { id: 'sdk-air', source: 'sdk-links', type: 'line', filter: ['==',['get','domain'],'AIR'], paint: { 'line-color': '#B2EBF2', 'line-width': ['interpolate',['linear'],['zoom'], 1, 0.15, 5, 0.6, 10, 1.2], 'line-opacity': ['interpolate',['linear'],['zoom'], 1, 0.2, 5, 0.35, 10, 0.5] } },
+      { id: 'sdk-intel-atmo', source: 'sdk-links', type: 'line', filter: ['==',['get','domain'],'INTEL'], paint: { 'line-color': '#7986CB', 'line-width': ['interpolate',['linear'],['zoom'], 1, 2.5, 5, 7, 10, 12], 'line-opacity': 0.06, 'line-blur': 5 } },
+      { id: 'sdk-intel-glow', source: 'sdk-links', type: 'line', filter: ['==',['get','domain'],'INTEL'], paint: { 'line-color': '#9FA8DA', 'line-width': ['interpolate',['linear'],['zoom'], 1, 1.2, 5, 3, 10, 6], 'line-opacity': ['interpolate',['linear'],['zoom'], 1, 0.12, 5, 0.18, 10, 0.25], 'line-blur': 2 } },
+      { id: 'sdk-intel', source: 'sdk-links', type: 'line', filter: ['==',['get','domain'],'INTEL'], paint: { 'line-color': '#C5CAE9', 'line-width': ['interpolate',['linear'],['zoom'], 1, 0.3, 5, 1, 10, 2], 'line-opacity': ['interpolate',['linear'],['zoom'], 1, 0.3, 5, 0.45, 10, 0.7] } },
+    ],
+    render: [
+      { source: 'sdk-entities', toFeatures: () => [] },
+      {
+        source: 'sdk-links',
+        toFeatures: (data, active) => {
+          const anySDK = active.sdk_sea || active.sdk_air || active.sdk_naval;
+          if (!anySDK) return [];
+          const links: any[] = [];
+          // SEA domain: real submarine cable data (1-for-1 match)
+          if (active.sdk_sea && data.submarine_cables) {
+            for (const cable of data.submarine_cables) {
+              if (!cable.geometry) continue;
+              if (cable.properties?.color && SDK_IGNORED_CABLE_COLORS.has(cable.properties.color)) continue;
+              links.push({
+                type: 'Feature', geometry: cable.geometry,
+                properties: { domain: 'SEA', fromName: cable.properties?.name || 'Submarine Cable', toName: cable.properties?.landing_points || '', source: 'Global Subsea Cable Network', url: 'https://www.submarinecablemap.com/', ...cable.properties, color: '#1976D2' },
+              });
+            }
+          }
+          return links;
+        },
+      },
+    ],
+  },
   { id: 'sdk_ransomware', label: 'Ransomware Feed', group: 'SDK', icon: 'AlertTriangle', color: '#D32F2F', countBuckets: ['sdk_entities'], comingSoon: true },
   // ── AVIATION ──
   {
@@ -207,14 +249,35 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   // ── NETWORK ──
   {
     id: 'malware', label: 'Live Malware', group: 'NETWORK', icon: 'AlertTriangle', color: '#D32F2F', countBuckets: ['malware_threats'],
-    // The computed network-mesh effect (derived from malware nodes) stays raw — deferred to Step 4z.
+    // Includes the computed network-mesh (nearest-neighbour botnet lattice derived from the nodes).
+    // network-mesh-* style layers come AFTER the malware-* ones to preserve the original z-order.
     styleLayers: [
       { id: 'malware-glow', source: 'malware-nodes', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,6, 5,12, 10,20], 'circle-color': '#D32F2F', 'circle-opacity': 0.06, 'circle-blur': 0.5 } },
       { id: 'malware-dots', source: 'malware-nodes', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,2, 5,4, 10,6], 'circle-color': '#D32F2F', 'circle-opacity': 0.9, 'circle-stroke-width': 1, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.8 } },
       { id: 'malware-label', source: 'malware-nodes', type: 'symbol', minzoom: 5, layout: { 'text-field': ['get','malware'], 'text-size': 8, 'text-font': ['JetBrains Mono Bold', 'Open Sans Bold'], 'text-offset': [0, 1.5], 'text-max-width': 10, 'text-allow-overlap': false }, paint: { 'text-color': '#D32F2F', 'text-halo-color': '#111', 'text-halo-width': 1.5, 'text-opacity': 0.85 } },
+      { id: 'network-mesh-atmo', source: 'network-mesh', type: 'line', paint: { 'line-width': ['interpolate',['linear'],['zoom'], 1, 2, 5, 4, 10, 8], 'line-opacity': 0.08, 'line-blur': 4 } },
+      { id: 'network-mesh-glow', source: 'network-mesh', type: 'line', paint: { 'line-width': ['interpolate',['linear'],['zoom'], 1, 1, 5, 2, 10, 4], 'line-opacity': 0.2, 'line-blur': 1.5 } },
+      { id: 'network-mesh-core', source: 'network-mesh', type: 'line', paint: { 'line-width': ['interpolate',['linear'],['zoom'], 1, 0.2, 5, 0.5, 10, 1.5], 'line-opacity': 0.4 } },
     ],
     render: [
       { source: 'malware-nodes', toFeatures: (data, active) => (active.malware && data.malware_threats) ? data.malware_threats.map((t: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [t.lng, t.lat] }, properties: { ip: t.ip, malware: t.malware, status: t.status, threat_type: t.threat_type, country: t.country } })) : [] },
+      {
+        source: 'network-mesh',
+        toFeatures: (data, active) => {
+          const meshLinks: any[] = [];
+          if (active.malware && data.malware_threats && data.malware_threats.length > 1) {
+            const nodes = data.malware_threats.slice(0, MAX_MESH_NODES);
+            for (let i = 0; i < nodes.length; i++) {
+              // Connect each to next 2 for a global web
+              for (let j = 1; j <= 2; j++) {
+                const target = nodes[(i + j) % nodes.length];
+                meshLinks.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[nodes[i].lng, nodes[i].lat], [target.lng, target.lat]] }, properties: { threat_type: 'malware' } });
+              }
+            }
+          }
+          return meshLinks;
+        },
+      },
     ],
   },
   // ── DISPLAY ──

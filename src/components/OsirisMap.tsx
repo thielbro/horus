@@ -42,7 +42,6 @@ function computeSolarTerminator(): [number, number][] {
 }
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
-const MAX_MESH_NODES = 750;
 
 function safeJsonArray<T = unknown>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];
@@ -263,28 +262,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
 
 
-      // ══ NETWORK INTEL — Live Malware (abuse.ch) — crimson threat (registry-driven) ══
+      // ══ NETWORK INTEL — Live Malware (abuse.ch) + botnet mesh — registry-driven ══
+      // (malware-* dots/labels + network-mesh-* lines, in that z-order)
       addRegistryLayer(map, 'malware');
-
-      // ── NETWORK INTEL MESH (SDK STYLE) ──
-      map.addLayer({ id: 'network-mesh-atmo', type: 'line', source: 'network-mesh', paint: {
-
-        'line-width': ['interpolate',['linear'],['zoom'], 1, 2, 5, 4, 10, 8],
-        'line-opacity': 0.08,
-        'line-blur': 4,
-      }});
-      map.addLayer({ id: 'network-mesh-glow', type: 'line', source: 'network-mesh', paint: {
-
-        'line-width': ['interpolate',['linear'],['zoom'], 1, 1, 5, 2, 10, 4],
-        'line-opacity': 0.2,
-        'line-blur': 1.5,
-      }});
-      map.addLayer({ id: 'network-mesh-core', type: 'line', source: 'network-mesh', paint: {
-
-        'line-width': ['interpolate',['linear'],['zoom'], 1, 0.2, 5, 0.5, 10, 1.5],
-        'line-opacity': 0.4,
-      }});
-
 
       addRegistryLayer(map, 'global_incidents');
 
@@ -399,54 +379,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         'text-offset': [0, 1.5], 'text-allow-overlap': false,
       }, paint: { 'text-color': ['match', ['get','status'], 'DANGER','#D32F2F', 'WARNING','#E65100', '#7E57C2'], 'text-halo-color': '#000', 'text-halo-width': 1 }});
 
-      // ══ OSIRIS SDK — Lattice Intelligence Mesh ══
+      // ══ OSIRIS SDK — Lattice Intelligence Mesh (sea/air/intel lines) — registry-driven ══
       // Polybolos Style: Delicate, translucent, steel-blue splined mesh
-
-      // ── SEA domain (Distinct Solid Lines) ──
-      // Removed glow to match the clean, diagrammatic look of submarinecablemap.com
-      map.addLayer({ id: 'sdk-sea', type: 'line', source: 'sdk-links', filter: ['==',['get','domain'],'SEA'], paint: {
-        'line-color': ['coalesce', ['get', 'color'], '#1976D2'], // Single solid color from properties
-        'line-width': ['interpolate',['linear'],['zoom'], 1, 0.8, 5, 1.5, 10, 2.5],
-        'line-opacity': ['interpolate',['linear'],['zoom'], 1, 0.3, 5, 0.5, 10, 0.7],
-      }});
-
-      // ── AIR domain (Steel Gray / Cyan) ──
-      map.addLayer({ id: 'sdk-air-atmo', type: 'line', source: 'sdk-links', filter: ['==',['get','domain'],'AIR'], paint: {
-        'line-color': '#4DD0E1',
-        'line-width': ['interpolate',['linear'],['zoom'], 1, 1.5, 5, 5, 10, 8],
-        'line-opacity': 0.04,
-        'line-blur': 3,
-      }});
-      map.addLayer({ id: 'sdk-air-glow', type: 'line', source: 'sdk-links', filter: ['==',['get','domain'],'AIR'], paint: {
-        'line-color': '#80DEEA',
-        'line-width': ['interpolate',['linear'],['zoom'], 1, 0.8, 5, 2, 10, 4],
-        'line-opacity': ['interpolate',['linear'],['zoom'], 1, 0.08, 5, 0.12, 10, 0.18],
-        'line-blur': 1,
-      }});
-      map.addLayer({ id: 'sdk-air', type: 'line', source: 'sdk-links', filter: ['==',['get','domain'],'AIR'], paint: {
-        'line-color': '#B2EBF2',
-        'line-width': ['interpolate',['linear'],['zoom'], 1, 0.15, 5, 0.6, 10, 1.2],
-        'line-opacity': ['interpolate',['linear'],['zoom'], 1, 0.2, 5, 0.35, 10, 0.5],
-      }});
-
-      // ── INTEL domain (Deep Steel / Violet) ──
-      map.addLayer({ id: 'sdk-intel-atmo', type: 'line', source: 'sdk-links', filter: ['==',['get','domain'],'INTEL'], paint: {
-        'line-color': '#7986CB',
-        'line-width': ['interpolate',['linear'],['zoom'], 1, 2.5, 5, 7, 10, 12],
-        'line-opacity': 0.06,
-        'line-blur': 5,
-      }});
-      map.addLayer({ id: 'sdk-intel-glow', type: 'line', source: 'sdk-links', filter: ['==',['get','domain'],'INTEL'], paint: {
-        'line-color': '#9FA8DA',
-        'line-width': ['interpolate',['linear'],['zoom'], 1, 1.2, 5, 3, 10, 6],
-        'line-opacity': ['interpolate',['linear'],['zoom'], 1, 0.12, 5, 0.18, 10, 0.25],
-        'line-blur': 2,
-      }});
-      map.addLayer({ id: 'sdk-intel', type: 'line', source: 'sdk-links', filter: ['==',['get','domain'],'INTEL'], paint: {
-        'line-color': '#C5CAE9',
-        'line-width': ['interpolate',['linear'],['zoom'], 1, 0.3, 5, 1, 10, 2],
-        'line-opacity': ['interpolate',['linear'],['zoom'], 1, 0.3, 5, 0.45, 10, 0.7],
-      }});
+      addRegistryLayer(map, 'sdk_sea');
 
       // Maritime Ships (moving entities) — ocean teal family
       map.addLayer({ id: 'ship-dots', type: 'circle', source: 'maritime-ships', paint: {
@@ -1092,35 +1027,11 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     renderRegistryLayer(setGeo, 'global_incidents', data, activeLayers);
   }, [mapReady, data.gdelt, activeLayers.global_incidents, setGeo]);
 
-  // Malware Threats
+  // Malware Threats + computed botnet mesh (both render bindings on the 'malware' layer)
   useEffect(() => {
     if (!mapReady) return;
     renderRegistryLayer(setGeo, 'malware', data, activeLayers);
   }, [mapReady, data.malware_threats, activeLayers.malware, setGeo]);
-
-  // Network Mesh Generation (Nearest Neighbor Lattice)
-  useEffect(() => {
-    if (!mapReady) return;
-    const meshLinks: any[] = [];
-    
-    // Generate Malware Botnet Mesh
-    if (activeLayers.malware && data.malware_threats && data.malware_threats.length > 1) {
-      const nodes = data.malware_threats.slice(0, MAX_MESH_NODES);
-      for (let i = 0; i < nodes.length; i++) {
-        // Connect each to next 2 for a global web
-        for (let j = 1; j <= 2; j++) {
-          const target = nodes[(i + j) % nodes.length];
-          meshLinks.push({
-            type: 'Feature',
-            geometry: { type: 'LineString', coordinates: [[nodes[i].lng, nodes[i].lat], [target.lng, target.lat]] },
-            properties: { threat_type: 'malware' }
-          });
-        }
-      }
-    }
-    setGeo('network-mesh', meshLinks);
-  }, [mapReady, activeLayers.malware, data.malware_threats, setGeo]);
-
 
   useEffect(() => {
     if (!mapReady) return;
@@ -1167,46 +1078,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setGeo('radiation', activeLayers.radiation && data.radiation ? data.radiation.map((r: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [r.lng, r.lat] }, properties: { name: r.name, city: r.city, country: r.country, reading: r.reading, status: r.status, network: r.network } })) : []);
   }, [mapReady, data.radiation, activeLayers.radiation, setGeo]);
 
-  // ══ OSIRIS SDK — Lattice Sensor Mesh ══
-  // Uses real submarine cable data for SEA domain, curated routes for AIR/INTEL
+  // ══ OSIRIS SDK — Lattice Sensor Mesh (registry-driven: sdk-entities + sdk-links bindings) ══
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('sdk-entities', []);
-
-    const anySDK = activeLayers.sdk_sea || activeLayers.sdk_air || activeLayers.sdk_naval;
-    if (!anySDK) {
-      setGeo('sdk-links', []);
-      return;
-    }
-
-    const links: any[] = [];
-
-    // ── SEA DOMAIN: Real submarine cable data (1-for-1 Match) ──
-    if (activeLayers.sdk_sea && data.submarine_cables) {
-      const ignoredColors = new Set(['#9BB5CC', '#A0B8CD', '#8EABC2', '#9bb5cc', '#a0b8cd', '#8eabc2']);
-      for (const cable of data.submarine_cables) {
-        if (!cable.geometry) continue;
-        
-        // Remove the light blue background arcs
-        if (cable.properties?.color && ignoredColors.has(cable.properties.color)) continue;
-        
-        links.push({
-          type: 'Feature',
-          geometry: cable.geometry, // Raw topographic paths exactly from Submarine Map
-          properties: {
-            domain: 'SEA',
-            fromName: cable.properties?.name || 'Submarine Cable',
-            toName: cable.properties?.landing_points || '',
-            source: 'Global Subsea Cable Network',
-            url: 'https://www.submarinecablemap.com/',
-            ...cable.properties,
-            color: '#1976D2', // Darker blue as requested, more transparent in layer paint
-          },
-        });
-      }
-    }
-
-    setGeo('sdk-links', links);
+    renderRegistryLayer(setGeo, 'sdk_sea', data, activeLayers);
   }, [mapReady, activeLayers.sdk_sea, activeLayers.sdk_air, activeLayers.sdk_naval, data.submarine_cables, setGeo]);
 
   useEffect(() => {

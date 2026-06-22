@@ -81,7 +81,28 @@ because they sit after the SDK mesh lines in z-order).
   military=1). The 4 flight layers each = 1 styleLayer + 1 render binding.
 - Verified: tsc 0, next build 0, standalone preview — CCTV dots render green (core) and recolor
   to purple on ghost toggle with no errors; AVIATION/SURVEIL groups active, no registry errors.
-- **NOT committed yet.**
+
+**Step 4z — PARTIAL (computed bindings):** the two that fit the declarative model cleanly are
+done by folding extra style layers + render bindings into existing layers:
+- **network-mesh** → folded into the `malware` layer (3 `network-mesh-*` line layers appended
+  *after* the malware-* dots so z-order is preserved; a 2nd render binding computes the
+  nearest-neighbour botnet lattice, capped at `MAX_MESH_NODES=750` — the cap const moved into
+  builtins, removed from OsirisMap).
+- **sdk-links** → folded into the `sdk_sea` layer (7 `sdk-*` line layers w/ domain filters +
+  a render binding reading `active.sdk_sea/sdk_air/sdk_naval` and `data.submarine_cables`,
+  plus the `sdk-entities` no-op binding). The raw SDK init block + effect are gone.
+- Verified: tsc 0, next build 0, standalone — malware mesh web renders when malware active and
+  vanishes in an SDK-only view; SDK SEA cable lines paint; no registry errors. **NOT committed yet.**
+
+**4z — still deferred (need new engine concepts, documented for next session):**
+- **day/night solar terminator** — non-data, interval-driven `src.setData(computeSolarTerminator())`.
+  Needs a "timed/computed source" concept (a render binding that ignores `data` and is re-run on
+  a timer). Low value to move (already works); the `day-night-fill` style layer is theme-static.
+- **conflict-zones** — headless always-on (no toggle), built from the `CONFLICT_ZONES` constant,
+  uses `warn-icon` images created raw in init. Same blocker as sigint-news (needs a headless flag).
+- **ip-sweep / scan-targets** — imperative *batched animation* (setTimeout-driven device reveal,
+  pulse rings, connection lines). Not a declarative data→features map; leave raw or design a
+  separate "animated layer" path. war-alerts has no active render code.
 
 **Still deferred — sigint-news / `news_intel`:** `news_intel` is a default-on flag in
 `page.tsx` with **no sidebar toggle**. Adding a registry layer for it would create a spurious
@@ -115,11 +136,10 @@ so a bad spec shows in the console.
 - **Step 4d — DONE** (see Current state above): cctv, surveillance, flights migrated; the
   `Themed<T>` paint/layout extension landed in `addRegistryLayer`. Only **sigint-news/`news_intel`**
   remains — deferred until `RegistryLayer` gains a headless/hidden flag (see Current state).
-- **Step 4z — computed bindings** (last, trickiest): SDK lines (`sdk-links`), `network-mesh`
-  (derived from malware nodes), day/night solar terminator (`computeSolarTerminator`),
-  ip-sweep / scan-targets (RECON viz), conflict-zones, war-alerts. These compute features from
-  multiple buckets / functions — `RenderBinding.toFeatures` already receives the whole `data`,
-  so most fit; the terminator is a special non-data source.
+- **Step 4z — PARTIAL** (see Current state above): `network-mesh` and `sdk-links` done.
+  Remaining 4z items need new engine concepts and are documented in Current state:
+  day/night solar terminator (timed/computed source), conflict-zones (headless flag),
+  ip-sweep / scan-targets (imperative animation), war-alerts (no active render).
 - **Step 5 — cleanup**: prune migrated source names from the `sources = [...]` array in
   OsirisMap init; converge the internal `RegistryLayer` with the `@osiris/plugin-sdk` `LayerDef`;
   delete dead code.
