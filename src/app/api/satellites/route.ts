@@ -1,6 +1,7 @@
 
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Satellite Tracking API
@@ -173,6 +174,8 @@ export async function GET() {
             allSats = fetchedSats;
             source = 'satnogs-api';
           }
+        } else {
+          await releaseResponseBody(res);
         }
       } catch (err) {
         console.error('SatNOGS fetch error:', err);

@@ -39,6 +39,14 @@ const VALID_KEYS = new Set([
 export async function POST(request: NextRequest) {
   try {
     const contentLength = Number(request.headers.get('content-length') || '0');
+    if (!Number.isFinite(contentLength) || contentLength < 0) {
+      return NextResponse.json({
+        accepted: 0,
+        rejected: 0,
+        errors: ['Invalid Content-Length header.'],
+        timestamp: new Date().toISOString(),
+      }, { status: 400 });
+    }
     if (contentLength > MAX_INGEST_BODY_BYTES) {
       return NextResponse.json({
         accepted: 0,

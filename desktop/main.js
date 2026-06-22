@@ -24,11 +24,20 @@ let logFd = null;
 let embeddedServerUrl = null;
 let isQuitting = false;
 let serverRestartAttempts = 0;
+let serverStableResetTimer = null;
+let rendererReloadAttempts = 0;
+let rendererReloadTimer = null;
+let lastRendererCrashAt = 0;
 
 const SMOKE = !!process.env.OSIRIS_SMOKE;
 const MAX_SERVER_RESTARTS = 3;
 const SERVER_RESTART_BASE_MS = 1000;
 const SERVER_RESTART_MAX_MS = 10000;
+const SERVER_STABLE_RESET_MS = 5 * 60 * 1000;
+const MAX_RENDERER_RELOADS = 5;
+const RENDERER_RELOAD_BASE_MS = 500;
+const RENDERER_RELOAD_MAX_MS = 10000;
+const RENDERER_RELOAD_RESET_MS = 60 * 1000;
 
 // Smoke outcome marker — a packaged Windows GUI exe doesn't attach stdout, so the
 // verifier reads this file (path via OSIRIS_SMOKE_OUT) and/or the process exit code.
@@ -108,6 +117,10 @@ function waitForServer(url, timeoutMs = 30000) {
 }
 
 function stopEmbeddedServer() {
+  if (serverStableResetTimer) {
+    clearTimeout(serverStableResetTimer);
+    serverStableResetTimer = null;
+  }
   if (serverChild) {
     try {
       serverChild.kill();
@@ -125,6 +138,15 @@ function stopEmbeddedServer() {
     logFd = null;
   }
   embeddedServerUrl = null;
+}
+
+function armServerStableReset() {
+  if (serverStableResetTimer) clearTimeout(serverStableResetTimer);
+  serverStableResetTimer = setTimeout(() => {
+    serverRestartAttempts = 0;
+    serverStableResetTimer = null;
+  }, SERVER_STABLE_RESET_MS);
+  serverStableResetTimer.unref?.();
 }
 
 function scheduleEmbeddedServerRestart() {
@@ -213,7 +235,32 @@ async function startEmbeddedServer() {
   const url = `http://127.0.0.1:${port}`;
   await waitForServer(url, 40000);
   embeddedServerUrl = url;
+  armServerStableReset();
   return url;
+}
+
+function scheduleRendererReload(reason) {
+  if (!win || win.isDestroyed() || isQuitting) return;
+  const now = Date.now();
+  if (now - lastRendererCrashAt > RENDERER_RELOAD_RESET_MS) rendererReloadAttempts = 0;
+  lastRendererCrashAt = now;
+
+  if (rendererReloadAttempts >= MAX_RENDERER_RELOADS) {
+    console.error('[osiris] renderer reload limit reached after:', reason);
+    win.loadFile(path.join(__dirname, 'splash.html')).catch((err) => {
+      console.error('[osiris] failed to load fallback splash:', err);
+    });
+    return;
+  }
+
+  const delay = Math.min(RENDERER_RELOAD_BASE_MS * 2 ** rendererReloadAttempts, RENDERER_RELOAD_MAX_MS);
+  rendererReloadAttempts++;
+  if (rendererReloadTimer) clearTimeout(rendererReloadTimer);
+  rendererReloadTimer = setTimeout(() => {
+    rendererReloadTimer = null;
+    if (win && !win.isDestroyed()) win.reload();
+  }, delay);
+  rendererReloadTimer.unref?.();
 }
 
 async function resolveTarget() {
@@ -240,15 +287,19 @@ async function createWindow() {
 
   win.once('ready-to-show', () => win.show());
   win.once('closed', () => {
+    if (rendererReloadTimer) {
+      clearTimeout(rendererReloadTimer);
+      rendererReloadTimer = null;
+    }
     win = null;
   });
   win.webContents.on('render-process-gone', (_event, details) => {
     console.error('[osiris] renderer process gone:', details.reason);
-    if (win && !win.isDestroyed()) win.reload();
+    scheduleRendererReload(details.reason);
   });
   win.webContents.on('crashed', () => {
     console.error('[osiris] renderer crashed');
-    if (win && !win.isDestroyed()) win.reload();
+    scheduleRendererReload('crashed');
   });
 
   if (SMOKE) {

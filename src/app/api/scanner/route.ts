@@ -39,7 +39,7 @@ const ALLOWED_SCANS: Record<string, { endpoint: string; timeout: number }> = {
   tech:       { endpoint: '/scan/tech',       timeout: 15000 },
   whois:      { endpoint: '/scan/whois',      timeout: 10000 },
   geoloc:     { endpoint: '/scan/geoloc',     timeout: 8000  },
-  vuln:       { endpoint: '/scan/vuln',       timeout: 90000 },
+  vuln:       { endpoint: '/scan/vuln',       timeout: 10000 },
 };
 
 // REMOVED from public access: deep, ports, banner, traceroute

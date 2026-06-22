@@ -174,6 +174,10 @@ export default function Dashboard() {
   const geocodeCache = useRef<Map<string, string>>(new Map());
   const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const geocodeAbort = useRef<AbortController | null>(null);
+  const statsAbort = useRef<AbortController | null>(null);
+  const dossierAbort = useRef<AbortController | null>(null);
+  const spaceWeatherAbort = useRef<AbortController | null>(null);
+  const cablesAbort = useRef<AbortController | null>(null);
   const lastGeocodedPos = useRef<{ lat: number; lng: number } | null>(null);
 
   // ── DEFAULT: Most layers OFF — fast initial load ──
@@ -282,12 +286,20 @@ export default function Dashboard() {
 
   // Global Stats Fetch
   useEffect(() => {
-    fetch('/api/stats')
+    const controller = new AbortController();
+    statsAbort.current = controller;
+    fetch('/api/stats', { signal: controller.signal })
       .then(res => res.json())
       .then(d => {
-        if (d.stats) setGlobalStats(d.stats);
+        if (!controller.signal.aborted && d.stats) setGlobalStats(d.stats);
       })
-      .catch(console.error);
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) console.error(error);
+      })
+      .finally(() => {
+        if (statsAbort.current === controller) statsAbort.current = null;
+      });
+    return () => controller.abort();
   }, []);
 
   // Keyboard shortcuts
@@ -356,11 +368,19 @@ export default function Dashboard() {
 
   // Region dossier (right-click)
   const handleRightClick = useCallback(async (coords: { lat: number; lng: number }) => {
+    dossierAbort.current?.abort();
+    const controller = new AbortController();
+    dossierAbort.current = controller;
     setDossierLoading(true); setRegionDossier(null);
     try {
-      const res = await fetch(`/api/region-dossier?lat=${coords.lat}&lng=${coords.lng}`);
-      if (res.ok) setRegionDossier(await res.json());
-    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); } finally { setDossierLoading(false); }
+      const res = await fetch(`/api/region-dossier?lat=${coords.lat}&lng=${coords.lng}`, { signal: controller.signal });
+      if (res.ok && !controller.signal.aborted) setRegionDossier(await res.json());
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
+    } finally {
+      if (dossierAbort.current === controller) dossierAbort.current = null;
+      if (!controller.signal.aborted) setDossierLoading(false);
+    }
   }, []);
   // Entity click handler (hoisted from JSX to comply with Rules of Hooks - Fixes #113)
   const handleEntityClick = useCallback((entity: any) => {
@@ -446,13 +466,16 @@ export default function Dashboard() {
     try {
       // Force the browser to bypass its local disk cache for real-time data
       const res = await fetch(url, { ...options, cache: 'no-store' });
-      if (res.ok) {
+      if (res.ok && !options?.signal?.aborted) {
         const json = await res.json();
         const d = capDataPayload(transform ? transform(json) : json);
-        setData(prev => ({ ...prev, ...d }));
-        setBackendStatus('connected');
+        if (!options?.signal?.aborted) {
+          setData(prev => ({ ...prev, ...d }));
+          setBackendStatus('connected');
+        }
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
       setBackendStatus('error');
     }
@@ -472,13 +495,21 @@ export default function Dashboard() {
 
   // Space Weather — one-off into its own state setter (not a map data bucket).
   useEffect(() => {
+    const controller = new AbortController();
+    spaceWeatherAbort.current = controller;
     const spaceTimer = setTimeout(async () => {
       try {
-        const r = await fetch('/api/space-weather');
-        if (r.ok) setSpaceWeather(await r.json());
-      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
+        const r = await fetch('/api/space-weather', { signal: controller.signal });
+        if (r.ok && !controller.signal.aborted) setSpaceWeather(await r.json());
+      } catch (e) {
+        if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
+      }
     }, 5000);
-    return () => clearTimeout(spaceTimer);
+    return () => {
+      clearTimeout(spaceTimer);
+      controller.abort();
+      if (spaceWeatherAbort.current === controller) spaceWeatherAbort.current = null;
+    };
   }, []);
 
   // ── Submarine cables — a static asset (/data, not /api), so it stays outside the feed
@@ -487,15 +518,22 @@ export default function Dashboard() {
   useEffect(() => {
     if (!activeLayers.cables || cablesFetched.current) return;
     cablesFetched.current = true;
+    const controller = new AbortController();
+    cablesAbort.current = controller;
     (async () => {
       try {
-        const res = await fetch(`/data/submarine-cables.json?v=${Date.now()}`);
-        if (res.ok) {
+        const res = await fetch(`/data/submarine-cables.json?v=${Date.now()}`, { signal: controller.signal });
+        if (res.ok && !controller.signal.aborted) {
           const cablesData = await res.json();
-          setData(prev => ({ ...prev, submarine_cables: cablesData.features }));
+          if (!controller.signal.aborted) setData(prev => ({ ...prev, submarine_cables: cablesData.features }));
         }
-      } catch { console.warn('Cables fetch failed'); }
+      } catch (e) {
+        if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('Cables fetch failed');
+      } finally {
+        if (cablesAbort.current === controller) cablesAbort.current = null;
+      }
     })();
+    return () => controller.abort();
   }, [activeLayers.cables]);
 
 

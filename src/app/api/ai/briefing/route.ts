@@ -11,6 +11,7 @@ import {
   createGeminiClient,
   rotateApiKey,
   generateBriefing,
+  generateLocalBriefing,
   type IntelligenceContext,
 } from '@/lib/ai-engine';
 
@@ -145,26 +146,6 @@ export async function POST(
     );
   }
 
-  const userKey = request.headers.get('x-gemini-key')?.trim();
-  let apiKey: string;
-
-  if (userKey && userKey.length > 0) {
-    apiKey = userKey;
-  } else {
-    const envKeys = getEnvApiKeys();
-    if (envKeys.length === 0) {
-      return NextResponse.json(
-        {
-          error:
-            'No Gemini API key configured. Set GEMINI_API_KEY_1 in environment or provide a key via the settings panel.',
-          code: 'NO_API_KEY',
-        },
-        { status: 503 }
-      );
-    }
-    apiKey = rotateApiKey(envKeys);
-  }
-
   let body: BriefingRequestBody;
   try {
     body = (await request.json()) as BriefingRequestBody;
@@ -180,6 +161,30 @@ export async function POST(
       { error: 'Intelligence context is required.', code: 'MISSING_CONTEXT' },
       { status: 400 }
     );
+  }
+
+  const userKey = request.headers.get('x-gemini-key')?.trim();
+  let apiKey: string;
+
+  if (userKey && userKey.length > 0) {
+    apiKey = userKey;
+  } else {
+    const envKeys = getEnvApiKeys();
+    if (envKeys.length === 0) {
+      return NextResponse.json(
+        {
+          briefing: generateLocalBriefing(body.context, 'No Gemini API key is configured.'),
+          generatedAt: new Date().toISOString(),
+        },
+        {
+          headers: {
+            'X-RateLimit-Remaining': String(rateCheck.remaining),
+            'X-OSIRIS-AI-Fallback': 'local',
+          },
+        }
+      );
+    }
+    apiKey = rotateApiKey(envKeys);
   }
 
   const { signal, cleanup } = createRequestSignal(request.signal);
@@ -230,8 +235,16 @@ export async function POST(
 
     console.error('[OSIRIS AI] Briefing error:', message);
     return NextResponse.json(
-      { error: 'Briefing generation failed. Please try again.', code: 'BRIEFING_FAILED' },
-      { status: 500 }
+      {
+        briefing: generateLocalBriefing(body.context, message),
+        generatedAt: new Date().toISOString(),
+      },
+      {
+        headers: {
+          'X-RateLimit-Remaining': String(rateCheck.remaining),
+          'X-OSIRIS-AI-Fallback': 'local',
+        },
+      }
     );
   } finally {
     cleanup();

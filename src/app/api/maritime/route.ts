@@ -88,6 +88,8 @@ const globalForAis = globalThis as unknown as {
   aisSocket: WebSocket | null;
   aisReconnectTimer: ReturnType<typeof setTimeout> | null;
   aisReconnectAttempts: number;
+  aisShuttingDown: boolean;
+  aisSignalHandlersRegistered: boolean;
 };
 
 if (!globalForAis.shipsCache) {
@@ -95,8 +97,12 @@ if (!globalForAis.shipsCache) {
   globalForAis.aisSocket = null;
   globalForAis.aisReconnectTimer = null;
   globalForAis.aisReconnectAttempts = 0;
+  globalForAis.aisShuttingDown = false;
+  globalForAis.aisSignalHandlersRegistered = false;
 }
 if (globalForAis.aisReconnectAttempts == null) globalForAis.aisReconnectAttempts = 0;
+if (globalForAis.aisShuttingDown == null) globalForAis.aisShuttingDown = false;
+if (globalForAis.aisSignalHandlersRegistered == null) globalForAis.aisSignalHandlersRegistered = false;
 
 const shipsCache = globalForAis.shipsCache;
 const MAX_SHIPS_CACHE = 20000;
@@ -104,6 +110,7 @@ const AIS_RECONNECT_BASE_MS = 5000;
 const AIS_RECONNECT_MAX_MS = 60000;
 
 function scheduleAisReconnect() {
+  if (globalForAis.aisShuttingDown) return;
   if (globalForAis.aisReconnectTimer) clearTimeout(globalForAis.aisReconnectTimer);
   const exponent = Math.min(globalForAis.aisReconnectAttempts, 4);
   const delay = Math.min(AIS_RECONNECT_BASE_MS * 2 ** exponent, AIS_RECONNECT_MAX_MS);
@@ -112,6 +119,7 @@ function scheduleAisReconnect() {
 }
 
 function connectAisStream() {
+  if (globalForAis.aisShuttingDown) return;
   const apiKey = process.env.AIS_API_KEY;
   if (!apiKey) return;
 
@@ -235,6 +243,39 @@ function connectAisStream() {
     ws.close();
   });
 }
+
+function cleanupAisStream() {
+  globalForAis.aisShuttingDown = true;
+  if (globalForAis.aisReconnectTimer) {
+    clearTimeout(globalForAis.aisReconnectTimer);
+    globalForAis.aisReconnectTimer = null;
+  }
+
+  const socket = globalForAis.aisSocket;
+  globalForAis.aisSocket = null;
+  if (!socket) return;
+
+  socket.removeAllListeners('close');
+  socket.removeAllListeners('error');
+  try {
+    socket.close();
+  } catch {
+    // best effort during process shutdown
+  }
+}
+
+function registerAisCleanupHandlers() {
+  if (globalForAis.aisSignalHandlersRegistered) return;
+  globalForAis.aisSignalHandlersRegistered = true;
+  const cleanupAndReraise = (signal: NodeJS.Signals) => {
+    cleanupAisStream();
+    process.kill(process.pid, signal);
+  };
+  process.once('SIGTERM', cleanupAndReraise);
+  process.once('SIGINT', cleanupAndReraise);
+}
+
+registerAisCleanupHandlers();
 
 // AIS stream starts lazily on the first GET (guarded to a single connection) — never at
 // module load, so importing this route can't open sockets or schedule reconnects.

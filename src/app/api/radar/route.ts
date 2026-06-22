@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +41,7 @@ export async function GET() {
 
     if (!res.ok) {
       // Fallback: return empty but valid response
+      await releaseResponseBody(res);
       return NextResponse.json({ outages: [], total: 0, timestamp: new Date().toISOString(), source: 'IODA (offline)' });
     }
 

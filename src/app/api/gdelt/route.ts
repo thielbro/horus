@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
+import { releaseResponseBody, stableHash } from '@/lib/http-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,10 @@ async function fetchGdeltQuery(query: string): Promise<any[]> {
   const timeoutId = setTimeout(() => controller.abort(), 5000);
   try {
     const res = await stealthFetch(url, { signal: controller.signal, cache: 'no-store' });
-    if (!res.ok) throw new Error('Not OK');
+    if (!res.ok) {
+      await releaseResponseBody(res);
+      throw new Error('Not OK');
+    }
     const geojson = await res.json();
     if (!geojson?.features) return [];
     return geojson.features.map((feature: any) => ({ feature, query }));
@@ -62,7 +66,7 @@ export async function GET() {
           seen.set(dedupeKey, true);
 
           allEvents.push({
-            id: `gdelt-${crypto.randomUUID()}`,
+            id: `gdelt-${stableHash({ name, lat: coords[1], lng: coords[0], url, type: query })}`,
             lat: coords[1],
             lng: coords[0],
             name,

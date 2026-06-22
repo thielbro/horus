@@ -11,6 +11,7 @@ import {
   createGeminiClient,
   rotateApiKey,
   analyzeIntelligence,
+  generateLocalAnalysis,
   type IntelligenceContext,
 } from '@/lib/ai-engine';
 
@@ -150,27 +151,6 @@ export async function POST(
     );
   }
 
-  // Determine API key — user-provided header takes priority
-  const userKey = request.headers.get('x-gemini-key')?.trim();
-  let apiKey: string;
-
-  if (userKey && userKey.length > 0) {
-    apiKey = userKey;
-  } else {
-    const envKeys = getEnvApiKeys();
-    if (envKeys.length === 0) {
-      return NextResponse.json(
-        {
-          error:
-            'No Gemini API key configured. Set GEMINI_API_KEY_1 in environment or provide a key via the settings panel.',
-          code: 'NO_API_KEY',
-        },
-        { status: 503 }
-      );
-    }
-    apiKey = rotateApiKey(envKeys);
-  }
-
   // Parse request body
   let body: AnalyzeRequestBody;
   try {
@@ -194,6 +174,36 @@ export async function POST(
       { error: 'Intelligence context is required.', code: 'MISSING_CONTEXT' },
       { status: 400 }
     );
+  }
+
+  // Determine API key — user-provided header takes priority
+  const userKey = request.headers.get('x-gemini-key')?.trim();
+  let apiKey: string;
+
+  if (userKey && userKey.length > 0) {
+    apiKey = userKey;
+  } else {
+    const envKeys = getEnvApiKeys();
+    if (envKeys.length === 0) {
+      return NextResponse.json(
+        {
+          analysis: generateLocalAnalysis(
+            body.context,
+            body.query.trim(),
+            'No Gemini API key is configured.'
+          ),
+          model: 'local-fallback',
+          timestamp: new Date().toISOString(),
+        },
+        {
+          headers: {
+            'X-RateLimit-Remaining': String(rateCheck.remaining),
+            'X-OSIRIS-AI-Fallback': 'local',
+          },
+        }
+      );
+    }
+    apiKey = rotateApiKey(envKeys);
   }
 
   // Call Gemini
@@ -247,8 +257,17 @@ export async function POST(
 
     console.error('[OSIRIS AI] Analysis error:', message);
     return NextResponse.json(
-      { error: 'Intelligence analysis failed. Please try again.', code: 'ANALYSIS_FAILED' },
-      { status: 500 }
+      {
+        analysis: generateLocalAnalysis(body.context, body.query.trim(), message),
+        model: 'local-fallback',
+        timestamp: new Date().toISOString(),
+      },
+      {
+        headers: {
+          'X-RateLimit-Remaining': String(rateCheck.remaining),
+          'X-OSIRIS-AI-Fallback': 'local',
+        },
+      }
     );
   } finally {
     cleanup();

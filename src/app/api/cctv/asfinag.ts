@@ -1,5 +1,6 @@
 import { withFallback } from './resilient';
 import type { CctvCamera } from './types';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 const ASFINAG_WEBCAMS_URL = 'https://odo.asfinag.at/odo/rest/sec/resource/001/json/webcams?language=atDE';
 const ASFINAG_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -63,7 +64,10 @@ async function fetchFreshAsfinagCameras(): Promise<CctvCamera[]> {
       headers: ASFINAG_HEADERS,
     });
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      await releaseResponseBody(res);
+      return [];
+    }
 
     const data = await res.json();
     if (!Array.isArray(data)) return [];

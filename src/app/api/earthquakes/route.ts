@@ -1,5 +1,6 @@
 
 import { NextResponse } from 'next/server';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Earthquake Data API
@@ -15,6 +16,7 @@ export async function GET() {
     });
 
     if (!res.ok) {
+      await releaseResponseBody(res);
       return NextResponse.json({ earthquakes: [], error: 'USGS unavailable' });
     }
 

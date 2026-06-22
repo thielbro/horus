@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Severe Weather & Anomalies API
@@ -150,6 +151,8 @@ export async function GET() {
       } catch (error) {
         console.error('NASA EONET normalization error:', error);
       }
+    } else if (eonetRes.status === 'fulfilled') {
+      await releaseResponseBody(eonetRes.value);
     }
 
     if (nwsRes.status === 'fulfilled' && nwsRes.value.ok) {
@@ -181,6 +184,8 @@ export async function GET() {
       } catch (error) {
         console.error('NOAA/NWS normalization error:', error);
       }
+    } else if (nwsRes.status === 'fulfilled') {
+      await releaseResponseBody(nwsRes.value);
     }
 
     if (!providerSucceeded) {

@@ -57,6 +57,8 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
   const [sweepCidr, setSweepCidr] = useState(24);
   const [cveCache, setCveCache] = useState<Record<string, any>>({});
   const cveCacheRef = useRef<Record<string, any>>({});
+  const lookupAbortRef = useRef<AbortController | null>(null);
+  const cveAbortRef = useRef<AbortController | null>(null);
   const [expandedDevice, setExpandedDevice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,6 +69,9 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
   const fetchCveDetails = useCallback(async (cveIds: string[]) => {
     const missing = Array.from(new Set(cveIds)).filter(id => !cveCacheRef.current[id]);
     if (missing.length === 0) return;
+    cveAbortRef.current?.abort();
+    const controller = new AbortController();
+    cveAbortRef.current = controller;
     // Mark as loading
     setCveCache(prev => {
       const next = { ...prev };
@@ -77,8 +82,9 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
     });
     // Fetch in parallel
     const results = await Promise.allSettled(
-      missing.map(id => fetch(`/api/osint/cve?cve=${encodeURIComponent(id)}`).then(r => r.json()).then(data => ({ id, data })))
+      missing.map(id => fetch(`/api/osint/cve?cve=${encodeURIComponent(id)}`, { signal: controller.signal }).then(r => r.json()).then(data => ({ id, data })))
     );
+    if (controller.signal.aborted) return;
     setCveCache(prev => {
       const next = { ...prev };
       for (const r of results) {
@@ -90,10 +96,14 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
       cveCacheRef.current = capped;
       return capped;
     });
+    if (cveAbortRef.current === controller) cveAbortRef.current = null;
   }, []);
 
   const runLookup = useCallback(async () => {
     if (!query.trim() || loading) return;
+    lookupAbortRef.current?.abort();
+    const controller = new AbortController();
+    lookupAbortRef.current = controller;
     setLoading(true); setError(''); setResults(null);
 
     // IP Sweep / Vuln Scan — separate flow
@@ -104,7 +114,8 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
       setSweepProgress({ current: 0, total: totalHosts });
       try {
         const t0 = Date.now();
-        const res = await fetch(`/api/osint/sweep?ip=${encodeURIComponent(query)}&cidr=${cidr}`);
+        const res = await fetch(`/api/osint/sweep?ip=${encodeURIComponent(query)}&cidr=${cidr}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Sweep failed (${res.status})`); }
         const initData = await res.json();
 
@@ -120,7 +131,7 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
 
         const shodanResults = await batchFetch<ShodanInternetDBResponse>(urls, 15, async (u) => {
           try {
-            const r = await fetch(u, { cache: 'no-store' });
+            const r = await fetch(u, { cache: 'no-store', signal: controller.signal });
             if (r.status === 404) return null;
             if (!r.ok) return null;
             return await r.json();
@@ -146,22 +157,27 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
           deviceBreakdown[classification.device_type] = (deviceBreakdown[classification.device_type] || 0) + 1;
         }
 
-        setSweepResult({
-          center: initData.center,
-          subnet: `${subnet}/${cidr}`,
-          cidr,
-          target_ip: initData.target_ip,
-          devices,
-          summary: { total_hosts: totalHosts, total_responsive: devices.length, device_breakdown: deviceBreakdown },
-          sweep_time_ms: Date.now() - t0
-        });
-        setSweepProgress(null);
-        setHistory(prev => [{ tab: activeTab, query, time: new Date().toLocaleTimeString() }, ...prev.slice(0, 9)]);
+        if (!controller.signal.aborted) {
+          setSweepResult({
+            center: initData.center,
+            subnet: `${subnet}/${cidr}`,
+            cidr,
+            target_ip: initData.target_ip,
+            devices,
+            summary: { total_hosts: totalHosts, total_responsive: devices.length, device_breakdown: deviceBreakdown },
+            sweep_time_ms: Date.now() - t0
+          });
+          setSweepProgress(null);
+          setHistory(prev => [{ tab: activeTab, query, time: new Date().toLocaleTimeString() }, ...prev.slice(0, 9)]);
+        }
       } catch (err: any) {
-        setError(err.message);
-        setSweepProgress(null);
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+          setError(err.message);
+          setSweepProgress(null);
+        }
       } finally {
-        setLoading(false);
+        if (lookupAbortRef.current === controller) lookupAbortRef.current = null;
+        if (!controller.signal.aborted) setLoading(false);
       }
       return;
     }
@@ -187,7 +203,8 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
         case 'tech': url = `/api/scanner?target=${encodeURIComponent(query)}&type=tech`; break;
         case 'shodan': url = `https://internetdb.shodan.io/${encodeURIComponent(query)}`; break;
       }
-      const res = await fetch(url, activeTab === 'shodan' ? { cache: 'no-store' } : undefined);
+      const res = await fetch(url, activeTab === 'shodan' ? { cache: 'no-store', signal: controller.signal } : { signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (activeTab === 'shodan' && res.status === 404) {
         setResults({ ip: query, status: 'No Shodan InternetDB records found', ports: [], cpes: [], hostnames: [], tags: [], vulns: [] });
         setLoading(false);
@@ -232,10 +249,10 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
              onScanGeolocate(query, { lat: data.lat, lng: data.lng, type: 'phone', region: data.region });
           }
         } else if (activeTab !== 'sweep' && activeTab !== 'vuln' && activeTab !== 'crypto' && activeTab !== 'mac' && activeTab !== 'bgp' && activeTab !== 'github' && activeTab !== 'leaks' && activeTab !== 'phone') {
-          fetch(`/api/osint/ip?ip=${encodeURIComponent(query)}`)
+          fetch(`/api/osint/ip?ip=${encodeURIComponent(query)}`, { signal: controller.signal })
             .then(r => r.json())
             .then(locData => {
-              if (locData && locData.geo && locData.geo.lat && locData.geo.lon && onScanGeolocate) {
+              if (!controller.signal.aborted && locData && locData.geo && locData.geo.lat && locData.geo.lon && onScanGeolocate) {
                 // ip-api returns lat/lon, we pass it up
                 onScanGeolocate(query, { lat: locData.geo.lat, lng: locData.geo.lon, ...locData, type: activeTab });
               }
@@ -245,9 +262,19 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
       } else {
         setError(data.error || 'Lookup failed');
       }
-    } catch { setError('Network error'); }
-    finally { setLoading(false); }
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) setError('Network error');
+    }
+    finally {
+      if (lookupAbortRef.current === controller) lookupAbortRef.current = null;
+      if (!controller.signal.aborted) setLoading(false);
+    }
   }, [query, activeTab, scanType, loading, sweepCidr, onScanGeolocate]);
+
+  useEffect(() => () => {
+    lookupAbortRef.current?.abort();
+    cveAbortRef.current?.abort();
+  }, []);
 
   const currentTab = TABS.find(t => t.id === activeTab);
 

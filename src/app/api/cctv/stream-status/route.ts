@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { releaseResponseBody } from '@/lib/http-utils';
 import { safeFetch } from '@/lib/ssrf-guard';
 
 export const dynamic = 'force-dynamic';
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
     });
 
     if (!res.ok) {
+      await releaseResponseBody(res);
       return NextResponse.json({ available: false, blocked: true, provider: 'rtsp.me' });
     }
 

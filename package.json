@@ -5,6 +5,9 @@
   "description": "OSIRIS — Open Source Intelligence & Reconnaissance Integrated System",
   "author": "OSIRIS",
   "main": "desktop/main.js",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/dev-watchdog.ps1",
     "dev:raw": "next dev",

@@ -878,9 +878,14 @@ app.get('/resolve', async (req, res) => {
 // ════════════════════════════════════════════════════
 
 let server = null;
+let sanctionsRefreshInterval = null;
 
 function shutdown(signal) {
   console.log(`[INTEL] ${signal} received; shutting down`);
+  if (sanctionsRefreshInterval) {
+    clearInterval(sanctionsRefreshInterval);
+    sanctionsRefreshInterval = null;
+  }
   if (!server) process.exit(0);
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 5000).unref();
@@ -892,7 +897,7 @@ async function boot() {
   console.log(`[INTEL] Yente: ${YENTE_URL || 'disabled'}`);
   await loadSanctions();
   // Refresh sanctions every 24h
-  setInterval(() => loadSanctions(), SDN_REFRESH_MS);
+  sanctionsRefreshInterval = setInterval(() => loadSanctions(), SDN_REFRESH_MS);
 
   server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[INTEL] Intelligence Layer ready on port ${PORT}`);

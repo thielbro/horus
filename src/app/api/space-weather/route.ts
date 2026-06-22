@@ -1,5 +1,6 @@
 
 import { NextResponse } from 'next/server';
+import { parseKpIndex } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Space Weather API
@@ -30,7 +31,7 @@ export async function GET() {
     let kpTimestamp = '';
     if (kpRes.status === 'fulfilled' && Array.isArray(kpRes.value) && kpRes.value.length > 0) {
       const latest = kpRes.value[kpRes.value.length - 1];
-      kpIndex = parseFloat(latest.kp_index ?? latest.Kp ?? 0);
+      kpIndex = parseKpIndex(latest.g_scale ?? latest.kp_index ?? latest.Kp ?? 0);
       kpTimestamp = latest.time_tag || '';
     }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -11,7 +12,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const [userRes, reposRes] = await Promise.all([
+    const [userResult, reposResult] = await Promise.allSettled([
       fetch(`https://api.github.com/users/${encodeURIComponent(username)}`, {
         headers: { 'User-Agent': 'OSIRIS-Recon' },
         signal: AbortSignal.timeout(8000),
@@ -22,11 +23,21 @@ export async function GET(req: Request) {
       })
     ]);
 
+    if (userResult.status !== 'fulfilled') throw userResult.reason;
+    const userRes = userResult.value;
     if (userRes.status === 404) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    if (!userRes.ok) throw new Error(`GitHub API HTTP ${userRes.status}`);
+    if (!userRes.ok) {
+      await releaseResponseBody(userRes);
+      throw new Error(`GitHub API HTTP ${userRes.status}`);
+    }
 
     const userData = await userRes.json();
-    const reposData = reposRes.ok ? await reposRes.json() : [];
+    let reposData: any[] = [];
+    if (reposResult.status === 'fulfilled') {
+      const reposRes = reposResult.value;
+      if (reposRes.ok) reposData = await reposRes.json();
+      else await releaseResponseBody(reposRes);
+    }
 
     return NextResponse.json({
       username: userData.login,

@@ -1,5 +1,6 @@
 
 import { NextResponse } from 'next/server';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Ukraine Frontline API
@@ -14,6 +15,7 @@ export async function GET() {
     });
 
     if (!res.ok) {
+      await releaseResponseBody(res);
       return NextResponse.json({ frontlines: null, error: 'DeepState unavailable' });
     }
 

@@ -212,6 +212,92 @@ export function rotateApiKey(keys: string[]): string {
   return key;
 }
 
+function countBySeverity(threats: ThreatEvent[]): Record<string, number> {
+  return threats.reduce<Record<string, number>>((acc, threat) => {
+    acc[threat.severity] = (acc[threat.severity] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function formatTopItems(context: IntelligenceContext): string[] {
+  const lines: string[] = [];
+  for (const threat of context.threats.slice(0, 5)) {
+    lines.push(`- ${threat.severity}: ${clip(threat.title, FIELD_LIMITS.title)} (${clip(threat.region, FIELD_LIMITS.region) || threat.source})`);
+  }
+  for (const quake of context.earthquakes.slice(0, 3)) {
+    lines.push(`- SEISMIC: M${quake.magnitude} ${clip(quake.location, FIELD_LIMITS.location)}${quake.tsunami ? ' / tsunami flag' : ''}`);
+  }
+  for (const alert of context.cyberAlerts.slice(0, 5)) {
+    lines.push(`- CYBER: ${alert.severity} ${alert.id} ${clip(alert.vendor, FIELD_LIMITS.product)}/${clip(alert.product, FIELD_LIMITS.product)}`);
+  }
+  for (const item of context.news.slice(0, 5)) {
+    lines.push(`- OSINT: RISK ${item.risk_score}/10 ${clip(item.title, FIELD_LIMITS.title)} (${item.source})`);
+  }
+  return lines.length ? lines : ['- No active operational records were available in the request context.'];
+}
+
+export function generateLocalAnalysis(context: IntelligenceContext, userQuery: string, reason: string): string {
+  const severities = countBySeverity(context.threats);
+  const topItems = formatTopItems(context);
+
+  return `## LOCAL OSIRIS ASSESSMENT
+**Mode:** deterministic fallback
+**Reason:** ${reason}
+**Analyst query:** ${clip(userQuery, FIELD_LIMITS.title)}
+
+### BLUF
+Gemini analysis is unavailable, so this response is limited to direct correlation of the submitted OSIRIS context. Current input contains ${context.threats.length} threat events, ${context.earthquakes.length} seismic events, ${context.news.length} OSINT items, and ${context.cyberAlerts.length} cyber alerts.
+
+### Priority Signals
+${topItems.join('\n')}
+
+### Severity Picture
+- CRITICAL: ${severities.CRITICAL || 0}
+- HIGH: ${severities.HIGH || 0}
+- ELEVATED: ${severities.ELEVATED || 0}
+- LOW: ${severities.LOW || 0}
+
+### Recommended Actions
+- Treat this as a degraded local summary until Gemini service is restored.
+- Review CRITICAL/HIGH events first and confirm source freshness against the map layers.
+- Correlate seismic, conflict, and cyber records manually before making operational conclusions.
+
+### Assessment Confidence
+LOW to MODERATE. This fallback does not infer beyond the supplied fields.`;
+}
+
+export function generateLocalBriefing(context: IntelligenceContext, reason: string): string {
+  const severities = countBySeverity(context.threats);
+  const topItems = formatTopItems(context);
+
+  return `## OSIRIS INTELLIGENCE BRIEFING
+**Classification:** OPEN SOURCE INTELLIGENCE (OSINT)
+**Mode:** deterministic fallback
+**Reason:** ${reason}
+**DTG:** ${context.timestamp || new Date().toISOString()}
+
+### I. Executive Summary
+Gemini briefing generation is unavailable, so this is a bounded local briefing from the current OSIRIS context. The request includes ${context.threats.length} threat events, ${context.earthquakes.length} seismic events, ${context.news.length} OSINT items, and ${context.cyberAlerts.length} cyber alerts.
+
+### II. Priority Intelligence Requirements
+${topItems.join('\n')}
+
+### III. Seismic & Natural Hazard Assessment
+${context.earthquakes.length ? `Tracked seismic events are present. Highest submitted magnitude: M${Math.max(...context.earthquakes.map((eq) => eq.magnitude || 0)).toFixed(1)}.` : 'No seismic events were submitted in the current context.'}
+
+### IV. Geopolitical & Conflict Intelligence
+- CRITICAL: ${severities.CRITICAL || 0}
+- HIGH: ${severities.HIGH || 0}
+- ELEVATED: ${severities.ELEVATED || 0}
+- LOW: ${severities.LOW || 0}
+
+### V. Cyber Threat Landscape
+${context.cyberAlerts.length ? `${context.cyberAlerts.length} cyber alerts require review for exploitability, exposure, and due dates.` : 'No cyber alerts were submitted in the current context.'}
+
+### VI. Assessment Confidence
+LOW to MODERATE. This fallback is deterministic and does not perform model-based cross-domain inference.`;
+}
+
 /* ─────────────────────────────────────────────────────────────
    Context Serializer — Compact representation for token efficiency
    ───────────────────────────────────────────────────────────── */

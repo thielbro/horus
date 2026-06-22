@@ -73,6 +73,7 @@ export class LatticeAdapter {
   private maxEntities: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private eventSource: EventSource | null = null;
+  private reconnectAttempts = 0;
 
   constructor(config: LatticeConfig) {
     this.config = config;
@@ -132,6 +133,7 @@ export class LatticeAdapter {
               clearTimeout(this.reconnectTimer);
               this.reconnectTimer = null;
             }
+            this.reconnectAttempts = 0;
             this.setStatus('streaming');
           };
 
@@ -196,6 +198,7 @@ export class LatticeAdapter {
    * This is the core intelligence translation function.
    */
   private translateTrack(track: LatticeTrack): PolybolosEntity {
+    const position = validateTrackPosition(track);
     const domain = LATTICE_DOMAIN_MAP[track.trackType] || Domain.LAND;
     const allegiance = track.allegiance || 'UNKNOWN';
     const threat = ALLEGIANCE_THREAT_MAP[allegiance] || ThreatLevel.ELEVATED;
@@ -213,9 +216,9 @@ export class LatticeAdapter {
       domain,
       entityType: EntityType.TRACK,
       position: {
-        lat: track.position.latitude_deg,
-        lng: track.position.longitude_deg,
-        alt: track.position.altitude_hae_m,
+        lat: position.latitude_deg,
+        lng: position.longitude_deg,
+        alt: position.altitude_hae_m,
         heading: track.kinematics?.heading_deg,
         speed: track.kinematics?.speed_mps
           ? track.kinematics.speed_mps * 1.94384  // m/s → knots
@@ -262,9 +265,22 @@ export class LatticeAdapter {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 60000);
+    this.reconnectAttempts += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, 5000);
+    }, delay);
   }
+}
+
+function validateTrackPosition(track: LatticeTrack): LatticeTrack['position'] {
+  if (
+    !track.position ||
+    !Number.isFinite(track.position.latitude_deg) ||
+    !Number.isFinite(track.position.longitude_deg)
+  ) {
+    throw new Error('Lattice track missing valid position');
+  }
+  return track.position;
 }

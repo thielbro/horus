@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 const MAX_TILE_BYTES = 5 * 1024 * 1024;
 
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
+      await releaseResponseBody(response);
       return NextResponse.json({ error: 'Failed to fetch tile' }, { status: response.status });
     }
 

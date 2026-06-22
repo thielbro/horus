@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
+import { clampFinite, clampFiniteInt } from '@/lib/http-utils';
 
 // Sentinel-1 SAR Satellite — STAC Catalog via Element84 Earth Search + Copernicus fallback
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const lat = parseFloat(searchParams.get('lat') || '0');
   const lng = parseFloat(searchParams.get('lng') || '0');
-  const radius = parseFloat(searchParams.get('radius') || '2');
-  const days = parseInt(searchParams.get('days') || '30'); // Expanded to 30 days for more results
+  const radius = clampFinite(searchParams.get('radius'), 2, 0.1, 50);
+  const days = clampFiniteInt(searchParams.get('days'), 30, 1, 365); // Expanded to 30 days for more results
 
   if (isNaN(lat) || isNaN(lng)) {
     return NextResponse.json({ error: 'Missing lat/lng parameters' }, { status: 400 });

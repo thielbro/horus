@@ -339,3 +339,113 @@ test('feed engine aborts in-flight requests and avoids interval churn', () => {
   assert.match(engine, /signal:\s*controller\.signal/);
   assert.match(engine, /controller\.abort\(\)/);
 });
+
+test('package declares the Next 16 Node runtime floor', () => {
+  const pkg = JSON.parse(file('package.json'));
+  assert.equal(pkg.engines?.node, '>=20.9.0');
+});
+
+test('shared stability helpers are wired into correctness-sensitive routes', () => {
+  assert.match(file('src/lib/http-utils.ts'), /export async function releaseResponseBody/);
+  assert.match(file('src/lib/http-utils.ts'), /export function parseCsvRows/);
+  assert.match(file('src/lib/http-utils.ts'), /export function clampFiniteInt/);
+  assert.match(file('src/lib/http-utils.ts'), /export function parseKpIndex/);
+  assert.match(file('src/lib/http-utils.ts'), /export function stableHash/);
+
+  for (const path of [
+    'src/app/api/earthquakes/route.ts',
+    'src/app/api/frontlines/route.ts',
+    'src/app/api/gdelt/route.ts',
+    'src/app/api/cctv/route.ts',
+    'src/app/api/cctv/asfinag.ts',
+    'src/app/api/cctv/stream-status/route.ts',
+    'src/app/api/air-quality/route.ts',
+    'src/app/api/weather/route.ts',
+    'src/app/api/region-dossier/route.ts',
+    'src/app/api/flights/route.ts',
+    'src/app/api/radar/route.ts',
+    'src/app/api/satellites/route.ts',
+    'src/app/api/proxy-tiles/route.ts',
+  ]) {
+    assert.match(file(path), /releaseResponseBody/, path);
+  }
+
+  assert.match(file('src/app/api/fires/route.ts'), /parseCsvRows/);
+  assert.match(file('src/app/api/gdelt/route.ts'), /stableHash/);
+  assert.doesNotMatch(file('src/app/api/gdelt/route.ts'), /crypto\.randomUUID/);
+  assert.match(file('src/app/api/space-weather/route.ts'), /parseKpIndex/);
+  assert.match(file('src/app/api/osint/sanctions/route.ts'), /clampFiniteInt/);
+});
+
+test('CCTV fanout aborts timed-out source work and deduplicates cameras', () => {
+  const fanout = file('src/app/api/cctv/fanout.ts');
+  assert.match(fanout, /CameraFetcher<T = unknown> = \(signal\?: AbortSignal\)/);
+  assert.match(fanout, /controller\.abort/);
+  assert.match(fanout, /fetcher\(controller\.signal\)/);
+
+  const route = file('src/app/api/cctv/route.ts');
+  assert.match(route, /fetchCaltransDistrict/);
+  assert.match(route, /fetchCanadaSource/);
+  assert.match(route, /Promise\.allSettled/);
+  assert.match(route, /seenCameraIds/);
+});
+
+test('desktop and SDK streams have bounded reconnect and crash behavior', () => {
+  const main = file('desktop/main.js');
+  assert.match(main, /SERVER_STABLE_RESET_MS/);
+  assert.match(main, /serverRestartAttempts = 0/);
+  assert.match(main, /MAX_RENDERER_RELOADS/);
+  assert.match(main, /scheduleRendererReload/);
+
+  const polybolos = file('src/lib/sdk/PolybolosClient.ts');
+  assert.match(polybolos, /sseReconnectAttempts/);
+  assert.match(polybolos, /SSE_RECONNECT_MAX_MS/);
+  assert.match(polybolos, /scheduleSseReconnect/);
+  assert.match(polybolos, /lastSseHeartbeatAt/);
+  assert.doesNotMatch(polybolos, /Math\.random\(\)/);
+
+  const stream = file('src/app/api/sdk/stream/route.ts');
+  assert.match(stream, /sdkActiveStreamConnections/);
+  assert.match(stream, /MAX_SDK_STREAM_CONNECTIONS/);
+  assert.match(stream, /MAX_SDK_STREAM_LIFETIME_MS/);
+});
+
+test('frontend user-driven fetches abort stale requests', () => {
+  const page = file('src/app/page.tsx');
+  assert.match(page, /statsAbort/);
+  assert.match(page, /dossierAbort/);
+  assert.match(page, /spaceWeatherAbort/);
+  assert.match(page, /cablesAbort/);
+
+  const graph = file('src/components/EntityGraphPanel.tsx');
+  assert.match(graph, /expandAbortRef/);
+  assert.match(graph, /signal\.aborted/);
+
+  const osint = file('src/components/OsintPanel.tsx');
+  assert.match(osint, /lookupAbortRef/);
+  assert.match(osint, /cveAbortRef/);
+
+  assert.match(file('src/components/GlobalStatusBar.tsx'), /AbortController/);
+  assert.match(file('src/components/SearchBar.tsx'), /AbortController/);
+});
+
+test('bounded-input and lifecycle fixes remain wired', () => {
+  assert.match(file('src/app/api/osint/threats/route.ts'), /TOR_EXIT_LIST_TTL_MS/);
+  assert.match(file('src/app/api/osint/threats/route.ts'), /torExitListCache/);
+  assert.match(file('src/app/api/osint/github/route.ts'), /Promise\.allSettled/);
+  assert.match(file('src/app/api/scanner/route.ts'), /vuln:\s*\{\s*endpoint:\s*'\/scan\/vuln',\s*timeout:\s*10000/);
+  assert.match(file('src/app/api/sdk/ingest/route.ts'), /Number\.isFinite\(contentLength\)/);
+  assert.match(file('src/app/api/sentinel/route.ts'), /clampFinite/);
+  assert.match(file('src/lib/settings/index.ts'), /cloneJson/);
+  assert.match(file('src/lib/settings/index.ts'), /patch === null/);
+  assert.match(file('src/lib/sdk/LatticeAdapter.ts'), /validateTrackPosition/);
+  assert.match(file('intel/server.js'), /sanctionsRefreshInterval/);
+  assert.match(file('src/app/api/maritime/route.ts'), /cleanupAisStream/);
+});
+
+test('map popups and computed meshes guard malformed or oversized data', () => {
+  const map = file('src/components/OsirisMap.tsx');
+  assert.match(map, /safeJsonArray/);
+  assert.match(map, /MAX_MESH_NODES/);
+  assert.match(map, /Map init failed/);
+});

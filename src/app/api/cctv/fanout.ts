@@ -1,18 +1,22 @@
-type CameraFetcher<T = unknown> = () => Promise<T[]>;
+type CameraFetcher<T = unknown> = (signal?: AbortSignal) => Promise<T[]>;
 
 function settleFetcher<T>(
   fetcher: CameraFetcher<T>,
   timeoutMs: number,
 ): Promise<PromiseSettledResult<T[]>> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
 
-  const fetchPromise = Promise.resolve().then(fetcher).then<PromiseSettledResult<T[]>, PromiseSettledResult<T[]>>(
+  const fetchPromise = Promise.resolve()
+    .then(() => fetcher(controller.signal))
+    .then<PromiseSettledResult<T[]>, PromiseSettledResult<T[]>>(
     (value) => ({ status: 'fulfilled', value }),
     (reason) => ({ status: 'rejected', reason }),
   );
 
   const timeoutPromise = new Promise<PromiseSettledResult<T[]>>((resolve) => {
     timeout = setTimeout(() => {
+      controller.abort(new Error(`CCTV source timed out after ${timeoutMs}ms`));
       resolve({
         status: 'rejected',
         reason: new Error(`CCTV source timed out after ${timeoutMs}ms`),

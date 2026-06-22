@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getClientIp, isRateLimited } from '@/lib/ssrf-guard';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Region Dossier API
@@ -43,6 +44,8 @@ export async function GET(request: Request) {
         country_code: countryCode,
         display_name: geoData.display_name,
       };
+    } else {
+      await releaseResponseBody(geoRes);
     }
 
     // Steps 2–4: Run in PARALLEL after geocode (Fixes #115 — was a sequential waterfall)
@@ -57,6 +60,7 @@ export async function GET(request: Request) {
             { signal: AbortSignal.timeout(5000) }
           );
           if (res.ok) return await res.json();
+          await releaseResponseBody(res);
         } catch (e) { console.warn('[OSIRIS] Country fetch error:', e instanceof Error ? e.message : e); }
         return null;
       })(),
@@ -78,6 +82,7 @@ export async function GET(request: Request) {
               thumbnail: wiki.thumbnail?.source,
             };
           }
+          await releaseResponseBody(res);
         } catch (e) { console.warn('[OSIRIS] Wikipedia fetch error:', e instanceof Error ? e.message : e); }
         return null;
       })(),
@@ -112,6 +117,7 @@ export async function GET(request: Request) {
               };
             }
           }
+          await releaseResponseBody(res);
         } catch (e) { console.warn('[OSIRIS] Wikidata fetch error:', e instanceof Error ? e.message : e); }
         return null;
       })(),

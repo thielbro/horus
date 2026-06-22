@@ -14,22 +14,54 @@ import { NextResponse } from 'next/server';
 const globalForSDK = globalThis as unknown as {
   sdkEntityStore: Map<string, any>;
   sdkLastUpdate: number;
+  sdkActiveStreamConnections: number;
 };
 
 if (!globalForSDK.sdkEntityStore) {
   globalForSDK.sdkEntityStore = new Map();
   globalForSDK.sdkLastUpdate = Date.now();
 }
+if (globalForSDK.sdkActiveStreamConnections == null) {
+  globalForSDK.sdkActiveStreamConnections = 0;
+}
 
 export const dynamic = 'force-dynamic';
+const MAX_SDK_STREAM_CONNECTIONS = 100;
+const MAX_SDK_STREAM_LIFETIME_MS = 30 * 60 * 1000;
 
 export async function GET() {
+  if (globalForSDK.sdkActiveStreamConnections >= MAX_SDK_STREAM_CONNECTIONS) {
+    return NextResponse.json({ error: 'Too many SDK stream connections' }, { status: 429 });
+  }
+
   const encoder = new TextEncoder();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let entityPush: ReturnType<typeof setInterval> | undefined;
+  let maxLifetime: ReturnType<typeof setTimeout> | undefined;
+  let cleanedUp = false;
+
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    if (heartbeat) clearInterval(heartbeat);
+    if (entityPush) clearInterval(entityPush);
+    if (maxLifetime) clearTimeout(maxLifetime);
+    globalForSDK.sdkActiveStreamConnections = Math.max(0, globalForSDK.sdkActiveStreamConnections - 1);
+  };
 
   const stream = new ReadableStream({
     start(controller) {
+      globalForSDK.sdkActiveStreamConnections++;
+      maxLifetime = setTimeout(() => {
+        try {
+          controller.close();
+        } catch {
+          // Stream may already be closed by the client.
+        } finally {
+          cleanup();
+        }
+      }, MAX_SDK_STREAM_LIFETIME_MS);
+
       // Send initial status
       const statusEvent = {
         type: 'status',
@@ -55,7 +87,7 @@ export async function GET() {
           };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(hb)}\n\n`));
         } catch {
-          clearInterval(heartbeat);
+          cleanup();
         }
       }, 15000);
 
@@ -74,16 +106,14 @@ export async function GET() {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
           }
         } catch {
-          clearInterval(entityPush);
-          clearInterval(heartbeat);
+          cleanup();
         }
       }, 5000);
     },
     // Clear the timers when the client disconnects — without this, every dropped SSE
     // connection leaks two intervals that run forever server-side.
     cancel() {
-      if (heartbeat) clearInterval(heartbeat);
-      if (entityPush) clearInterval(entityPush);
+      cleanup();
     },
   });
 

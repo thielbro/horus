@@ -1,6 +1,7 @@
 
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Flight Data API
@@ -65,6 +66,7 @@ async function fetchRegion(region: typeof REGIONS[0]): Promise<any[]> {
       const data = await res.json();
       return data.ac || [];
     }
+    await releaseResponseBody(res);
   } catch (e) {
     console.warn(`Region fetch failed for lat=${region.lat}:`, e);
   }

@@ -21,12 +21,16 @@ export default function GlobalStatusBar() {
   const [hoveredRisk, setHoveredRisk] = useState<CountryRisk | null>(null);
 
   useEffect(() => {
+    let controller: AbortController | null = null;
     const fetchData = async () => {
+      controller?.abort();
+      controller = new AbortController();
       try {
         const [riskRes, cyberRes] = await Promise.allSettled([
-          fetch('/api/country-risk'),
-          fetch('/api/cyber-threats'),
+          fetch('/api/country-risk', { signal: controller.signal }),
+          fetch('/api/cyber-threats', { signal: controller.signal }),
         ]);
+        if (controller.signal.aborted) return;
         if (riskRes.status === 'fulfilled' && riskRes.value.ok) {
           const d = await riskRes.value.json();
           setExchanges(d.exchanges || []);
@@ -36,11 +40,16 @@ export default function GlobalStatusBar() {
         if (cyberRes.status === 'fulfilled' && cyberRes.value.ok) {
           setCyber(await cyberRes.value.json());
         }
-      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
+      } catch (e) {
+        if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
+      }
     };
     fetchData();
     const iv = setInterval(fetchData, 1800000); // 30 min (was 5 min)
-    return () => clearInterval(iv);
+    return () => {
+      clearInterval(iv);
+      controller?.abort();
+    };
   }, []);
 
   const topRisks = risks.slice(0, 6);

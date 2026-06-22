@@ -20,6 +20,11 @@ import {
 } from './types';
 import { LatticeAdapter } from './LatticeAdapter';
 
+const SSE_RECONNECT_BASE_MS = 1000;
+const SSE_RECONNECT_MAX_MS = 30000;
+const SSE_RECONNECT_MAX_ATTEMPTS = 10;
+const SSE_HEARTBEAT_TIMEOUT_MS = 45000;
+
 // ── OSIRIS Feed → Entity Translators ───────────────────────────────
 
 function stableIdFragment(value: unknown): string {
@@ -41,7 +46,7 @@ function translateFlights(flights: any[], subtype: string): PolybolosEntity[] {
     jets: ThreatLevel.LOW, military: ThreatLevel.ELEVATED,
   };
   return flights.map((f: any) => ({
-    id: `osiris-air-${f.icao24 || f.callsign || Math.random().toString(36).slice(2)}`,
+    id: `osiris-air-${f.icao24 || f.callsign || stableIdFragment({ lat: f.lat, lng: f.lng, alt: f.alt, model: f.model })}`,
     name: f.callsign?.trim() || 'UNKNOWN',
     domain: Domain.AIR,
     entityType: EntityType.TRACK,
@@ -58,7 +63,7 @@ function translateFlights(flights: any[], subtype: string): PolybolosEntity[] {
 function translateMaritime(ships: any[]): PolybolosEntity[] {
   if (!ships?.length) return [];
   return ships.map((s: any) => ({
-    id: `osiris-sea-${s.mmsi || s.id || Math.random().toString(36).slice(2)}`,
+    id: `osiris-sea-${s.mmsi || s.id || stableIdFragment({ lat: s.lat, lng: s.lng, name: s.name, flag: s.flag })}`,
     name: s.name || `MMSI-${s.mmsi}`,
     domain: Domain.SEA,
     entityType: EntityType.TRACK,
@@ -78,7 +83,7 @@ function translateMaritime(ships: any[]): PolybolosEntity[] {
 function translateEarthquakes(events: any[]): PolybolosEntity[] {
   if (!events?.length) return [];
   return events.map((eq: any) => ({
-    id: `osiris-event-eq-${eq.id || Math.random().toString(36).slice(2)}`,
+    id: `osiris-event-eq-${eq.id || stableIdFragment({ lat: eq.lat, lng: eq.lng, magnitude: eq.magnitude, time: eq.time })}`,
     name: `M${eq.magnitude} ${eq.place || 'Earthquake'}`,
     domain: Domain.LAND,
     entityType: EntityType.EVENT,
@@ -95,7 +100,7 @@ function translateEarthquakes(events: any[]): PolybolosEntity[] {
 function translateSatellites(sats: any[]): PolybolosEntity[] {
   if (!sats?.length) return [];
   return sats.map((s: any) => ({
-    id: `osiris-space-${s.noradId || Math.random().toString(36).slice(2)}`,
+    id: `osiris-space-${s.noradId || stableIdFragment({ name: s.name, lat: s.lat, lng: s.lng, alt: s.alt })}`,
     name: s.name || 'UNKNOWN SAT',
     domain: Domain.SPACE,
     entityType: EntityType.TRACK,
@@ -136,7 +141,7 @@ function translateFires(fires: any[]): PolybolosEntity[] {
 function translateCCTV(cameras: any[]): PolybolosEntity[] {
   if (!cameras?.length) return [];
   return cameras.map((c: any) => ({
-    id: `osiris-sensor-cctv-${c.id || Math.random().toString(36).slice(2)}`,
+    id: `osiris-sensor-cctv-${c.id || stableIdFragment({ lat: c.lat, lng: c.lng, name: c.name, source: c.source })}`,
     name: c.name || 'Camera',
     domain: Domain.LAND,
     entityType: EntityType.SENSOR,
@@ -153,7 +158,7 @@ function translateCCTV(cameras: any[]): PolybolosEntity[] {
 function translateRadiation(stations: any[]): PolybolosEntity[] {
   if (!stations?.length) return [];
   return stations.map((r: any) => ({
-    id: `osiris-sensor-rad-${r.name || Math.random().toString(36).slice(2)}`,
+    id: `osiris-sensor-rad-${r.name || stableIdFragment({ lat: r.lat, lng: r.lng, city: r.city, network: r.network })}`,
     name: r.name || 'Radiation Monitor',
     domain: Domain.LAND,
     entityType: EntityType.SENSOR,
@@ -180,6 +185,11 @@ export class PolybolosClient {
   private startTime: number = Date.now();
   private updateInterval: ReturnType<typeof setInterval> | null = null;
   private sseConnection: EventSource | null = null;
+  private sseReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private sseHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private sseReconnectAttempts = 0;
+  private lastSseHeartbeatAt = 0;
+  private destroyed = false;
 
   constructor(config: PolybolosClientConfig) {
     this.config = config;
@@ -193,6 +203,7 @@ export class PolybolosClient {
 
   /** Initialize the SDK and connect all feeds */
   async initialize(): Promise<void> {
+    this.destroyed = false;
     // Connect Lattice if configured
     if (this.latticeAdapter) {
       await this.latticeAdapter.connect();
@@ -207,16 +218,23 @@ export class PolybolosClient {
 
   /** Connect to the OSIRIS SSE stream endpoint */
   private connectSSE(): void {
-    if (typeof EventSource === 'undefined') return;
+    if (this.destroyed || typeof EventSource === 'undefined') return;
 
     try {
-      this.sseConnection?.close();
-      this.sseConnection = null;
+      this.closeSSE();
       this.sseConnection = new EventSource(
         `${this.config.osirisBaseUrl}/api/sdk/stream`
       );
 
+      this.sseConnection.onopen = () => {
+        this.sseReconnectAttempts = 0;
+        this.lastSseHeartbeatAt = Date.now();
+        this.startSseHeartbeatWatchdog();
+        this.config.onStatusChange?.(this.getStatus());
+      };
+
       this.sseConnection.onmessage = (event) => {
+        this.lastSseHeartbeatAt = Date.now();
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'entity_update' && Array.isArray(data.payload)) {
@@ -231,10 +249,51 @@ export class PolybolosClient {
       };
 
       this.sseConnection.onerror = () => {
-        // SSE failed, connection will auto-retry
+        this.closeSSE();
+        this.scheduleSseReconnect();
       };
     } catch {
       // EventSource not available or connection failed
+      this.scheduleSseReconnect();
+    }
+  }
+
+  private startSseHeartbeatWatchdog(): void {
+    if (this.sseHeartbeatTimer) clearInterval(this.sseHeartbeatTimer);
+    this.sseHeartbeatTimer = setInterval(() => {
+      if (this.destroyed) return;
+      if (this.lastSseHeartbeatAt && Date.now() - this.lastSseHeartbeatAt > SSE_HEARTBEAT_TIMEOUT_MS) {
+        this.closeSSE();
+        this.scheduleSseReconnect();
+      }
+    }, 15000);
+  }
+
+  private scheduleSseReconnect(): void {
+    if (this.destroyed || this.sseReconnectTimer) return;
+    if (this.sseReconnectAttempts >= SSE_RECONNECT_MAX_ATTEMPTS) {
+      this.config.onStatusChange?.(this.getStatus());
+      return;
+    }
+    const delay = Math.min(SSE_RECONNECT_BASE_MS * 2 ** this.sseReconnectAttempts, SSE_RECONNECT_MAX_MS);
+    this.sseReconnectAttempts += 1;
+    this.sseReconnectTimer = setTimeout(() => {
+      this.sseReconnectTimer = null;
+      this.connectSSE();
+    }, delay);
+  }
+
+  private closeSSE(): void {
+    if (this.sseHeartbeatTimer) {
+      clearInterval(this.sseHeartbeatTimer);
+      this.sseHeartbeatTimer = null;
+    }
+    if (this.sseConnection) {
+      this.sseConnection.onopen = null;
+      this.sseConnection.onmessage = null;
+      this.sseConnection.onerror = null;
+      this.sseConnection?.close();
+      this.sseConnection = null;
     }
   }
 
@@ -352,8 +411,13 @@ export class PolybolosClient {
 
   /** Shutdown the SDK */
   destroy(): void {
+    this.destroyed = true;
     if (this.updateInterval) clearInterval(this.updateInterval);
-    if (this.sseConnection) this.sseConnection.close();
+    if (this.sseReconnectTimer) {
+      clearTimeout(this.sseReconnectTimer);
+      this.sseReconnectTimer = null;
+    }
+    this.closeSSE();
     if (this.latticeAdapter) this.latticeAdapter.disconnect();
     this.entityStore.clear();
   }

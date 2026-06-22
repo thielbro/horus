@@ -1,5 +1,6 @@
 
 import { NextResponse } from 'next/server';
+import { parseCsvRows, releaseResponseBody } from '@/lib/http-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,16 +26,18 @@ export async function GET() {
           signal: AbortSignal.timeout(15000),
           headers: { 'User-Agent': 'OSIRIS-Intelligence-Platform/3.5' },
         });
-        if (res.ok) {
-          const text = await res.text();
-          if (text && text.includes('latitude') && text.length > 200) {
-            const parsed = parseCSV(text);
-            if (parsed.length > 0) {
-              return {
-                fires: parsed,
-                source: url.includes('SUOMI') ? 'NASA-FIRMS (VIIRS)' : 'NASA-FIRMS (MODIS)',
-              };
-            }
+        if (!res.ok) {
+          await releaseResponseBody(res);
+          return null;
+        }
+        const text = await res.text();
+        if (text && text.includes('latitude') && text.length > 200) {
+          const parsed = parseCSV(text);
+          if (parsed.length > 0) {
+            return {
+              fires: parsed,
+              source: url.includes('SUOMI') ? 'NASA-FIRMS (VIIRS)' : 'NASA-FIRMS (MODIS)',
+            };
           }
         }
       } catch { /* ignore source */ }
@@ -71,6 +74,8 @@ export async function GET() {
         }).filter(Boolean);
         fires = [...fires, ...volcanoes];
         if (!source) source = 'NASA-EONET';
+      } else {
+        await releaseResponseBody(volcRes);
       }
     } catch (e) { console.warn('[OSIRIS] Suppressed EONET error:', e instanceof Error ? e.message : e); }
 
@@ -91,10 +96,10 @@ export async function GET() {
 }
 
 function parseCSV(csv: string): any[] {
-  const lines = csv.trim().split('\n');
-  if (lines.length < 2) return [];
+  const rows = parseCsvRows(csv.trim());
+  if (rows.length < 2) return [];
 
-  const header = lines[0].split(',');
+  const header = rows[0];
   const latIdx = header.indexOf('latitude');
   const lngIdx = header.indexOf('longitude');
   const brightIdx = header.indexOf('bright_ti4') !== -1 ? header.indexOf('bright_ti4') : header.indexOf('brightness');
@@ -106,10 +111,10 @@ function parseCSV(csv: string): any[] {
   const fires: any[] = [];
   // Sample the data if there are too many rows to avoid browser lag. Limit to ~2000 points globally.
   const maxPoints = 2000;
-  const step = lines.length > maxPoints ? Math.ceil(lines.length / maxPoints) : 1;
+  const step = rows.length > maxPoints ? Math.ceil(rows.length / maxPoints) : 1;
 
-  for (let i = 1; i < lines.length; i += step) {
-    const cols = lines[i].split(',');
+  for (let i = 1; i < rows.length; i += step) {
+    const cols = rows[i];
     const lat = parseFloat(cols[latIdx]);
     const lng = parseFloat(cols[lngIdx]);
     if (isNaN(lat) || isNaN(lng)) continue;

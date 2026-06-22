@@ -42,6 +42,18 @@ function computeSolarTerminator(): [number, number][] {
 }
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
+const MAX_MESH_NODES = 750;
+
+function safeJsonArray<T = unknown>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value !== 'string' || value.trim().length === 0) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core' }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -164,6 +176,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
     map.on('load', () => {
       if (!isMounted) return;
+      try {
       mapRef.current = map;
       
       // Theme colors
@@ -447,6 +460,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       }, paint: { 'text-color': ['match', ['get','type'], 'military','#D32F2F', 'tanker','#E65100', 'cargo','#26C6DA', '#B0BEC5'], 'text-halo-color': '#000', 'text-halo-width': 1 }});
 
       setMapReady(true);
+      } catch (error) {
+        console.error('[OSIRIS] Map init failed:', error);
+      }
     });
 
     // Events
@@ -734,7 +750,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       const p = e.features[0].properties as any;
       const coords = (e.features[0].geometry as any).coordinates;
       const color = p.risk_level === 'CRITICAL' ? '#FF1744' : p.risk_level === 'HIGH' ? '#FF9500' : '#00BCD4';
-      const activeThreats = p.active_threats ? JSON.parse(p.active_threats) : [];
+      const activeThreats = safeJsonArray<string>(p.active_threats);
       
       let threatsHtml = '';
       if (activeThreats.length > 0) {
@@ -758,9 +774,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       const p = e.features?.[0]?.properties;
       if (!p) return;
       const coords = e.features[0].geometry.coordinates.slice();
-      const ports = JSON.parse(p.ports || '[]');
-      const vulns = JSON.parse(p.vulns || '[]');
-      const hostnames = JSON.parse(p.hostnames || '[]');
+      const ports = safeJsonArray(p.ports);
+      const vulns = safeJsonArray<string>(p.vulns);
+      const hostnames = safeJsonArray<string>(p.hostnames);
       const riskColors: Record<string, string> = { CRITICAL: '#FF3D3D', HIGH: '#FF6B00', MEDIUM: '#FFD700', LOW: '#76FF03', INFO: '#5C5A54' };
       popup(coords, `<div style="font-family:monospace;font-size:11px;color:#E8E6E0;">
         <div style="font-size:13px;font-weight:bold;margin-bottom:6px;color:${p.color};">${p.device_type}</div>
@@ -817,18 +833,19 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       const coords = (e.features[0].geometry as any).coordinates;
       const color = p.type === 'military' ? '#FF1744' : p.type === 'tanker' ? '#FF9500' : '#00E5FF';
       const icon = p.type === 'military' ? '⚔️' : p.type === 'tanker' ? '🛢️' : '🚢';
-      const vesselId = p.imo || p.mmsi || p.name;
+      const s = p;
+      const vesselId = s.imo || s.mmsi || s.name;
       if (vesselId) {
         onEntityClick?.({
           type: 'vessel',
           id: String(vesselId),
-          label: p.name || String(vesselId),
-          name: p.name,
-          mmsi: p.mmsi,
-          imo: p.imo,
-          flag: p.flag,
-          speed: p.speed,
-          destination: p.destination,
+          label: s.name || String(vesselId),
+          name: s.name,
+          mmsi: s.mmsi,
+          imo: s.imo,
+          flag: s.flag,
+          speed: s.speed,
+          destination: s.destination,
         });
       }
 
@@ -1088,7 +1105,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     
     // Generate Malware Botnet Mesh
     if (activeLayers.malware && data.malware_threats && data.malware_threats.length > 1) {
-      const nodes = data.malware_threats;
+      const nodes = data.malware_threats.slice(0, MAX_MESH_NODES);
       for (let i = 0; i < nodes.length; i++) {
         // Connect each to next 2 for a global web
         for (let j = 1; j <= 2; j++) {

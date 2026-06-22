@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Air Quality Monitoring API
@@ -20,7 +21,13 @@ export async function GET() {
         fetch(url, {
           signal: AbortSignal.timeout(10000),
           headers: { 'Accept': 'application/json' },
-        }).then(r => r.json())
+        }).then(async (r) => {
+          if (!r.ok) {
+            await releaseResponseBody(r);
+            return null;
+          }
+          return r.json();
+        })
       )
     );
 
@@ -28,6 +35,7 @@ export async function GET() {
     for (const result of results) {
       if (result.status !== 'fulfilled') continue;
       const data = result.value;
+      if (!data) continue;
       for (const loc of data.results || []) {
         if (!loc.coordinates?.latitude || !loc.coordinates?.longitude) continue;
         const pm25 = loc.measurements?.find((m: any) => m.parameter === 'pm25');

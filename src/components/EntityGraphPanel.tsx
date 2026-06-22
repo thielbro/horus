@@ -63,6 +63,7 @@ function EntityGraphPanel({ entity, onClose }: Props) {
   const [graphSize, setGraphSize] = useState({ width: 480, height: 400 });
   const graphRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const expandAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     selectedNodeRef.current = selectedNode;
@@ -121,6 +122,9 @@ function EntityGraphPanel({ entity, onClose }: Props) {
   const expandEntity = useCallback(async (type: string, id: string, properties?: Record<string, any>) => {
     const key = `${type}:${id}`;
     if (expandedIds.has(key)) return;
+    expandAbortRef.current?.abort();
+    const controller = new AbortController();
+    expandAbortRef.current = controller;
     setLoading(true); setError(null);
     try {
       const params = new URLSearchParams({ type, id });
@@ -128,14 +132,26 @@ function EntityGraphPanel({ entity, onClose }: Props) {
       if (properties?.registration) params.set('registration', properties.registration);
       if (properties?.model) params.set('model', properties.model);
       if (properties?.icao24) params.set('icao24', properties.icao24);
-      const res = await fetch(`/api/entity/expand?${params}`, { cache: 'no-store' });
+      const res = await fetch(`/api/entity/expand?${params}`, { cache: 'no-store', signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || `HTTP ${res.status}`); }
       const data = await res.json();
-      setGraphData(prev => mergeGraph(prev, { nodes: data.nodes || [], links: data.links || [] }));
-      setExpandedIds(prev => new Set([...prev, key]));
-    } catch (e) { setError(e instanceof Error ? e.message : 'Expansion failed'); }
-    finally { setLoading(false); }
+      if (!controller.signal.aborted) {
+        setGraphData(prev => mergeGraph(prev, { nodes: data.nodes || [], links: data.links || [] }));
+        setExpandedIds(prev => new Set([...prev, key]));
+      }
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError')) setError(e instanceof Error ? e.message : 'Expansion failed');
+    }
+    finally {
+      if (expandAbortRef.current === controller) expandAbortRef.current = null;
+      if (!controller.signal.aborted) setLoading(false);
+    }
   }, [expandedIds, mergeGraph]);
+
+  useEffect(() => () => {
+    expandAbortRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     if (!entity) return;

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 import { search, type Schema } from '@/lib/sanctions';
+import { clampFiniteInt } from '@/lib/http-utils';
 
 // Standalone OFAC SDN search (free, no key) backed by the OpenSanctions
 // `us_ofac_sdn` mirror. Substring + alias-aware match, schema-filterable.
@@ -18,7 +19,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const query = (searchParams.get('query') || '').trim();
   const schemaParam = searchParams.get('schema');
-  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '25', 10), 1), 100);
+  const limit = clampFiniteInt(searchParams.get('limit'), 25, 1, 100);
 
   if (!query) {
     return NextResponse.json({ error: 'Missing query parameter' }, { status: 400 });

@@ -42,7 +42,8 @@ export default function SearchBar({ onLocate }: SearchBarProps) {
     setValue(q);
     const coords = parseCoords(q);
     if (coords) {
-    setResults([{ label: `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`, ...coords }]);
+      abortRef.current?.abort();
+      setResults([{ label: `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`, ...coords }]);
       setLoading(false);
       return;
     }
@@ -63,7 +64,9 @@ export default function SearchBar({ onLocate }: SearchBarProps) {
           signal: controller.signal,
         });
         const data = await res.json();
-        setResults(data.map((r: any) => ({ label: r.display_name, lat: parseFloat(r.lat), lng: parseFloat(r.lon) })));
+        if (!controller.signal.aborted) {
+          setResults(data.map((r: any) => ({ label: r.display_name, lat: parseFloat(r.lat), lng: parseFloat(r.lon) })));
+        }
       } catch (err) {
         if (!(err instanceof DOMException && err.name === 'AbortError')) setResults([]);
       } finally {

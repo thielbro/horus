@@ -27,3 +27,21 @@ test('settleCameraFetchers converts source throws into rejected settled results'
   assert.equal(results[0].status, 'rejected');
   assert.match(String(results[0].reason?.message || results[0].reason), /upstream failed/);
 });
+
+test('settleCameraFetchers aborts timed out sources', async () => {
+  let observedSignal;
+  let aborted = false;
+
+  const results = await settleCameraFetchers([
+    (signal) => {
+      observedSignal = signal;
+      signal?.addEventListener('abort', () => { aborted = true; }, { once: true });
+      return new Promise(() => {});
+    },
+  ], 20);
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].status, 'rejected');
+  assert.equal(observedSignal?.aborted, true);
+  assert.equal(aborted, true);
+});

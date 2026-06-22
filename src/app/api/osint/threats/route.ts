@@ -1,7 +1,29 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import { releaseResponseBody } from '@/lib/http-utils';
 
 // Threat Intelligence — AlienVault OTX public pulse feed + Tor exit nodes
+const TOR_EXIT_LIST_TTL_MS = 60 * 60 * 1000;
+let torExitListCache: { fetchedAt: number; ips: Set<string> } | null = null;
+
+async function getTorExitList(): Promise<Set<string> | null> {
+  const now = Date.now();
+  if (torExitListCache && now - torExitListCache.fetchedAt < TOR_EXIT_LIST_TTL_MS) {
+    return torExitListCache.ips;
+  }
+  const torRes = await fetch('https://check.torproject.org/torbulkexitlist', {
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!torRes.ok) {
+    await releaseResponseBody(torRes);
+    return torExitListCache?.ips ?? null;
+  }
+  const torList = await torRes.text();
+  const ips = new Set(torList.split(/\r?\n/).map((ip) => ip.trim()).filter(Boolean));
+  torExitListCache = { fetchedAt: now, ips };
+  return ips;
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const query = searchParams.get('query'); // Optional: IP or domain to check
@@ -48,13 +70,8 @@ export async function GET(req: Request) {
       if (isIP) {
         // Check against Tor exit node list
         try {
-          const torRes = await fetch('https://check.torproject.org/torbulkexitlist', {
-            signal: AbortSignal.timeout(5000),
-          });
-          if (torRes.ok) {
-            const torList = await torRes.text();
-            results.tor_exit_node = torList.includes(query);
-          }
+          const torList = await getTorExitList();
+          results.tor_exit_node = torList ? torList.has(query) : null;
         } catch {
           results.tor_exit_node = null;
         }

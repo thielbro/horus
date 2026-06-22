@@ -9,7 +9,8 @@
 // store routes to whichever backend is present. This is the foundation the API-key
 // config, theme editor, and (later) saved workspaces all build on.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { cloneJson } from '@/lib/http-utils';
 
 // ── Schema ──────────────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ function isPlain(v: unknown): v is Plain {
   return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 function deepMerge<T>(base: T, patch: unknown): T {
-  if (!isPlain(base) || !isPlain(patch)) return (patch === undefined ? base : (patch as T));
+  if (!isPlain(base) || !isPlain(patch)) return (patch === undefined || patch === null ? base : (patch as T));
   const out: Plain = { ...base };
   for (const k of Object.keys(patch)) {
     const bv = (out as Plain)[k];
@@ -158,7 +159,7 @@ async function hydrate() {
 }
 
 export function getSettings(): OsirisSettings {
-  return current;
+  return cloneJson(current);
 }
 
 export function updateSettings(patch: DeepPartial<OsirisSettings>) {
@@ -168,7 +169,7 @@ export function updateSettings(patch: DeepPartial<OsirisSettings>) {
 }
 
 export function useSettings() {
-  const [, force] = useState(0);
+  const [version, force] = useState(0);
   useEffect(() => {
     const l = () => force((n) => n + 1);
     if (listeners.size >= MAX_LISTENERS) {
@@ -180,7 +181,8 @@ export function useSettings() {
     hydrate();
     return () => { listeners.delete(l); };
   }, []);
-  return { settings: current, update: updateSettings, ready: loaded };
+  const settings = useMemo(() => cloneJson(current), [version]);
+  return { settings, update: updateSettings, ready: loaded };
 }
 
 // ── Theme application ─────────────────────────────────────────────────────────
