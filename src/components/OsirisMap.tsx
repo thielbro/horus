@@ -276,21 +276,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
 
 
-      // ══ NETWORK INTEL — Live Malware (abuse.ch) — crimson threat ══
-      map.addLayer({ id: 'malware-glow', type: 'circle', source: 'malware-nodes', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,6, 5,12, 10,20],
-        'circle-color': '#D32F2F', 'circle-opacity': 0.06, 'circle-blur': 0.5,
-      }});
-      map.addLayer({ id: 'malware-dots', type: 'circle', source: 'malware-nodes', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,2, 5,4, 10,6],
-        'circle-color': '#D32F2F',
-        'circle-opacity': 0.9,
-        'circle-stroke-width': 1, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.8,
-      }});
-      map.addLayer({ id: 'malware-label', type: 'symbol', source: 'malware-nodes', minzoom: 5, layout: {
-        'text-field': ['get','malware'], 'text-size': 8, 'text-font': ['JetBrains Mono Bold', 'Open Sans Bold'],
-        'text-offset': [0, 1.5], 'text-max-width': 10, 'text-allow-overlap': false,
-      }, paint: { 'text-color': '#D32F2F', 'text-halo-color': '#111', 'text-halo-width': 1.5, 'text-opacity': 0.85 }});
+      // ══ NETWORK INTEL — Live Malware (abuse.ch) — crimson threat (registry-driven) ══
+      addRegistryLayer(map, 'malware');
 
       // ── NETWORK INTEL MESH (SDK STYLE) ──
       map.addLayer({ id: 'network-mesh-atmo', type: 'line', source: 'network-mesh', paint: {
@@ -317,99 +304,21 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       // GPS Jamming — crimson (registry-driven: jam-fill + jam-label)
       addRegistryLayer(map, 'gps_jamming');
 
-      // Weather Events (NASA EONET) — deep violet
-      map.addLayer({ id: 'weather-glow', type: 'circle', source: 'weather', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,12, 5,20, 10,30],
-        'circle-color': '#7E57C2', 'circle-opacity': 0.08, 'circle-blur': 1,
-      }});
-      map.addLayer({ id: 'weather-dots', type: 'circle', source: 'weather', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 5,8, 10,14],
-        'circle-color': ['match', ['get','icon'], 'cyclone','#7E57C2', 'volcano','#D32F2F', '#7E57C2'],
-        'circle-opacity': 0.75,
-        'circle-stroke-width': 1.5, 'circle-stroke-color': '#7E57C2', 'circle-stroke-opacity': 0.35,
-      }});
-      map.addLayer({ id: 'weather-label', type: 'symbol', source: 'weather', layout: {
-        'text-field': ['get','title'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
-        'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false,
-      }, paint: { 'text-color': '#7E57C2', 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.8 }});
+      // Weather Events (NASA EONET) — deep violet (registry-driven)
+      addRegistryLayer(map, 'weather');
 
-      // Nuclear Infrastructure — teal / amber risk
-      map.addLayer({ id: 'infra-glow', type: 'circle', source: 'infrastructure', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,8, 5,14, 10,22],
-        'circle-color': ['case', ['in', 'SEISMIC RISK', ['get', 'status']], '#E65100', '#26A69A'],
-        'circle-opacity': 0.08, 'circle-blur': 1,
-      }});
-      map.addLayer({ id: 'infra-dots', type: 'circle', source: 'infrastructure', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,4, 5,6, 10,10],
-        'circle-color': ['case', 
-          ['in', 'SEISMIC RISK', ['get', 'status']], '#E65100',
-          ['==', ['get','status'], 'Active Conflict Zone'], '#D32F2F', 
-          ['==', ['get','status'], 'Destroyed / Decommissioning'], '#546E7A', 
-          '#26A69A'
-        ],
-        'circle-opacity': 0.75,
-        'circle-stroke-width': 1.5, 'circle-stroke-color': ['case', ['in', 'SEISMIC RISK', ['get', 'status']], '#E65100', '#26A69A'], 'circle-stroke-opacity': 0.35,
-      }});
-      map.addLayer({ id: 'infra-label', type: 'symbol', source: 'infrastructure', minzoom: 5, layout: {
-        'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
-        'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false,
-      }, paint: { 'text-color': ['case', ['in', 'SEISMIC RISK', ['get', 'status']], '#E65100', '#26A69A'], 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.7 }});
+      // Nuclear Infrastructure — teal / amber risk (registry-driven)
+      addRegistryLayer(map, 'infrastructure');
 
-      // Satellites
-      map.addLayer({ id: 'sat-glow', type: 'circle', source: 'satellites', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,6], 'circle-color': ['get','color'], 'circle-opacity': 0.3, 'circle-blur': 1,
-      }});
-      map.addLayer({ id: 'sat-dots', type: 'circle', source: 'satellites', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,1.5, 5,3], 'circle-color': ['get','color'], 'circle-opacity': 1.0,
-      }});
+      // Satellites (registry-driven)
+      addRegistryLayer(map, 'satellites');
 
-      // Maritime — ports & naval bases — ocean teal
-      map.addLayer({ id: 'maritime-glow', type: 'circle', source: 'maritime', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,6, 5,12, 10,20],
-        'circle-color': ['match', ['get','type'], 'naval','#D32F2F', 'energy','#E65100', '#26C6DA'],
-        'circle-opacity': 0.08, 'circle-blur': 1,
-      }});
-      map.addLayer({ id: 'maritime-dots', type: 'circle', source: 'maritime', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,5, 10,9],
-        'circle-color': ['match', ['get','type'], 'naval','#D32F2F', 'energy','#E65100', '#26C6DA'],
-        'circle-opacity': 0.8,
-        'circle-stroke-width': 1.5, 'circle-stroke-color': ['match', ['get','type'], 'naval','#D32F2F', 'energy','#E65100', '#26C6DA'], 'circle-stroke-opacity': 0.35,
-      }});
-      map.addLayer({ id: 'maritime-label', type: 'symbol', source: 'maritime', minzoom: 4, layout: {
-        'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
-        'text-offset': [0, 1.8], 'text-max-width': 12, 'text-allow-overlap': false,
-      }, paint: { 'text-color': '#26C6DA', 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.7 }});
+      // Maritime — ports & naval bases + chokepoints (registry-driven).
+      // ship-dots / ship-label are added later (after the SDK mesh lines) to keep z-order.
+      addRegistryLayer(map, 'maritime');
 
-      // Maritime chokepoints — amber threat spectrum
-      map.addLayer({ id: 'choke-glow', type: 'circle', source: 'maritime-choke', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,10, 5,18, 10,28],
-        'circle-color': '#E65100', 'circle-opacity': 0.1, 'circle-blur': 1,
-      }});
-      map.addLayer({ id: 'choke-dots', type: 'circle', source: 'maritime-choke', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,4, 5,7, 10,12],
-        'circle-color': ['match', ['get','risk'], 'CRITICAL','#D32F2F', 'HIGH','#E65100', 'ELEVATED','#F9A825', '#26A69A'],
-        'circle-opacity': 0.85,
-        'circle-stroke-width': 1.5, 'circle-stroke-color': '#E65100', 'circle-stroke-opacity': 0.4,
-      }});
-      map.addLayer({ id: 'choke-label', type: 'symbol', source: 'maritime-choke', minzoom: 3, layout: {
-        'text-field': ['get','name'], 'text-size': 10, 'text-font': ['Open Sans Bold'],
-        'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false,
-      }, paint: { 'text-color': '#E65100', 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.9 }});
-
-      // Live News — muted rose
-      map.addLayer({ id: 'news-glow', type: 'circle', source: 'live-news', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,8, 5,14, 10,22],
-        'circle-color': '#EC407A', 'circle-opacity': 0.08, 'circle-blur': 1,
-      }});
-      map.addLayer({ id: 'news-dots', type: 'circle', source: 'live-news', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,4, 5,6, 10,10],
-        'circle-color': '#EC407A', 'circle-opacity': 0.8,
-        'circle-stroke-width': 1.5, 'circle-stroke-color': '#EC407A', 'circle-stroke-opacity': 0.4,
-      }});
-      map.addLayer({ id: 'news-label', type: 'symbol', source: 'live-news', minzoom: 4, layout: {
-        'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
-        'text-offset': [0, 1.8], 'text-max-width': 12, 'text-allow-overlap': false,
-      }, paint: { 'text-color': '#EC407A', 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.8 }});
+      // Live News — muted rose (registry-driven)
+      addRegistryLayer(map, 'live_news');
 
       // SIGINT RSS news - gold markers
       map.addLayer({ id: 'sigint-news-glow', type: 'circle', source: 'sigint-news', paint: {
@@ -1201,7 +1110,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('satellites', activeLayers.satellites && data.satellites ? data.satellites.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name, color: s.color, mission: s.mission, alt: s.alt, noradId: s.noradId } })) : []);
+    renderRegistryLayer(setGeo, 'satellites', data, activeLayers);
   }, [mapReady, data.satellites, activeLayers.satellites, setGeo]);
 
   useEffect(() => {
@@ -1212,7 +1121,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   // Malware Threats
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('malware-nodes', activeLayers.malware && data.malware_threats ? data.malware_threats.map((t: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [t.lng, t.lat] }, properties: { ip: t.ip, malware: t.malware, status: t.status, threat_type: t.threat_type, country: t.country } })) : []);
+    renderRegistryLayer(setGeo, 'malware', data, activeLayers);
   }, [mapReady, data.malware_threats, activeLayers.malware, setGeo]);
 
   // Network Mesh Generation (Nearest Neighbor Lattice)
@@ -1261,19 +1170,17 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('weather', activeLayers.weather && data.weather_events ? data.weather_events.map((w: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [w.lng, w.lat] }, properties: { title: w.title, type: w.type, icon: w.icon, severity: w.severity, source: w.source, id: w.id } })) : []);
+    renderRegistryLayer(setGeo, 'weather', data, activeLayers);
   }, [mapReady, data.weather_events, activeLayers.weather, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('infrastructure', activeLayers.infrastructure && data.infrastructure ? data.infrastructure.map((i: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [i.lng, i.lat] }, properties: { name: i.name, city: i.city, country: i.country, status: i.status, reactors: i.reactors, capacityMW: i.capacityMW, owner: i.owner } })) : []);
+    renderRegistryLayer(setGeo, 'infrastructure', data, activeLayers);
   }, [mapReady, data.infrastructure, activeLayers.infrastructure, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('maritime', activeLayers.maritime && data.maritime_ports ? data.maritime_ports.map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { name: p.name, country: p.country, type: p.type, volume: p.volume, fleet: p.fleet, rank: p.rank } })) : []);
-    setGeo('maritime-choke', activeLayers.maritime && data.maritime_chokepoints ? data.maritime_chokepoints.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, traffic: c.traffic, risk: c.risk } })) : []);
-    setGeo('maritime-ships', activeLayers.maritime && data.maritime_ships ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name || s.mmsi?.toString(), type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag, mmsi: s.mmsi, imo: s.imo } })) : []);
+    renderRegistryLayer(setGeo, 'maritime', data, activeLayers);
   }, [mapReady, data.maritime_ports, data.maritime_chokepoints, data.maritime_ships, activeLayers.maritime, setGeo]);
 
   useEffect(() => {
@@ -1330,7 +1237,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('live-news', activeLayers.live_news && data.live_feeds ? data.live_feeds.map((f: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [f.lng, f.lat] }, properties: { name: f.name, city: f.city, country: f.country, url: f.url, category: f.category, embed_allowed: f.embed_allowed !== false } })) : []);
+    renderRegistryLayer(setGeo, 'live_news', data, activeLayers);
   }, [mapReady, data.live_feeds, activeLayers.live_news, setGeo]);
 
   useEffect(() => {

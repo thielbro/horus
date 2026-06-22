@@ -63,8 +63,20 @@ Everything below is already in the tree — the working tree is clean. The last 
 - A Codex stability/optimization review batch (api routes, ai-engine, ssrf-guard, sdk, the
   hardened `registry/engine.ts` with abort-on-unmount + per-feed intervals, tests).
 
-**Next: Phase 2 Step 4c** — migrate the remaining static-paint groups (weather, infrastructure,
-malware, surveillance, satellites, news) using the recipe below.
+**Step 4c — DONE (static-paint groups migrated):** weather, infrastructure, malware
+(dots/glow/label only — network-mesh stays raw for 4z), satellites, live_news, and maritime
+(maritime + chokepoint style layers + all 3 render bindings; **ship-dots/ship-label stay raw**
+in OsirisMap init because they sit after the SDK mesh lines in z-order). Verified: tsc 0,
+next build 0, standalone preview — layers paint globally and the satellite click-popup still
+fires; no `[OSIRIS] Registry … failed` errors. NOT committed yet.
+
+**Deferred out of 4c (need the 4d theme extension or a new registry layer):**
+- **surveillance** — uses `surveillanceColor` (a ghost-theme recolor), so it belongs with the
+  4d theme-aware work next to cctv, not the static batch.
+- **sigint-news / `news_intel`** — has live style layers + a setGeo body but **no registry
+  layer entry exists**; migrating it means adding a new layer, beyond the verbatim-copy recipe.
+
+**Next: Phase 2 Step 4d** — theme-aware groups (see below).
 
 ---
 
@@ -87,11 +99,11 @@ Then in `src/components/OsirisMap.tsx`:
 so a bad spec shows in the console.
 
 ## Remaining Phase 2 work
-- **Step 4c — remaining static-paint groups** (same recipe, easy): weather, infrastructure,
-  malware (note: also has a computed `network-mesh` effect — leave the mesh for 4z), surveillance,
-  satellites, live-news/sigint-news, maritime (multi-source: maritime/maritime-choke/maritime-ships).
+- **Step 4c — DONE** (see Current state above).
 - **Step 4d — theme-aware groups** (need a small engine extension first): cctv (cameraColor),
-  flights (4 layers + plane icons + decimation), other ghost-recolored ones. **Extension TODO:**
+  **surveillance (surveillanceColor)**, flights (4 layers + plane icons + decimation), other
+  ghost-recolored ones. Also fold in **sigint-news/`news_intel`** here (needs a new registry
+  layer entry). **Extension TODO:**
   let `addRegistryLayer` resolve theme-dependent paint — e.g. allow paint values to be
   `(theme) => value` (or palette tokens), and pass `theme` to `addRegistryLayer`. Decide this
   before migrating cctv/flights.
