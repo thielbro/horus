@@ -1,0 +1,229 @@
+name: osiris
+services:
+  osiris:
+    # Pulls the prebuilt image from GitHub Container Registry. The `build:`
+    # block is kept as a fallback: `docker compose up -d` uses the registry
+    # image if present/pullable, otherwise builds locally from the Dockerfile.
+    # Run `docker compose pull` to fetch the latest published image.
+    image: ghcr.io/aiacos/osiris:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: osiris
+    # Host port is configurable via OSIRIS_PORT in .env (defaults to 3000).
+    ports:
+      - "${OSIRIS_PORT:-3000}:3000"
+    # Optional API keys / scanner backend — copy .env.template to .env and
+    # fill in what you need. Missing file is ignored (keyless feeds still work).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - NODE_OPTIONS=--dns-result-order=ipv4first
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      # Umami analytics — opt-in. Leave UMAMI_ENDPOINT blank to disable it.
+      # Set it in .env to a URL reachable from this container when needed.
+      - UMAMI_ENDPOINT=${UMAMI_ENDPOINT:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
+    networks:
+      - default
+
+  osiris-cache:
+    image: nginx:alpine
+    container_name: osiris-cache
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx-cache:/var/cache/nginx
+    depends_on:
+      - osiris
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - default
+
+  osiris-intel:
+    build:
+      context: ./intel
+      dockerfile: Dockerfile
+    container_name: osiris-intel
+    environment:
+      - INTEL_PORT=4000
+      - OSINT_CACHE_URL=${OSINT_CACHE_URL:-http://osiris-cache:8080/proxy/osint}
+      - YENTE_URL=${YENTE_URL:-http://yente:8000}
+      - YENTE_DATASET=${YENTE_DATASET:-default}
+    ports:
+      - "4000:4000"
+    depends_on:
+      - osiris-cache
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - default
+
+  # Optional full self-hosted OpenSanctions/Yente sector.
+  # Enable with: docker compose --profile intel-full up -d
+  # Yente requires a search backend and can consume 10-30GB+ disk while indexing.
+  yente-index:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: osiris-yente-index
+    profiles:
+      - intel-full
+    expose:
+      - "9200"
+    environment:
+      - node.name=yente-index
+      - cluster.name=osiris-yente
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms4g -Xmx4g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - yente-elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - default
+
+  yente:
+    image: ghcr.io/opensanctions/yente:5.4.0
+    container_name: osiris-yente
+    profiles:
+      - intel-full
+    depends_on:
+      yente-index:
+        condition: service_healthy
+    expose:
+      - "8000"
+    environment:
+      - YENTE_INDEX_TYPE=elasticsearch
+      - YENTE_INDEX_URL=http://yente-index:9200
+      - YENTE_MANIFEST=${YENTE_MANIFEST:-/app/manifests/civic.yml}
+      - OPENSANCTIONS_DELIVERY_TOKEN=${OPENSANCTIONS_DELIVERY_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - default
+
+  # RECON scanner backend for the OSINT toolkit (/api/scanner proxies here).
+  # The app reaches it at SCANNER_URL=http://scanner:7700; set OSIRIS_KEY here
+  # to the same value as the app's SCANNER_KEY in .env.
+  scanner:
+    build:
+      context: ./scanner
+      dockerfile: Dockerfile
+    container_name: osiris-scanner
+    environment:
+      - PORT=7700
+      - OSIRIS_KEY=${SCANNER_KEY:-}
+    ports:
+      # Published for the packaged desktop app; Docker services can still use
+      # http://scanner:7700 on the compose network.
+      - "${SCANNER_BIND:-127.0.0.1}:${SCANNER_PORT:-7700}:7700"
+    expose:
+      - "7700"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:7700/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - default
+
+volumes:
+  nginx-cache:
+  yente-elasticsearch-data:
+
+# ── CasaOS app-store metadata (ignored by plain Docker Compose) ──
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: osiris
+  author: simplifaisoul
+  developer: simplifaisoul
+  category: Network
+  description:
+    en_us: >-
+      OSIRIS is a production-grade open-source OSINT situational-awareness
+      dashboard. It aggregates real-time global intelligence across aviation,
+      maritime, CCTV networks, seismic activity, wildfires, news feeds,
+      weather, space weather, cyber threats (CVEs) and conflict zones into a
+      single GPU-accelerated MapLibre interface. Most features work with no
+      API keys.
+  tagline:
+    en_us: Real-time global OSINT intelligence dashboard
+  title:
+    en_us: OSIRIS
+  icon: https://raw.githubusercontent.com/Aiacos/osiris/master/public/casaos-icon.png
+  thumbnail: https://raw.githubusercontent.com/Aiacos/osiris/master/public/og-image.png
+  screenshot_link:
+    - https://raw.githubusercontent.com/Aiacos/osiris/master/public/og-image.png
+  scheme: http
+  hostname: ""
+  port_map: "3000"
+  index: /
+  webui_port: 3000
+  envs:
+    - container: SCANNER_URL
+      description:
+        en_us: "(Optional) RECON scanner backend URL, e.g. http://scanner:7700"
+    - container: SCANNER_KEY
+      description:
+        en_us: "(Optional) RECON scanner shared secret (must match backend OSIRIS_KEY)."
+    - container: FIRMS_API_KEY
+      description:
+        en_us: "(Optional) NASA FIRMS API key for active-fire data."
+    - container: AIS_API_KEY
+      description:
+        en_us: "(Optional) aisstream.io key for maritime vessel tracking."
+    - container: OPENSKY_CLIENT_ID
+      description:
+        en_us: "(Optional) OpenSky OAuth2 client id for higher aircraft rate limits."
+    - container: OPENSKY_CLIENT_SECRET
+      description:
+        en_us: "(Optional) OpenSky OAuth2 client secret."
+    - container: N2YO_API_KEY
+      description:
+        en_us: "(Optional) N2YO key for satellite tracking."
+  ports:
+    - container: "3000"
+      description:
+        en_us: "Web UI (HTTP)."

@@ -1,0 +1,50 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Testing
+/coverage
+
+# Next.js
+/.next/
+/out/
+
+# Production
+/build
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env*.local
+.env
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Backends — commit source, never deps (key comes from OSIRIS_KEY env)
+intel/node_modules/
+scanner/node_modules/
+scanner/.env
+scanner/.env.local
+scanner/*.log
+.vercel
+
+# Security - prevent accidental backup commits
+scanner_backend_backup.js
+
+# Security - Prevent accidental manual leaks
+*Manual*.md
+

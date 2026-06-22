@@ -1,0 +1,13 @@
+{
+  "name": "osiris-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OSIRIS RECON scanner backend — bounded TCP-connect port scan + recon endpoints behind the hardened /api/scanner proxy",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}

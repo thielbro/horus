@@ -1,0 +1,29 @@
+appId: app.osiris.desktop
+productName: OSIRIS
+copyright: OSIRIS
+
+directories:
+  output: desktop/release
+  buildResources: desktop/build
+
+# Ship only the Electron shell in the asar. The Next app is served by the embedded
+# standalone server bundled via extraResources below (it carries its own node_modules),
+# so we deliberately exclude the project's node_modules and source from the asar.
+files:
+  - desktop/**/*
+  - "!desktop/release/**"
+  - "!desktop/.staging/**"
+  - package.json
+
+# The standalone Next server (server.js + .next + public + its node_modules) is copied
+# into resources/server by this hook. extraResources is deliberately NOT used because
+# electron-builder strips node_modules out of extraResources directories.
+afterPack: ./desktop/after-pack.js
+
+win:
+  target: nsis
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

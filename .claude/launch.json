@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "osiris-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "osiris-intel",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["intel/server.js"],
+      "port": 4000
+    },
+    {
+      "name": "osiris-standalone",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["desktop/.staging/server/server.js"],
+      "port": 3000
+    }
+  ]
+}

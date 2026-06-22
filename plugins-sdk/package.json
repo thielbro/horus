@@ -1,0 +1,14 @@
+{
+  "name": "@osiris/plugin-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The type contract every OSIRIS plugin is written against (v1).",
+  "types": "index.ts",
+  "main": "index.ts",
+  "sideEffects": false,
+  "peerDependencies": {
+    "geojson": "*",
+    "maplibre-gl": "*",
+    "react": "*"
+  }
+}
