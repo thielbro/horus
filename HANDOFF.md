@@ -63,20 +63,32 @@ Everything below is already in the tree — the working tree is clean. The last 
 - A Codex stability/optimization review batch (api routes, ai-engine, ssrf-guard, sdk, the
   hardened `registry/engine.ts` with abort-on-unmount + per-feed intervals, tests).
 
-**Step 4c — DONE (static-paint groups migrated):** weather, infrastructure, malware
-(dots/glow/label only — network-mesh stays raw for 4z), satellites, live_news, and maritime
-(maritime + chokepoint style layers + all 3 render bindings; **ship-dots/ship-label stay raw**
-in OsirisMap init because they sit after the SDK mesh lines in z-order). Verified: tsc 0,
-next build 0, standalone preview — layers paint globally and the satellite click-popup still
-fires; no `[OSIRIS] Registry … failed` errors. NOT committed yet.
+**Step 4c — DONE & committed (`d394a13`):** weather, infrastructure, malware (dots/glow/label
+only — network-mesh stays raw for 4z), satellites, live_news, maritime (maritime + chokepoint
+style layers + all 3 render bindings; **ship-dots/ship-label stay raw** in OsirisMap init
+because they sit after the SDK mesh lines in z-order).
 
-**Deferred out of 4c (need the 4d theme extension or a new registry layer):**
-- **surveillance** — uses `surveillanceColor` (a ghost-theme recolor), so it belongs with the
-  4d theme-aware work next to cctv, not the static batch.
-- **sigint-news / `news_intel`** — has live style layers + a setGeo body but **no registry
-  layer entry exists**; migrating it means adding a new layer, beyond the verbatim-copy recipe.
+**Step 4d — DONE (theme-aware groups):** cctv, surveillance (ghost-recolored), and flights
+(commercial/private/jets/military — 4 layers + plane icons + per-layer decimation).
+- **Engine extension:** `StyleLayerSpec.paint`/`layout` may now be a `Themed<T>` =
+  `T | ((theme) => T)`; `addRegistryLayer(map, id, theme)` resolves them at add time so the
+  *initial* paint matches the theme. Runtime theme changes are still handled in-place by
+  OsirisMap's `setPaint('cctv-dots', …)` effect (which works unchanged because the registry
+  keeps the same style-layer ids). cctv/surv pass `themeMode`; static layers default to `core`.
+- **Flights:** plane icons (plane-cyan/green/pink/red) are still created + recolored in
+  OsirisMap (`createIcon`/`updateMapIcon`); the registry layer just references the icon name.
+  Decimation lives in a `flightFeatures(arr, n)` helper in builtins (commercial=10, priv/jets=2,
+  military=1). The 4 flight layers each = 1 styleLayer + 1 render binding.
+- Verified: tsc 0, next build 0, standalone preview — CCTV dots render green (core) and recolor
+  to purple on ghost toggle with no errors; AVIATION/SURVEIL groups active, no registry errors.
+- **NOT committed yet.**
 
-**Next: Phase 2 Step 4d** — theme-aware groups (see below).
+**Still deferred — sigint-news / `news_intel`:** `news_intel` is a default-on flag in
+`page.tsx` with **no sidebar toggle**. Adding a registry layer for it would create a spurious
+sidebar entry. Needs a "headless/hidden layer" flag on `RegistryLayer` first (a small engine
+feature) — do that, then migrate sigint-news. Good candidate to fold into Step 4z or a 4d.1.
+
+**Next: Phase 2 Step 4z** — computed bindings (see below).
 
 ---
 
@@ -100,13 +112,9 @@ so a bad spec shows in the console.
 
 ## Remaining Phase 2 work
 - **Step 4c — DONE** (see Current state above).
-- **Step 4d — theme-aware groups** (need a small engine extension first): cctv (cameraColor),
-  **surveillance (surveillanceColor)**, flights (4 layers + plane icons + decimation), other
-  ghost-recolored ones. Also fold in **sigint-news/`news_intel`** here (needs a new registry
-  layer entry). **Extension TODO:**
-  let `addRegistryLayer` resolve theme-dependent paint — e.g. allow paint values to be
-  `(theme) => value` (or palette tokens), and pass `theme` to `addRegistryLayer`. Decide this
-  before migrating cctv/flights.
+- **Step 4d — DONE** (see Current state above): cctv, surveillance, flights migrated; the
+  `Themed<T>` paint/layout extension landed in `addRegistryLayer`. Only **sigint-news/`news_intel`**
+  remains — deferred until `RegistryLayer` gains a headless/hidden flag (see Current state).
 - **Step 4z — computed bindings** (last, trickiest): SDK lines (`sdk-links`), `network-mesh`
   (derived from malware nodes), day/night solar terminator (`computeSolarTerminator`),
   ip-sweep / scan-targets (RECON viz), conflict-zones, war-alerts. These compute features from

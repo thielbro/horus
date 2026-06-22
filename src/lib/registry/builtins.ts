@@ -8,6 +8,26 @@ const flightCom = (t: ThemeMode) => (t === 'ghost' ? PHANTOM_PURPLE : '#00E5FF')
 const flightPriv = (t: ThemeMode) => (t === 'ghost' ? GHOST_PRIV : '#FFD700');
 const flightGov = (t: ThemeMode) => (t === 'ghost' ? GHOST_GOV : '#FF9500');
 
+// Ghost-mode recolors for surveillance layers (in-place recolor handled live by OsirisMap).
+const cameraColor = (t: ThemeMode) => (t === 'ghost' ? '#B388FF' : '#00E676');
+const surveillanceColor = (t: ThemeMode) => (t === 'ghost' ? '#FF80AB' : '#FFAB00');
+
+// Flight features with optional decimation (verbatim from OsirisMap's toFeatures helper).
+function flightFeatures(arr: any[], decimate = 1) {
+  let filtered = arr || [];
+  if (decimate > 1) filtered = filtered.filter((_: any, i: number) => i % decimate === 0);
+  return filtered.map((f: any) => ({
+    type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: [f.lng, f.lat] },
+    properties: { callsign: f.callsign, heading: f.heading || 0, alt: f.alt, model: f.model, speed_knots: f.speed_knots, registration: f.registration, icao24: f.icao24 },
+  }));
+}
+
+// Shared flight symbol layout (icon colored via createIcon; layer spec itself is theme-independent).
+const flightLayout = (icon: string) => ({
+  'icon-image': icon, 'icon-size': ['interpolate',['linear'],['zoom'], 1,0.4, 5,0.7, 10,1],
+  'icon-rotate': ['get','heading'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
+});
+
 export const BUILTIN_GROUPS: RegistryGroup[] = [
   { id: 'SDK', label: 'SDK', fullLabel: 'OSIRIS SDK', color: '#1565C0', order: 0 },
   { id: 'AVIATION', label: 'AVIATION', fullLabel: 'AVIATION', color: flightCom, order: 1 },
@@ -24,10 +44,26 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   { id: 'sdk_sea', label: 'Maritime Lines', group: 'SDK', icon: 'Anchor', color: '#4FC3F7', countBuckets: ['sdk_entities'] },
   { id: 'sdk_ransomware', label: 'Ransomware Feed', group: 'SDK', icon: 'AlertTriangle', color: '#D32F2F', countBuckets: ['sdk_entities'], comingSoon: true },
   // ── AVIATION ──
-  { id: 'flights', label: 'Commercial', group: 'AVIATION', icon: 'Plane', color: flightCom, countBuckets: ['commercial_flights'] },
-  { id: 'private', label: 'Private', group: 'AVIATION', icon: 'Plane', color: flightPriv, countBuckets: ['private_flights'] },
-  { id: 'jets', label: 'Private Jets', group: 'AVIATION', icon: 'Plane', color: flightGov, countBuckets: ['private_jets'] },
-  { id: 'military', label: 'Military', group: 'AVIATION', icon: 'Shield', color: '#FF0000', countBuckets: ['military_flights'] },
+  {
+    id: 'flights', label: 'Commercial', group: 'AVIATION', icon: 'Plane', color: flightCom, countBuckets: ['commercial_flights'],
+    styleLayers: [{ id: 'fl-commercial', source: 'flights', type: 'symbol', layout: flightLayout('plane-cyan'), paint: { 'icon-opacity': 0.85 } }],
+    render: [{ source: 'flights', toFeatures: (data, active) => active.flights ? flightFeatures(data.commercial_flights, 10) : [] }],
+  },
+  {
+    id: 'private', label: 'Private', group: 'AVIATION', icon: 'Plane', color: flightPriv, countBuckets: ['private_flights'],
+    styleLayers: [{ id: 'fl-private', source: 'private-fl', type: 'symbol', layout: flightLayout('plane-green'), paint: { 'icon-opacity': 0.85 } }],
+    render: [{ source: 'private-fl', toFeatures: (data, active) => active.private ? flightFeatures(data.private_flights, 2) : [] }],
+  },
+  {
+    id: 'jets', label: 'Private Jets', group: 'AVIATION', icon: 'Plane', color: flightGov, countBuckets: ['private_jets'],
+    styleLayers: [{ id: 'fl-jets', source: 'jets', type: 'symbol', layout: flightLayout('plane-pink'), paint: { 'icon-opacity': 0.85 } }],
+    render: [{ source: 'jets', toFeatures: (data, active) => active.jets ? flightFeatures(data.private_jets, 2) : [] }],
+  },
+  {
+    id: 'military', label: 'Military', group: 'AVIATION', icon: 'Shield', color: '#FF0000', countBuckets: ['military_flights'],
+    styleLayers: [{ id: 'fl-military', source: 'military', type: 'symbol', layout: flightLayout('plane-red'), paint: { 'icon-opacity': 0.85 } }],
+    render: [{ source: 'military', toFeatures: (data, active) => active.military ? flightFeatures(data.military_flights) : [] }],
+  },
   // ── MARITIME ──
   {
     id: 'maritime', label: 'Maritime / Naval', group: 'MARITIME', icon: 'Ship', color: '#26C6DA', countBuckets: ['maritime_ships', 'maritime_ports', 'maritime_chokepoints'],
@@ -58,8 +94,28 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
     ],
   },
   // ── SURVEIL ──
-  { id: 'cctv', label: 'CCTV Cameras', group: 'SURVEIL', icon: 'Camera', color: '#7E57C2', countBuckets: ['cameras'] },
-  { id: 'surveillance', label: 'Surveillance (OSM)', group: 'SURVEIL', icon: 'Eye', color: '#FFAB00', countBuckets: ['surveillance'] },
+  {
+    id: 'cctv', label: 'CCTV Cameras', group: 'SURVEIL', icon: 'Camera', color: '#7E57C2', countBuckets: ['cameras'],
+    styleLayers: [
+      { id: 'cctv-glow', source: 'cctv', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 5,8, 10,14, 14,20], 'circle-color': '#000000', 'circle-opacity': 0.35, 'circle-blur': 1 } },
+      { id: 'cctv-dots', source: 'cctv', type: 'circle', paint: (t) => ({ 'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,5, 10,8, 14,12], 'circle-color': cameraColor(t), 'circle-opacity': 0.9, 'circle-stroke-width': 2.5, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.9 }) },
+      { id: 'cctv-label', source: 'cctv', type: 'symbol', minzoom: 10, layout: { 'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'], 'text-offset': [0, 1.8], 'text-max-width': 12, 'text-allow-overlap': false }, paint: (t) => ({ 'text-color': cameraColor(t), 'text-halo-color': '#000000', 'text-halo-width': 1.5, 'text-opacity': 0.8 }) },
+    ],
+    render: [
+      { source: 'cctv', toFeatures: (data, active) => (active.cctv && data.cameras) ? data.cameras.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, city: c.city, country: c.country, source: c.source, feed_url: c.feed_url, stream_url: c.stream_url, stream_type: c.stream_type, external_url: c.external_url } })) : [] },
+    ],
+  },
+  {
+    id: 'surveillance', label: 'Surveillance (OSM)', group: 'SURVEIL', icon: 'Eye', color: '#FFAB00', countBuckets: ['surveillance'],
+    styleLayers: [
+      { id: 'surv-glow', source: 'surveillance', type: 'circle', paint: (t) => ({ 'circle-radius': ['interpolate',['linear'],['zoom'], 1,4, 8,7, 12,11, 16,16], 'circle-color': surveillanceColor(t), 'circle-opacity': 0.18, 'circle-blur': 1 }) },
+      { id: 'surv-dots', source: 'surveillance', type: 'circle', paint: (t) => ({ 'circle-radius': ['interpolate',['linear'],['zoom'], 1,2, 8,3.5, 12,6, 16,9], 'circle-color': surveillanceColor(t), 'circle-opacity': 0.85, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.8 }) },
+      { id: 'surv-label', source: 'surveillance', type: 'symbol', minzoom: 14, layout: { 'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'], 'text-offset': [0, 1.4], 'text-max-width': 12, 'text-allow-overlap': false }, paint: (t) => ({ 'text-color': surveillanceColor(t), 'text-halo-color': '#000000', 'text-halo-width': 1.5, 'text-opacity': 0.75 }) },
+    ],
+    render: [
+      { source: 'surveillance', toFeatures: (data, active) => (active.surveillance && data.surveillance) ? data.surveillance.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, country: c.country, source: c.source, surveillance_type: c.surveillance_type, camera_type: c.camera_type, zone: c.zone, operator: c.operator, osm_url: c.osm_url } })) : [] },
+    ],
+  },
   {
     id: 'live_news', label: 'Live News Feeds', group: 'SURVEIL', icon: 'Tv', color: '#EC407A', countBuckets: ['live_feeds'],
     styleLayers: [

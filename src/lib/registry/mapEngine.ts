@@ -4,14 +4,20 @@
 // from that layer's existing data-sync effect (preserving its fine-grained deps).
 
 import type { Map as MaplibreMap } from 'maplibre-gl';
+import type { ThemeMode } from './types';
 import { getLayer } from './store';
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 
 type SetGeo = (source: string, features: any[]) => void;
 
-/** Register a layer's sources + style layers (idempotent — skips ones already present). */
-export function addRegistryLayer(map: MaplibreMap, layerId: string): void {
+/**
+ * Register a layer's sources + style layers (idempotent — skips ones already present).
+ * `theme` resolves any theme→paint/layout functions (ghost-recolored layers like cctv);
+ * runtime theme changes are handled in-place by OsirisMap's setPaint effect, so this only
+ * needs the initial theme to paint correctly.
+ */
+export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: ThemeMode = 'core'): void {
   const layer = getLayer(layerId);
   if (!layer?.styleLayers?.length) return;
 
@@ -27,8 +33,10 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string): void {
   for (const sl of layer.styleLayers) {
     if (map.getLayer(sl.id)) continue;
     const spec: Record<string, unknown> = { id: sl.id, type: sl.type, source: sl.source };
-    if (sl.paint) spec.paint = sl.paint;
-    if (sl.layout) spec.layout = sl.layout;
+    const paint = typeof sl.paint === 'function' ? sl.paint(theme) : sl.paint;
+    const layout = typeof sl.layout === 'function' ? sl.layout(theme) : sl.layout;
+    if (paint) spec.paint = paint;
+    if (layout) spec.layout = layout;
     if (sl.filter) spec.filter = sl.filter;
     if (sl.minzoom != null) spec.minzoom = sl.minzoom;
     if (sl.maxzoom != null) spec.maxzoom = sl.maxzoom;

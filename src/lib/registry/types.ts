@@ -42,13 +42,18 @@ export interface RegistryLayer {
   render?: RenderBinding[];
 }
 
+/** A value that may be a constant or computed from the active theme (e.g. ghost recolors). */
+export type Themed<T> = T | ((theme: ThemeMode) => T);
+
 /** A single MapLibre style layer bound to a geojson source. */
 export interface StyleLayerSpec {
   id: string;
   source: string;
   type: 'circle' | 'symbol' | 'line' | 'fill' | 'heatmap';
-  paint?: Record<string, unknown>;
-  layout?: Record<string, unknown>;
+  /** Paint object, or a theme→paint function for ghost-recolored layers (cctv, surveillance). */
+  paint?: Themed<Record<string, unknown>>;
+  /** Layout object, or a theme→layout function. */
+  layout?: Themed<Record<string, unknown>>;
   filter?: unknown[];
   minzoom?: number;
   maxzoom?: number;

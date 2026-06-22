@@ -168,10 +168,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       
       // Theme colors
       const isGhost = theme === 'ghost';
+      const themeMode = isGhost ? 'ghost' : 'core';
       const phantomPurple = '#B388FF';
       const phantomDark = '#1A0040';
       const cameraColor = isGhost ? '#B388FF' : '#00E676';
-      const surveillanceColor = isGhost ? '#FF80AB' : '#FFAB00';
       const flightCom = isGhost ? phantomPurple : '#00E5FF';
       const flightPriv = isGhost ? phantomPurple : '#FFD700';
       const flightGov = isGhost ? phantomPurple : '#FF9500';
@@ -240,37 +240,11 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       // Fires — burnt sienna (registry-driven)
       addRegistryLayer(map, 'fires');
 
-      // CCTV — outer glow ring (black/white depending on theme)
-      map.addLayer({ id: 'cctv-glow', type: 'circle', source: 'cctv', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 5,8, 10,14, 14,20],
-        'circle-color': '#000000', 'circle-opacity': 0.35, 'circle-blur': 1,
-      }});
-      // CCTV — main dot
-      map.addLayer({ id: 'cctv-dots', type: 'circle', source: 'cctv', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,5, 10,8, 14,12],
-        'circle-color': cameraColor, 'circle-opacity': 0.9,
-        'circle-stroke-width': 2.5, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.9,
-      }});
-      // CCTV — labels at zoom 10+
-      map.addLayer({ id: 'cctv-label', type: 'symbol', source: 'cctv', minzoom: 10, layout: {
-        'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
-        'text-offset': [0, 1.8], 'text-max-width': 12, 'text-allow-overlap': false,
-      }, paint: { 'text-color': cameraColor, 'text-halo-color': '#000000', 'text-halo-width': 1.5, 'text-opacity': 0.8 }});
+      // CCTV — glow + dot + label (registry-driven; dots/label recolored live by theme effect)
+      addRegistryLayer(map, 'cctv', themeMode);
 
-      // SURVEILLANCE (OSM camera locations — no live feed) — amber counter-surveillance
-      map.addLayer({ id: 'surv-glow', type: 'circle', source: 'surveillance', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,4, 8,7, 12,11, 16,16],
-        'circle-color': surveillanceColor, 'circle-opacity': 0.18, 'circle-blur': 1,
-      }});
-      map.addLayer({ id: 'surv-dots', type: 'circle', source: 'surveillance', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,2, 8,3.5, 12,6, 16,9],
-        'circle-color': surveillanceColor, 'circle-opacity': 0.85,
-        'circle-stroke-width': 1.5, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.8,
-      }});
-      map.addLayer({ id: 'surv-label', type: 'symbol', source: 'surveillance', minzoom: 14, layout: {
-        'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
-        'text-offset': [0, 1.4], 'text-max-width': 12, 'text-allow-overlap': false,
-      }, paint: { 'text-color': surveillanceColor, 'text-halo-color': '#000000', 'text-halo-width': 1.5, 'text-opacity': 0.75 }});
+      // SURVEILLANCE (OSM camera locations — no live feed) — registry-driven, ghost-recolored
+      addRegistryLayer(map, 'surveillance', themeMode);
 
       // GDELT
 
@@ -376,19 +350,12 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false,
       }, paint: { 'text-color': '#D32F2F', 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.9 }});
 
-      // Flight layers (WebGL symbol — GPU rendered, handles 50K+ smooth)
-      const flightLayers = [
-        { id: 'fl-commercial', src: 'flights', icon: 'plane-cyan' },
-        { id: 'fl-private', src: 'private-fl', icon: 'plane-green' },
-        { id: 'fl-jets', src: 'jets', icon: 'plane-pink' },
-        { id: 'fl-military', src: 'military', icon: 'plane-red' },
-      ];
-      flightLayers.forEach(l => {
-        map.addLayer({ id: l.id, type: 'symbol', source: l.src, layout: {
-          'icon-image': l.icon, 'icon-size': ['interpolate',['linear'],['zoom'], 1,0.4, 5,0.7, 10,1],
-          'icon-rotate': ['get','heading'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
-        }, paint: { 'icon-opacity': 0.85 }});
-      });
+      // Flight layers (WebGL symbol — GPU rendered, handles 50K+ smooth) — registry-driven.
+      // Icons (plane-cyan/green/pink/red) are created above and recolored live by the theme effect.
+      addRegistryLayer(map, 'flights');
+      addRegistryLayer(map, 'private');
+      addRegistryLayer(map, 'jets');
+      addRegistryLayer(map, 'military');
 
       // Balloons (moving entities)
       map.addLayer({ id: 'balloon-dots', type: 'circle', source: 'balloons', paint: {
@@ -1011,24 +978,14 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     ids.forEach(id => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none'); });
   }, []);
 
-  // Flight data → GeoJSON (GPU rendered)
+  // Flight data → GeoJSON (GPU rendered, registry-driven with per-layer decimation)
   useEffect(() => {
     if (!mapReady) return;
-    const toFeatures = (arr: any[], decimate: number = 1) => {
-      let filtered = arr || [];
-      if (decimate > 1) {
-        filtered = filtered.filter((_, i) => i % decimate === 0);
-      }
-      return filtered.map((f: any) => ({
-        type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: [f.lng, f.lat] },
-        properties: { callsign: f.callsign, heading: f.heading || 0, alt: f.alt, model: f.model, speed_knots: f.speed_knots, registration: f.registration, icao24: f.icao24 },
-      }));
-    };
-    setGeo('flights', activeLayers.flights ? toFeatures(data.commercial_flights, 10) : []);
-    setGeo('private-fl', activeLayers.private ? toFeatures(data.private_flights, 2) : []);
-    setGeo('jets', activeLayers.jets ? toFeatures(data.private_jets, 2) : []);
-    setGeo('military', activeLayers.military ? toFeatures(data.military_flights) : []);
-  }, [mapReady, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military]);
+    renderRegistryLayer(setGeo, 'flights', data, activeLayers);
+    renderRegistryLayer(setGeo, 'private', data, activeLayers);
+    renderRegistryLayer(setGeo, 'jets', data, activeLayers);
+    renderRegistryLayer(setGeo, 'military', data, activeLayers);
+  }, [mapReady, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military, setGeo]);
 
     // Update aircraft icon colors dynamically on theme switch
     useEffect(() => {
@@ -1155,12 +1112,12 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('cctv', activeLayers.cctv && data.cameras ? data.cameras.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, city: c.city, country: c.country, source: c.source, feed_url: c.feed_url, stream_url: c.stream_url, stream_type: c.stream_type, external_url: c.external_url } })) : []);
+    renderRegistryLayer(setGeo, 'cctv', data, activeLayers);
   }, [mapReady, data.cameras, activeLayers.cctv, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('surveillance', activeLayers.surveillance && data.surveillance ? data.surveillance.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, country: c.country, source: c.source, surveillance_type: c.surveillance_type, camera_type: c.camera_type, zone: c.zone, operator: c.operator, osm_url: c.osm_url } })) : []);
+    renderRegistryLayer(setGeo, 'surveillance', data, activeLayers);
   }, [mapReady, data.surveillance, activeLayers.surveillance, setGeo]);
 
   useEffect(() => {
