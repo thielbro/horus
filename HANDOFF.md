@@ -92,24 +92,32 @@ done by folding extra style layers + render bindings into existing layers:
   a render binding reading `active.sdk_sea/sdk_air/sdk_naval` and `data.submarine_cables`,
   plus the `sdk-entities` no-op binding). The raw SDK init block + effect are gone.
 - Verified: tsc 0, next build 0, standalone — malware mesh web renders when malware active and
-  vanishes in an SDK-only view; SDK SEA cable lines paint; no registry errors. **NOT committed yet.**
+  vanishes in an SDK-only view; SDK SEA cable lines paint; no registry errors.
 
-**4z — still deferred (need new engine concepts, documented for next session):**
-- **day/night solar terminator** — non-data, interval-driven `src.setData(computeSolarTerminator())`.
-  Needs a "timed/computed source" concept (a render binding that ignores `data` and is re-run on
-  a timer). Low value to move (already works); the `day-night-fill` style layer is theme-static.
-- **conflict-zones** — headless always-on (no toggle), built from the `CONFLICT_ZONES` constant,
-  uses `warn-icon` images created raw in init. Same blocker as sigint-news (needs a headless flag).
-- **ip-sweep / scan-targets** — imperative *batched animation* (setTimeout-driven device reveal,
-  pulse rings, connection lines). Not a declarative data→features map; leave raw or design a
-  separate "animated layer" path. war-alerts has no active render code.
+**Step 4z — DONE (the deferred items, via two small engine additions):**
+- **Headless flag** — `RegistryLayer.headless?: boolean`. The map engine still registers +
+  renders headless layers; only LayerPanel skips them (`getLayersForGroup(...).filter(l => !l.headless)`).
+- **conflict-zones** → new headless layer `conflict_zones` (always-on: binding ignores `active`,
+  returns the 13 `CONFLICT_ZONES`; `CONFLICT_ZONES` + `computeSolarTerminator` moved into builtins).
+  Uses the `warn-icon*` images still created raw in OsirisMap init.
+- **sigint-news** → new headless layer `news_intel` (3 gold style layers + binding over
+  `data.news` filtered by `coords`, gated on `active.news_intel`).
+- **day_night terminator** → folded into the existing `day_night` layer: theme-static
+  `day-night-fill` (Themed paint, recolored live by the theme effect) + a render binding that
+  recomputes the terminator polygon. OsirisMap's existing 5-min `setInterval` just re-invokes
+  `renderRegistryLayer` — **no new "timed source" engine concept needed**.
+- **ip-sweep / scan-targets** → new headless layers `ip_sweep` / `scan_targets` carry the
+  **style layers only** (consolidated into the registry); their *render* stays imperative in
+  OsirisMap (the setTimeout batched-reveal animation), which keeps calling `setGeo` directly.
+- Verified on the live map (read via React-fiber → maplibre source `serialize()`):
+  conflict-zones=13 features, day-night=1 polygon, sigint-news=12, sdk-links=127, network-mesh=0
+  (malware off). All migrated style layers exist; **no headless labels leak to the sidebar**;
+  tsc 0, next build 0, no console errors/warnings. **NOT committed yet.**
+- Left raw on purpose: **war-alerts** (no active render code); the imperative ip-sweep/scan render.
+- Tooling note: `.claude/launch.json` `osiris-standalone` now has `"autoPort": true` (port 3000
+  intermittently lands in a Windows excluded range).
 
-**Still deferred — sigint-news / `news_intel`:** `news_intel` is a default-on flag in
-`page.tsx` with **no sidebar toggle**. Adding a registry layer for it would create a spurious
-sidebar entry. Needs a "headless/hidden layer" flag on `RegistryLayer` first (a small engine
-feature) — do that, then migrate sigint-news. Good candidate to fold into Step 4z or a 4d.1.
-
-**Next: Phase 2 Step 4z** — computed bindings (see below).
+**Phase 2 is now feature-complete except Step 5 cleanup.** Next: **Step 5**.
 
 ---
 
@@ -136,10 +144,9 @@ so a bad spec shows in the console.
 - **Step 4d — DONE** (see Current state above): cctv, surveillance, flights migrated; the
   `Themed<T>` paint/layout extension landed in `addRegistryLayer`. Only **sigint-news/`news_intel`**
   remains — deferred until `RegistryLayer` gains a headless/hidden flag (see Current state).
-- **Step 4z — PARTIAL** (see Current state above): `network-mesh` and `sdk-links` done.
-  Remaining 4z items need new engine concepts and are documented in Current state:
-  day/night solar terminator (timed/computed source), conflict-zones (headless flag),
-  ip-sweep / scan-targets (imperative animation), war-alerts (no active render).
+- **Step 4z — DONE** (see Current state above): network-mesh, sdk-links, day/night terminator,
+  conflict-zones, sigint-news, ip-sweep/scan-targets (style) all migrated; added the `headless`
+  flag. Only war-alerts (no render) + the imperative ip-sweep/scan render are intentionally raw.
 - **Step 5 — cleanup**: prune migrated source names from the `sources = [...]` array in
   OsirisMap init; converge the internal `RegistryLayer` with the `@osiris/plugin-sdk` `LayerDef`;
   delete dead code.

@@ -18,6 +18,44 @@ const MAX_MESH_NODES = 750;
 // SEA-domain submarine-cable background arcs to drop (light blue noise from the source map).
 const SDK_IGNORED_CABLE_COLORS = new Set(['#9BB5CC', '#A0B8CD', '#8EABC2', '#9bb5cc', '#a0b8cd', '#8eabc2']);
 
+// Day/night terminator polygon (current UTC time). Re-run on OsirisMap's 5-min interval.
+function computeSolarTerminator(): [number, number][] {
+  const now = new Date();
+  const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
+  const declination = -23.44 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));
+  const decRad = declination * Math.PI / 180;
+  const utcHours = now.getUTCHours() + now.getUTCMinutes() / 60;
+  const subsolarLng = (12 - utcHours) * 15;
+  const points: [number, number][] = [];
+  for (let lng = -180; lng <= 180; lng += 2) {
+    const lngRad = (lng - subsolarLng) * Math.PI / 180;
+    const lat = Math.atan(-Math.cos(lngRad) / Math.tan(decRad)) * 180 / Math.PI;
+    points.push([lng, lat]);
+  }
+  const darkSide = declination >= 0 ? -90 : 90;
+  points.push([180, darkSide]);
+  points.push([-180, darkSide]);
+  points.push(points[0]);
+  return points;
+}
+
+// Always-on conflict-zone warning markers (verbatim from OsirisMap; no data source / no toggle).
+const CONFLICT_ZONES = [
+  { label: 'UKRAINE WAR', severity: 'war', lat: 48.5, lng: 31.2, description: 'Live reporting: Ongoing Russian invasion of Ukraine and active frontlines.', sourceUrl: 'https://liveuamap.com/' },
+  { label: 'GAZA CONFLICT', severity: 'war', lat: 31.35, lng: 34.35, description: 'Live reporting: Active military operations and humanitarian crisis in Gaza.', sourceUrl: 'https://israelpalestine.liveuamap.com/' },
+  { label: 'LEBANON BORDER', severity: 'high', lat: 33.377, lng: 35.483, description: 'Live reporting: An airstrike targeted the city of Nabatieh.', sourceUrl: 'https://lebanon.liveuamap.com/en/2026/6-june-11-an-airstrike-targeted-the-city-of-nabatieh' },
+  { label: 'SUDAN CIVIL WAR', severity: 'war', lat: 15.0, lng: 30.0, description: 'Live reporting: Armed conflict between SAF and RSF factions across Sudan.', sourceUrl: 'https://sudan.liveuamap.com/' },
+  { label: 'MYANMAR CONFLICT', severity: 'war', lat: 19.5, lng: 96.5, description: 'Live reporting: Internal conflict and military junta opposition operations.', sourceUrl: 'https://myanmar.liveuamap.com/' },
+  { label: 'DRC EASTERN CONFLICT', severity: 'war', lat: -1.0, lng: 28.5, description: 'M23 rebel offensive and regional instability.' },
+  { label: 'YEMEN WAR', severity: 'war', lat: 15.5, lng: 48.0, description: 'Houthi militant operations and Red Sea maritime threats.', sourceUrl: 'https://yemen.liveuamap.com/' },
+  { label: 'SYRIA', severity: 'high', lat: 35.0, lng: 38.5, description: 'Live reporting: Ongoing civil war and localized insurgencies.', sourceUrl: 'https://syria.liveuamap.com/' },
+  { label: 'TAIWAN STRAIT', severity: 'elevated', lat: 24.0, lng: 119.5, description: 'Elevated military drills and regional tension.' },
+  { label: 'KOREAN DMZ', severity: 'elevated', lat: 38.3, lng: 127.0, description: 'Ongoing cross-border tension and military posturing.' },
+  { label: 'SAHEL INSTABILITY', severity: 'high', lat: 14.0, lng: 5.0, description: 'Insurgencies and military coups across the Sahel region.' },
+  { label: 'SOMALIA', severity: 'high', lat: 5.0, lng: 46.0, description: 'Al-Shabaab insurgency and counter-terrorism operations.' },
+  { label: 'RED SEA THREAT', severity: 'high', lat: 16.0, lng: 40.0, description: 'Houthi anti-ship missile and drone attacks on maritime traffic.', sourceUrl: 'https://yemen.liveuamap.com/' },
+];
+
 // Flight features with optional decimation (verbatim from OsirisMap's toFeatures helper).
 function flightFeatures(arr: any[], decimate = 1) {
   let filtered = arr || [];
@@ -281,5 +319,71 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
     ],
   },
   // ── DISPLAY ──
-  { id: 'day_night', label: 'Day / Night Cycle', group: 'DISPLAY', icon: 'Sun', color: '#448AFF', countBuckets: [] },
+  {
+    id: 'day_night', label: 'Day / Night Cycle', group: 'DISPLAY', icon: 'Sun', color: '#448AFF', countBuckets: [],
+    // day-night-fill is theme-static (recolored live by OsirisMap's setPaint effect); the
+    // terminator polygon is recomputed by OsirisMap's 5-min interval re-invoking the binding.
+    styleLayers: [
+      { id: 'day-night-fill', source: 'day-night', type: 'fill', paint: (t) => ({ 'fill-color': t === 'ghost' ? '#0D0030' : '#000022', 'fill-opacity': 0.35 }) },
+    ],
+    render: [
+      { source: 'day-night', toFeatures: (_data, active) => active.day_night ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [computeSolarTerminator()] }, properties: {} }] : [] },
+    ],
+  },
+
+  // ── HEADLESS (no sidebar toggle; registered + rendered by the map engine) ──
+  {
+    id: 'conflict_zones', label: 'Conflict Zones', group: 'THREAT', icon: 'AlertTriangle', color: '#D32F2F', headless: true,
+    // Always-on: binding ignores `active`. Uses warn-icon* images created in OsirisMap init.
+    styleLayers: [
+      {
+        id: 'conflict-icons', source: 'conflict-zones', type: 'symbol',
+        layout: { 'icon-image': ['match', ['get','severity'], 'war','warn-icon', 'high','warn-orange', 'warn-yellow'], 'icon-size': ['interpolate',['linear'],['zoom'], 1,0.6, 4,0.8, 8,1], 'icon-allow-overlap': true, 'text-field': ['get','label'], 'text-size': ['interpolate',['linear'],['zoom'], 1,7, 4,9, 8,11], 'text-font': ['Open Sans Bold'], 'text-offset': [0, 1.4], 'text-allow-overlap': false },
+        paint: { 'text-color': ['match', ['get','severity'], 'war','#D32F2F', 'high','#E65100', '#F9A825'], 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.9 },
+      },
+    ],
+    render: [
+      { source: 'conflict-zones', toFeatures: () => CONFLICT_ZONES.map((z) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [z.lng, z.lat] }, properties: { label: z.label, severity: z.severity, description: z.description, sourceUrl: z.sourceUrl } })) },
+    ],
+  },
+  {
+    id: 'news_intel', label: 'SIGINT News', group: 'SURVEIL', icon: 'Rss', color: '#D4AF37', headless: true,
+    // Toggled by the default-on `news_intel` flag in page.tsx (no sidebar control yet).
+    styleLayers: [
+      { id: 'sigint-news-glow', source: 'sigint-news', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,6, 5,10, 10,18], 'circle-color': '#D4AF37', 'circle-opacity': 0.12, 'circle-blur': 1 } },
+      { id: 'sigint-news-dots', source: 'sigint-news', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,5, 10,8], 'circle-color': '#D4AF37', 'circle-opacity': 0.9, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#FFF8DC', 'circle-stroke-opacity': 0.6 } },
+      { id: 'sigint-news-label', source: 'sigint-news', type: 'symbol', minzoom: 5, layout: { 'text-field': ['get','source'], 'text-size': 9, 'text-font': ['Open Sans Regular'], 'text-offset': [0, 1.6], 'text-max-width': 10, 'text-allow-overlap': false }, paint: { 'text-color': '#D4AF37', 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.85 } },
+    ],
+    render: [
+      {
+        source: 'sigint-news',
+        toFeatures: (data, active) => {
+          const items = data.news || [];
+          return (active.news_intel && items.length > 0)
+            ? items.filter((n: any) => n.coords?.length === 2).map((n: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [n.coords[1], n.coords[0]] }, properties: { title: n.title, source: n.source, risk_score: n.risk_score, link: n.link } }))
+            : [];
+        },
+      },
+    ],
+  },
+  {
+    id: 'ip_sweep', label: 'IP Sweep', group: 'NETWORK', icon: 'Radar', color: '#FF3D3D', headless: true,
+    // Style only — features pushed imperatively (batched reveal animation) by OsirisMap.
+    styleLayers: [
+      { id: 'sweep-connections', source: 'ip-sweep-connections', type: 'line', paint: { 'line-color': ['get', 'color'], 'line-width': 1, 'line-opacity': 0.3, 'line-dasharray': [2, 4] } },
+      { id: 'sweep-pulse-ring', source: 'ip-sweep-pulse', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 8,40, 12,80, 16,160], 'circle-color': 'transparent', 'circle-opacity': 0.6, 'circle-stroke-width': 2, 'circle-stroke-color': '#FF3D3D', 'circle-stroke-opacity': 0.4 } },
+      { id: 'sweep-device-glow', source: 'ip-sweep-devices', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 8,8, 12,16, 16,30], 'circle-color': ['get', 'color'], 'circle-opacity': 0.15, 'circle-blur': 1 } },
+      { id: 'sweep-device-dots', source: 'ip-sweep-devices', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 8,3, 12,6, 16,10], 'circle-color': ['get', 'color'], 'circle-opacity': 0.95, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#FFFFFF', 'circle-stroke-opacity': 0.6 } },
+      { id: 'sweep-device-labels', source: 'ip-sweep-devices', type: 'symbol', minzoom: 13, layout: { 'text-field': ['concat', ['get', 'device_type'], '\n', ['get', 'ip']], 'text-size': 9, 'text-font': ['Open Sans Regular'], 'text-offset': [0, 2.2], 'text-max-width': 12, 'text-allow-overlap': false }, paint: { 'text-color': ['get', 'color'], 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.9 } },
+    ],
+  },
+  {
+    id: 'scan_targets', label: 'Scan Targets', group: 'NETWORK', icon: 'Crosshair', color: '#D32F2F', headless: true,
+    // Style only — features pushed imperatively by OsirisMap.
+    styleLayers: [
+      { id: 'scan-targets-glow', source: 'scan-targets', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,12, 5,25, 10,40], 'circle-color': '#D32F2F', 'circle-opacity': 0.15, 'circle-blur': 1 } },
+      { id: 'scan-targets-dots', source: 'scan-targets', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 5,8, 10,12], 'circle-color': '#D32F2F', 'circle-opacity': 0.9, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#ECEFF1', 'circle-stroke-opacity': 0.7 } },
+      { id: 'scan-targets-label', source: 'scan-targets', type: 'symbol', layout: { 'text-field': ['get', 'id'], 'text-size': 11, 'text-font': ['Open Sans Bold'], 'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false }, paint: { 'text-color': '#D32F2F', 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.9 } },
+    ],
+  },
 ];

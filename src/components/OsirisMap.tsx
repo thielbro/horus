@@ -21,26 +21,6 @@ interface OsirisMapProps {
   theme?: 'core' | 'ghost';
 }
 
-function computeSolarTerminator(): [number, number][] {
-  const now = new Date();
-  const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
-  const declination = -23.44 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));
-  const decRad = declination * Math.PI / 180;
-  const utcHours = now.getUTCHours() + now.getUTCMinutes() / 60;
-  const subsolarLng = (12 - utcHours) * 15;
-  const points: [number, number][] = [];
-  for (let lng = -180; lng <= 180; lng += 2) {
-    const lngRad = (lng - subsolarLng) * Math.PI / 180;
-    const lat = Math.atan(-Math.cos(lngRad) / Math.tan(decRad)) * 180 / Math.PI;
-    points.push([lng, lat]);
-  }
-  const darkSide = declination >= 0 ? -90 : 90;
-  points.push([180, darkSide]);
-  points.push([-180, darkSide]);
-  points.push(points[0]);
-  return points;
-}
-
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 
 function safeJsonArray<T = unknown>(value: unknown): T[] {
@@ -228,23 +208,11 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createWarningIcon('warn-orange', '#E65100');
       createWarningIcon('warn-yellow', '#F9A825');
 
-      map.addLayer({ id: 'conflict-icons', type: 'symbol', source: 'conflict-zones', layout: {
-        'icon-image': ['match', ['get','severity'], 'war','warn-icon', 'high','warn-orange', 'warn-yellow'],
-        'icon-size': ['interpolate',['linear'],['zoom'], 1,0.6, 4,0.8, 8,1],
-        'icon-allow-overlap': true,
-        'text-field': ['get','label'],
-        'text-size': ['interpolate',['linear'],['zoom'], 1,7, 4,9, 8,11],
-        'text-font': ['Open Sans Bold'],
-        'text-offset': [0, 1.4],
-        'text-allow-overlap': false,
-      }, paint: {
-        'text-color': ['match', ['get','severity'], 'war','#D32F2F', 'high','#E65100', '#F9A825'],
-        'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.9,
-      }});
+      // Conflict zones — always-on warning markers (registry-driven, headless; uses warn-icon* above)
+      addRegistryLayer(map, 'conflict_zones');
 
-
-      // Day/Night
-      map.addLayer({ id: 'day-night-fill', type: 'fill', source: 'day-night', paint: { 'fill-color': isGhost ? '#0D0030' : '#000022', 'fill-opacity': 0.35 }});
+      // Day/Night terminator fill — registry-driven (theme-static; recolored live by theme effect)
+      addRegistryLayer(map, 'day_night', themeMode);
 
       // Earthquakes — amber threat spectrum (registry-driven: eq-circles + eq-label)
       addRegistryLayer(map, 'earthquakes');
@@ -287,61 +255,14 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       // Live News — muted rose (registry-driven)
       addRegistryLayer(map, 'live_news');
 
-      // SIGINT RSS news - gold markers
-      map.addLayer({ id: 'sigint-news-glow', type: 'circle', source: 'sigint-news', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,6, 5,10, 10,18],
-        'circle-color': '#D4AF37', 'circle-opacity': 0.12, 'circle-blur': 1,
-      }});
-      map.addLayer({ id: 'sigint-news-dots', type: 'circle', source: 'sigint-news', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,5, 10,8],
-        'circle-color': '#D4AF37', 'circle-opacity': 0.9,
-        'circle-stroke-width': 1.5, 'circle-stroke-color': '#FFF8DC', 'circle-stroke-opacity': 0.6,
-      }});
-      map.addLayer({ id: 'sigint-news-label', type: 'symbol', source: 'sigint-news', minzoom: 5, layout: {
-        'text-field': ['get','source'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
-        'text-offset': [0, 1.6], 'text-max-width': 10, 'text-allow-overlap': false,
-      }, paint: { 'text-color': '#D4AF37', 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.85 }});
+      // SIGINT RSS news — gold markers (registry-driven, headless)
+      addRegistryLayer(map, 'news_intel');
 
-      // ══ IP SWEEP — Neighborhood device visualization ══
-      map.addLayer({ id: 'sweep-connections', type: 'line', source: 'ip-sweep-connections', paint: {
-        'line-color': ['get', 'color'], 'line-width': 1, 'line-opacity': 0.3, 'line-dasharray': [2, 4],
-      }});
-      map.addLayer({ id: 'sweep-pulse-ring', type: 'circle', source: 'ip-sweep-pulse', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 8,40, 12,80, 16,160],
-        'circle-color': 'transparent', 'circle-opacity': 0.6,
-        'circle-stroke-width': 2, 'circle-stroke-color': '#FF3D3D', 'circle-stroke-opacity': 0.4,
-      }});
-      map.addLayer({ id: 'sweep-device-glow', type: 'circle', source: 'ip-sweep-devices', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 8,8, 12,16, 16,30],
-        'circle-color': ['get', 'color'], 'circle-opacity': 0.15, 'circle-blur': 1,
-      }});
-      map.addLayer({ id: 'sweep-device-dots', type: 'circle', source: 'ip-sweep-devices', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 8,3, 12,6, 16,10],
-        'circle-color': ['get', 'color'], 'circle-opacity': 0.95,
-        'circle-stroke-width': 1.5, 'circle-stroke-color': '#FFFFFF', 'circle-stroke-opacity': 0.6,
-      }});
-      map.addLayer({ id: 'sweep-device-labels', type: 'symbol', source: 'ip-sweep-devices', minzoom: 13, layout: {
-        'text-field': ['concat', ['get', 'device_type'], '\n', ['get', 'ip']],
-        'text-size': 9, 'text-font': ['Open Sans Regular'],
-        'text-offset': [0, 2.2], 'text-max-width': 12, 'text-allow-overlap': false,
-      }, paint: {
-        'text-color': ['get', 'color'], 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.9,
-      }});
+      // ══ IP SWEEP — Neighborhood device visualization (registry style; imperative render) ══
+      addRegistryLayer(map, 'ip_sweep');
 
-      // ══ SCAN TARGETS — Geolocated individual scans ══
-      map.addLayer({ id: 'scan-targets-glow', type: 'circle', source: 'scan-targets', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,12, 5,25, 10,40],
-        'circle-color': '#D32F2F', 'circle-opacity': 0.15, 'circle-blur': 1,
-      }});
-      map.addLayer({ id: 'scan-targets-dots', type: 'circle', source: 'scan-targets', paint: {
-        'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 5,8, 10,12],
-        'circle-color': '#D32F2F', 'circle-opacity': 0.9,
-        'circle-stroke-width': 1.5, 'circle-stroke-color': '#ECEFF1', 'circle-stroke-opacity': 0.7,
-      }});
-      map.addLayer({ id: 'scan-targets-label', type: 'symbol', source: 'scan-targets', layout: {
-        'text-field': ['get', 'id'], 'text-size': 11, 'text-font': ['Open Sans Bold'],
-        'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false,
-      }, paint: { 'text-color': '#D32F2F', 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.9 }});
+      // ══ SCAN TARGETS — Geolocated individual scans (registry style; imperative render) ══
+      addRegistryLayer(map, 'scan_targets');
 
       // Flight layers (WebGL symbol — GPU rendered, handles 50K+ smooth) — registry-driven.
       // Icons (plane-cyan/green/pink/red) are created above and recolored live by the theme effect.
@@ -903,26 +824,22 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     };
   }, []);
 
-  // Day/Night
-  useEffect(() => {
-    if (!mapReady || !mapRef.current) return;
-    const map = mapRef.current;
-    const update = () => {
-      const src = map.getSource('day-night') as any;
-      if (!src) return;
-      if (!activeLayers.day_night) { src.setData(EMPTY_FC); return; }
-      src.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [computeSolarTerminator()] }, properties: {} }] });
-    };
-    update();
-    const iv = setInterval(update, 300000); // 5 min (was 1 min — shadow barely moves)
-    return () => clearInterval(iv);
-  }, [mapReady, activeLayers.day_night]);
-
   // Helper to set GeoJSON
   const setGeo = useCallback((source: string, features: any[]) => {
     const src = mapRef.current?.getSource(source) as any;
     if (src) src.setData({ type: 'FeatureCollection', features });
   }, []);
+
+  // Day/Night — registry-driven; the binding recomputes the terminator polygon, re-run here
+  // on a 5-min interval (shadow barely moves) so the registry needs no timed-source concept.
+  useEffect(() => {
+    if (!mapReady) return;
+    // day_night's binding ignores `data`, so it isn't a dep — avoids resetting the interval on polls.
+    const update = () => renderRegistryLayer(setGeo, 'day_night', data, activeLayers);
+    update();
+    const iv = setInterval(update, 300000);
+    return () => clearInterval(iv);
+  }, [mapReady, activeLayers.day_night, setGeo]);
 
   const setVis = useCallback((ids: string[], visible: boolean) => {
     const map = mapRef.current;
@@ -1089,42 +1006,15 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     renderRegistryLayer(setGeo, 'live_news', data, activeLayers);
   }, [mapReady, data.live_feeds, activeLayers.live_news, setGeo]);
 
+  // SIGINT news (headless news_intel layer) + always-on conflict zones — registry-driven
   useEffect(() => {
     if (!mapReady) return;
-    const items = data.news || [];
-    setGeo('sigint-news', activeLayers.news_intel && items.length > 0
-      ? items.filter((n: any) => n.coords?.length === 2).map((n: any) => ({
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: [n.coords[1], n.coords[0]] },
-          properties: { title: n.title, source: n.source, risk_score: n.risk_score, link: n.link }
-        }))
-      : []);
+    renderRegistryLayer(setGeo, 'news_intel', data, activeLayers);
   }, [mapReady, data.news, activeLayers.news_intel, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;
-    // 🔴 CONFLICT ZONES - center-point warning markers 🔴
-    const CONFLICT_ZONES = [
-      { label: 'UKRAINE WAR', severity: 'war', lat: 48.5, lng: 31.2, description: 'Live reporting: Ongoing Russian invasion of Ukraine and active frontlines.', sourceUrl: 'https://liveuamap.com/' },
-      { label: 'GAZA CONFLICT', severity: 'war', lat: 31.35, lng: 34.35, description: 'Live reporting: Active military operations and humanitarian crisis in Gaza.', sourceUrl: 'https://israelpalestine.liveuamap.com/' },
-      { label: 'LEBANON BORDER', severity: 'high', lat: 33.377, lng: 35.483, description: 'Live reporting: An airstrike targeted the city of Nabatieh.', sourceUrl: 'https://lebanon.liveuamap.com/en/2026/6-june-11-an-airstrike-targeted-the-city-of-nabatieh' },
-      { label: 'SUDAN CIVIL WAR', severity: 'war', lat: 15.0, lng: 30.0, description: 'Live reporting: Armed conflict between SAF and RSF factions across Sudan.', sourceUrl: 'https://sudan.liveuamap.com/' },
-      { label: 'MYANMAR CONFLICT', severity: 'war', lat: 19.5, lng: 96.5, description: 'Live reporting: Internal conflict and military junta opposition operations.', sourceUrl: 'https://myanmar.liveuamap.com/' },
-      { label: 'DRC EASTERN CONFLICT', severity: 'war', lat: -1.0, lng: 28.5, description: 'M23 rebel offensive and regional instability.' },
-      { label: 'YEMEN WAR', severity: 'war', lat: 15.5, lng: 48.0, description: 'Houthi militant operations and Red Sea maritime threats.', sourceUrl: 'https://yemen.liveuamap.com/' },
-      { label: 'SYRIA', severity: 'high', lat: 35.0, lng: 38.5, description: 'Live reporting: Ongoing civil war and localized insurgencies.', sourceUrl: 'https://syria.liveuamap.com/' },
-      { label: 'TAIWAN STRAIT', severity: 'elevated', lat: 24.0, lng: 119.5, description: 'Elevated military drills and regional tension.' },
-      { label: 'KOREAN DMZ', severity: 'elevated', lat: 38.3, lng: 127.0, description: 'Ongoing cross-border tension and military posturing.' },
-      { label: 'SAHEL INSTABILITY', severity: 'high', lat: 14.0, lng: 5.0, description: 'Insurgencies and military coups across the Sahel region.' },
-      { label: 'SOMALIA', severity: 'high', lat: 5.0, lng: 46.0, description: 'Al-Shabaab insurgency and counter-terrorism operations.' },
-      { label: 'RED SEA THREAT', severity: 'high', lat: 16.0, lng: 40.0, description: 'Houthi anti-ship missile and drone attacks on maritime traffic.', sourceUrl: 'https://yemen.liveuamap.com/' },
-    ];
-    const conflictFeatures = CONFLICT_ZONES.map(z => ({
-      type: 'Feature' as const,
-      geometry: { type: 'Point' as const, coordinates: [z.lng, z.lat] },
-      properties: { label: z.label, severity: z.severity, description: z.description, sourceUrl: z.sourceUrl },
-    }));
-    setGeo('conflict-zones', conflictFeatures);
+    renderRegistryLayer(setGeo, 'conflict_zones', data, activeLayers);
   }, [mapReady, setGeo]);
 
 

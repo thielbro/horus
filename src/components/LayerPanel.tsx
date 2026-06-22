@@ -25,7 +25,7 @@ const getLayerGroups = (theme: 'core' | 'ghost') =>
     label: g.label,
     fullLabel: g.fullLabel,
     color: resolveColor(g.color, theme),
-    layers: getLayersForGroup(g.id).map((l) => ({
+    layers: getLayersForGroup(g.id).filter((l) => !l.headless).map((l) => ({
       key: l.id,
       label: l.label,
       icon: resolveIcon(l.icon),

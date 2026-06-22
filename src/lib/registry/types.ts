@@ -36,6 +36,13 @@ export interface RegistryLayer {
   defaultActive?: boolean;
   /** Greys the toggle and shows a "coming soon" alert instead of activating. */
   comingSoon?: boolean;
+  /**
+   * Hide from the sidebar (no toggle). Used for always-on layers (conflict-zones), layers
+   * driven by a flag with no UI (sigint-news / news_intel), or imperatively-rendered overlays
+   * whose style layers we still want defined in the registry (ip-sweep, scan-targets).
+   * The map engine still registers/renders headless layers — only the sidebar skips them.
+   */
+  headless?: boolean;
   /** MapLibre style layers, registered at map init (the former addLayer calls). */
   styleLayers?: StyleLayerSpec[];
   /** Data → map-source render bindings (the former setGeo specs). */
