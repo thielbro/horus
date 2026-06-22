@@ -1,7 +1,12 @@
 # OSIRIS — Session Handoff
 
-Working branch: **`claude/stoic-ramanujan-f01be8`** (worktree under `.claude/worktrees/`).
-Read this top-to-bottom, then check `git log --oneline -25` and `git status`.
+**This is `osiris-native-desktop`** — a standalone repo (branch `main`), forked from the
+original `osiris` repo as a clean snapshot to escape worktree/branch trouble. The full
+phase-by-phase history lives in the original osiris repo; here it's **squashed into the
+initial commit**, so the commit hashes named below (e.g. `9b23f2f`, `704c366`) refer to
+that original repo — `git log` here shows one commit. The tree is clean; **continue at
+Phase 2 Step 4c** (see below). Run `npm install` first (node_modules was not copied).
+Read this top-to-bottom, then skim `git log`.
 
 > ⚠️ Read `AGENTS.md` first: this is Next.js 16 with breaking changes — consult
 > `node_modules/next/dist/docs/` before touching Next config/conventions.
@@ -50,14 +55,16 @@ plugins** (no sandbox — see decisions), custom themes, saved layouts. The keys
   - `c423073` — Step 3: feed loading → `useFeedEngine` (page.tsx fetch wiring removed).
   - `9b23f2f` — Step 4a: map render engine (`mapEngine.ts`) + **earthquakes** migrated.
 
-## Current state (UNCOMMITTED in the working tree)
-1. A large **Codex review batch** (~22 files: page.tsx, api routes, ai-engine, ssrf-guard,
-   sdk, the hardened `registry/engine.ts`, etc.). Reviewed — sound, tsc+build clean. The
-   user manages these commits.
-2. **Phase 2 Step 4b** (mine): `src/lib/registry/builtins.ts` + `src/components/OsirisMap.tsx`
-   — migrated **fires, global_incidents (gdelt), gps_jamming**. Verified (tsc+build+standalone,
-   no console errors). NOT committed yet to avoid fragmenting the user's batch (OsirisMap.tsx
-   also holds the user's `onViewStateChange` longitude tweak).
+## Current state (ALL COMMITTED in the initial commit of this repo)
+Everything below is already in the tree — the working tree is clean. The last work done was:
+- **Phase 2 through Step 4b**: registry module, LayerPanel + feed engine, map render engine,
+  and the **earthquakes, fires, global_incidents (gdelt), gps_jamming** layers migrated to
+  the registry. Verified tsc + next build + standalone (no console errors).
+- A Codex stability/optimization review batch (api routes, ai-engine, ssrf-guard, sdk, the
+  hardened `registry/engine.ts` with abort-on-unmount + per-feed intervals, tests).
+
+**Next: Phase 2 Step 4c** — migrate the remaining static-paint groups (weather, infrastructure,
+malware, surveillance, satellites, news) using the recipe below.
 
 ---
 
