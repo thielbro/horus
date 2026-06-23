@@ -13,6 +13,7 @@ files:
   - desktop/**/*
   - "!desktop/release/**"
   - "!desktop/.staging/**"
+  - "!desktop/build/**"
   - package.json
 
 # The standalone Next server (server.js + .next + public + its node_modules) is copied
@@ -20,10 +21,15 @@ files:
 # electron-builder strips node_modules out of extraResources directories.
 afterPack: ./desktop/after-pack.js
 
+# App + installer icon. Generated from the OSIRIS brand mark by scripts/make-icon.js;
+# also auto-detected as buildResources/icon.ico, but set explicitly for clarity.
 win:
   target: nsis
+  icon: desktop/build/icon.ico
 
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  installerIcon: desktop/build/icon.ico
+  uninstallerIcon: desktop/build/icon.ico
