@@ -4,11 +4,15 @@ import { memo, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Palette, Globe, KeyRound, RotateCw, Save, Monitor } from 'lucide-react';
 import { useSettings, type ApiKeys, type CustomThemeTokens } from '@/lib/settings';
+import type { WorkspaceSnapshot } from '@/lib/workspaces';
 import ExtensionsSettings from '@/components/ExtensionsSettings';
+import WorkspacesSettings from '@/components/WorkspacesSettings';
 
 interface SettingsPanelProps {
   open: boolean;
   onClose: () => void;
+  getWorkspaceSnapshot: () => WorkspaceSnapshot;
+  onApplyWorkspace: (snapshot: WorkspaceSnapshot) => void;
 }
 
 const KEY_FIELDS: Array<{ key: keyof ApiKeys; label: string; type: 'text' | 'password'; hint?: string }> = [
@@ -56,7 +60,7 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
   );
 }
 
-function SettingsPanel({ open, onClose }: SettingsPanelProps) {
+function SettingsPanel({ open, onClose, getWorkspaceSnapshot, onApplyWorkspace }: SettingsPanelProps) {
   const { settings, update } = useSettings();
   const [isDesktop, setIsDesktop] = useState(false);
   const [keys, setKeys] = useState<ApiKeys>({});
@@ -226,6 +230,9 @@ function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   </div>
                 )}
               </section>
+
+              {/* ── Saved workspaces / layouts ── */}
+              <WorkspacesSettings getCurrentSnapshot={getWorkspaceSnapshot} onApply={onApplyWorkspace} />
 
               {/* ── Extensions: custom sources + plugins ── */}
               <ExtensionsSettings />

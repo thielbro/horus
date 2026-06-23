@@ -188,34 +188,50 @@ refinement, and more real plugin/custom-source dogfooding.**
   - `npm run build` → pass.
   - `npm run desktop:prepare` → pass, assembled `desktop\.staging\server`.
 
-Next: **saved workspaces / layouts**.
+**Phase 3 saved workspaces / layouts — DONE:**
+- `src/lib/workspaces.ts` is the pure, dependency-free snapshot model (`version: 1`):
+  `normalizeWorkspaceSnapshot` (the only migration surface — fills absent/malformed fields,
+  never throws) and `restoreActiveLayers` (filters a snapshot's layer ids against a known-id
+  set; unknown ids that were ON are reported as `dropped`, unknown-OFF ids ignored). It has
+  **no `@/` aliases / React imports** so the `.test.mjs` suite can `import()` it directly.
+- A snapshot captures: `activeLayers` (full toggle record), map `view`
+  (`latitude/longitude/zoom`), `projection`, `mapStyle`, `theme`, and panel visibility
+  (`showLayers/showMarkets/showAlerts/showScmPanel/showIntel/showEntityGraph`).
+- `settings.workspaces[]` now stores `{ id, name, state: WorkspaceSnapshot }`.
+- New `WorkspacesSettings` panel section (in `SettingsPanel`, above the extensions block):
+  save-current (named), and per-row load / update-to-current / duplicate / rename / delete,
+  with a `MAX_WORKSPACES = 50` cap and inline error/flash messages.
+- `page.tsx` owns `getWorkspaceSnapshot()` and `applyWorkspace()`. Restore filters against
+  `new Set([...Object.keys(DEFAULT_ACTIVE_LAYERS), ...getLayers().map(l => l.id)])` — i.e.
+  builtin toggle keys **∪** the *live* (post-`bootstrapExtensions`) registry. This union
+  matters: `cables`, `sdk_air`, `sdk_naval` are **virtual toggles** (consumed by render
+  bindings, not registered as their own `RegistryLayer`), so registry-only filtering wrongly
+  dropped them — the builtin roster (hoisted to a module-level `DEFAULT_ACTIVE_LAYERS`) fixes it.
+- Missing extension layers are non-fatal: dropped from the applied set, with an auto-dismissing
+  bottom-center notice listing them.
+- Camera restore reuses the `flyToLocation` path — extended to carry an optional exact `zoom`
+  (`OsirisMap` flyTo now uses `flyToLocation.zoom ?? 8`, which also fixes view-presets landing
+  at a fixed zoom). The flyTo effect is gated on `mapReady`, so restore mid-load still lands.
+- Regression coverage in `tests/workspaces.test.mjs` (4 tests): normalize shape, restore
+  keep/drop semantics, restore filters the live registry (post-bootstrap union), camera gated
+  on `mapReady` + honors saved zoom.
+- Verified in the standalone preview (1440w): WORKSPACES section renders in order; save→flip
+  projection→load round-trips projection back to globe; a workspace referencing a removed layer
+  loads with the notice listing **only** the genuinely-missing id (builtin virtual toggles kept).
+- Fresh verification:
+  - `node --test tests/performance-stability.test.mjs tests/extension-hardening.test.mjs tests/workspaces.test.mjs` → 54/54 pass.
+  - `npx tsc --noEmit` → pass.
+  - `npm run lint` → pass (76-warning baseline; no new warnings).
+  - `npm run build` → pass.
+  - `npm run desktop:prepare` → pass, assembled `desktop\.staging\server`.
 
-### Next Claude task — saved workspaces / layouts
-Implement saved workspaces as the next Phase 3 step. Keep this scoped to persisted UI/map
-state; do **not** start plugin sandboxing, server-side plugins, or publishing flows.
-
-Recommended implementation:
-- Extend the existing settings workspace model to store a versioned snapshot:
-  active layer ids, map camera/view (`latitude`, `longitude`, `zoom`), projection/style,
-  theme, panel/sidebar visibility, and any selected UI mode worth restoring.
-- Add workspace actions in Settings or a compact workspace control:
-  save current, update existing, load, duplicate, rename, and delete.
-- Restore in this order: settings hydration → `bootstrapExtensions()` → filter workspace layer
-  ids against the live registry → apply active layers/UI state → apply map camera once
-  `OsirisMap` is ready.
-- Treat missing custom/plugin layer ids as non-fatal. Drop them from the applied active set and
-  show a small visible warning only if that workspace references unavailable extension layers.
-- Keep the schema forward-compatible (`version: 1`) and avoid migrations beyond a small
-  normalizer for absent fields.
-
-Regression coverage to add:
-- Workspace snapshots persist/normalize the expected shape.
-- Restore ignores unknown layer ids and keeps known builtin/custom/plugin ids.
-- Restore ordering waits for extension bootstrap before applying layer ids.
-- Map camera restore is gated on map readiness.
+Next: more Phase 3 UX refinement / dogfooding. Saved workspaces currently load **on demand**
+from Settings; a natural follow-up is an optional "restore last workspace on launch" pointer
+(persist a `lastWorkspaceId`, apply it after the same hydration → bootstrap → filter → camera
+ordering). Still explicitly **out of scope**: plugin sandboxing, server-side plugins, publishing.
 
 Safe verification for Claude:
-- `node --test tests/performance-stability.test.mjs tests/extension-hardening.test.mjs`
+- `node --test tests/performance-stability.test.mjs tests/extension-hardening.test.mjs tests/workspaces.test.mjs`
 - `npx tsc --noEmit`
 - `npm run lint` (existing warning baseline is expected)
 - `npm run build`

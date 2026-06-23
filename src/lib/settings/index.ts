@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { cloneJson } from '@/lib/http-utils';
+import type { WorkspaceSnapshot } from '@/lib/workspaces';
 
 // ── Schema ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +36,8 @@ export interface CustomThemeTokens {
 export interface Workspace {
   id: string;
   name: string;
-  state: Record<string, unknown>;
+  /** Versioned UI/map snapshot. Loaded through `normalizeWorkspaceSnapshot`. */
+  state: WorkspaceSnapshot;
 }
 
 /** A persisted JS plugin (trusted, in-process). `code` is the plugin's ES-module source. */

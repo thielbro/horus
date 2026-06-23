@@ -21,7 +21,7 @@ interface OsirisMapProps {
   onMouseCoords?: (coords: { lat: number; lng: number }) => void;
   onRightClick?: (coords: { lat: number; lng: number }) => void;
   onViewStateChange?: (vs: { zoom: number; latitude: number; longitude: number }) => void;
-  flyToLocation?: { lat: number; lng: number; ts: number } | null;
+  flyToLocation?: { lat: number; lng: number; ts: number; zoom?: number } | null;
   projection?: 'mercator' | 'globe';
   mapStyle?: string;
   sweepData?: any;
@@ -1265,10 +1265,16 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     if (src) src.setData({ type: 'FeatureCollection', features });
   }, [scanTargets, mapReady]);
 
-  // Fly-to
+  // Fly-to. `zoom` is honored when provided (workspace restore / view presets); otherwise
+  // we default to 8 for a generic "fly here" nudge. Gated on mapReady so workspace restore
+  // that fires mid-load still lands once the map is interactive.
   useEffect(() => {
     if (!mapReady || !mapRef.current || !flyToLocation) return;
-    mapRef.current.flyTo({ center: [flyToLocation.lng, flyToLocation.lat], zoom: 8, duration: 2000 });
+    mapRef.current.flyTo({
+      center: [flyToLocation.lng, flyToLocation.lat],
+      zoom: flyToLocation.zoom ?? 8,
+      duration: 2000,
+    });
   }, [mapReady, flyToLocation]);
 
   // Dynamic projection switching (lightweight — no terrain DEM)

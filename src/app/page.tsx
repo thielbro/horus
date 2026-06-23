@@ -16,8 +16,9 @@ import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import GlobalStatusBar from '@/components/GlobalStatusBar';
 import LiveAlerts from '@/components/LiveAlerts';
 import { useSettings, applyAppearance } from '@/lib/settings';
-import { useFeedEngine } from '@/lib/registry';
+import { useFeedEngine, getLayers } from '@/lib/registry';
 import { setHostServices, bootstrapExtensions } from '@/lib/plugins';
+import { normalizeWorkspaceSnapshot, restoreActiveLayers, type WorkspaceSnapshot } from '@/lib/workspaces';
 
 const OsirisMap = dynamic(() => import('@/components/OsirisMap'), { ssr: false });
 const LayerPanel = dynamic(() => import('@/components/LayerPanel'));
@@ -123,6 +124,39 @@ function capDataPayload(payload: Record<string, any>): Record<string, any> {
   return capped;
 }
 
+// Builtin layer toggles. Note: not every key is a registered RegistryLayer — `cables`,
+// `sdk_air`, `sdk_naval` are virtual toggles consumed by render bindings/effects. The
+// key set here is the canonical roster of valid builtin toggles, used both to seed
+// `activeLayers` and to validate workspace restores (so these virtual keys aren't
+// mistaken for removed extension layers).
+const DEFAULT_ACTIVE_LAYERS = {
+  flights: false,
+  private: false,
+  jets: false,
+  military: false,
+  maritime: true,
+  satellites: false,
+  balloons: false,
+  cctv: false,
+  surveillance: false,
+  live_news: true,
+  news_intel: true,
+  earthquakes: true,
+  fires: false,
+  weather: false,
+  radiation: false,
+  infrastructure: false,
+  global_incidents: true,
+  war_alerts: false,
+  gps_jamming: false,
+  day_night: true,
+  cables: true,
+  sdk_sea: true,
+  sdk_air: true,
+  sdk_naval: true,
+  malware: false,
+};
+
 export default function Dashboard() {
   const [data, setData] = useState<Record<string, any>>({});
   // Live mirror of `data` for the plugin host's getData() (avoids stale closures).
@@ -131,7 +165,7 @@ export default function Dashboard() {
 
   const [backendStatus, setBackendStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [mapView, setMapView] = useState({ zoom: 2.5, latitude: 20, longitude: 0 });
-  const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; ts: number } | null>(null);
+  const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; ts: number; zoom?: number } | null>(null);
   const [globalStats, setGlobalStats] = useState<any>(null);
   const mouseCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
   const coordsDisplayRef = useRef<HTMLDivElement>(null);
@@ -193,37 +227,69 @@ export default function Dashboard() {
   const lastGeocodedPos = useRef<{ lat: number; lng: number } | null>(null);
 
   // ── DEFAULT: Most layers OFF — fast initial load ──
-  const [activeLayers, setActiveLayers] = useState({
-    flights: false,
-    private: false,
-    jets: false,
-    military: false,
-    maritime: true,
-    satellites: false,
-    balloons: false,
-    cctv: false,
-    surveillance: false,
-    live_news: true,
-    news_intel: true,
-    earthquakes: true,
-    fires: false,
-    weather: false,
-    radiation: false,
-    infrastructure: false,
-    global_incidents: true,
-    war_alerts: false,
-    gps_jamming: false,
-    day_night: true,
-    cables: true,
-    sdk_sea: true,
-    sdk_air: true,
-    sdk_naval: true,
-    
-    malware: false,
-  });
+  const [activeLayers, setActiveLayers] = useState({ ...DEFAULT_ACTIVE_LAYERS });
   const [liveFeedUrl, setLiveFeedUrl] = useState<string | null>(null);
   const [liveFeedName, setLiveFeedName] = useState('');
   const [liveFeedEmbedAllowed, setLiveFeedEmbedAllowed] = useState(true);
+  const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
+
+  // ── Saved workspaces ──
+  // Capture the live UI/map state as a versioned snapshot.
+  const getWorkspaceSnapshot = useCallback((): WorkspaceSnapshot => ({
+    version: 1,
+    activeLayers: { ...activeLayers },
+    view: { latitude: mapView.latitude, longitude: mapView.longitude, zoom: mapView.zoom },
+    projection: mapProjection,
+    mapStyle,
+    theme: settings.appearance.theme,
+    ui: { showLayers, showMarkets, showAlerts, showScmPanel, showIntel, showEntityGraph },
+  }), [activeLayers, mapView, mapProjection, mapStyle, settings.appearance.theme,
+       showLayers, showMarkets, showAlerts, showScmPanel, showIntel, showEntityGraph]);
+
+  // Apply a saved snapshot back onto the live app. Filters layer ids against the live
+  // registry (post-bootstrap), so layers from removed custom sources / plugins are dropped.
+  const applyWorkspace = useCallback((raw: WorkspaceSnapshot) => {
+    const snap = normalizeWorkspaceSnapshot(raw);
+    // Known = builtin toggle keys (incl. virtual ones like cables/sdk_air/sdk_naval)
+    // ∪ live registry layer ids (custom/plugin layers present after bootstrap). Only ids
+    // outside this union — e.g. layers from a since-removed extension — get dropped.
+    const knownIds = new Set([...Object.keys(DEFAULT_ACTIVE_LAYERS), ...getLayers().map((l) => l.id)]);
+    const { applied, dropped } = restoreActiveLayers(snap.activeLayers, knownIds);
+
+    // Replace the toggle record: every currently-known builtin key not in the snapshot
+    // turns OFF, and the snapshot's (registry-validated) ids turn ON. Keeps the full
+    // builtin key set present so existing per-key effects/deps stay defined.
+    setActiveLayers((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const k of Object.keys(prev)) next[k] = false;
+      return { ...next, ...applied } as typeof prev;
+    });
+    setMapProjection(snap.projection);
+    setMapStyle(snap.mapStyle);
+    updateSettings({ appearance: { theme: snap.theme } });
+    setShowLayers(snap.ui.showLayers);
+    setShowMarkets(snap.ui.showMarkets);
+    setShowAlerts(snap.ui.showAlerts);
+    setShowScmPanel(snap.ui.showScmPanel);
+    setShowIntel(snap.ui.showIntel);
+    setShowEntityGraph(snap.ui.showEntityGraph);
+
+    // Camera restore is gated on map readiness inside OsirisMap (the flyTo effect only
+    // runs once mapReady is true), so a fresh timestamp is safe even mid-load.
+    setMapView((v) => ({ ...v, latitude: snap.view.latitude, longitude: snap.view.longitude, zoom: snap.view.zoom }));
+    setFlyToLocation({ lat: snap.view.latitude, lng: snap.view.longitude, zoom: snap.view.zoom, ts: Date.now() });
+
+    setWorkspaceNotice(dropped.length
+      ? `${dropped.length} unavailable layer${dropped.length === 1 ? '' : 's'} skipped: ${dropped.join(', ')}`
+      : null);
+  }, [updateSettings]);
+
+  // Auto-dismiss the dropped-layer notice.
+  useEffect(() => {
+    if (!workspaceNotice) return;
+    const t = setTimeout(() => setWorkspaceNotice(null), 6000);
+    return () => clearTimeout(t);
+  }, [workspaceNotice]);
 
   // Splash screen
   useEffect(() => {
@@ -1301,7 +1367,25 @@ export default function Dashboard() {
       )}
 
       {/* ── Settings ── */}
-      <SettingsPanel open={showSettings} onClose={closeSettings} />
+      <SettingsPanel open={showSettings} onClose={closeSettings} getWorkspaceSnapshot={getWorkspaceSnapshot} onApplyWorkspace={applyWorkspace} />
+
+      {/* ── Workspace restore notice (missing extension layers) ── */}
+      <AnimatePresence>
+        {workspaceNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[700] glass-panel px-4 py-2.5 max-w-[90vw] flex items-center gap-2 pointer-events-auto"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-[var(--gold-primary)] shrink-0" />
+            <span className="text-[10px] font-mono text-white/80 truncate">{workspaceNotice}</span>
+            <button onClick={() => setWorkspaceNotice(null)} className="text-white/40 hover:text-white transition-colors shrink-0">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Entity Graph Panel ── */}
       {showEntityGraph && (
