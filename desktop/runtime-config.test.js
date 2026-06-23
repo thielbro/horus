@@ -37,3 +37,37 @@ test('buildEngineEnv ignores blank saved settings', () => {
   assert.equal(env.SCANNER_KEY, 'env-key');
   assert.equal(env.SCANNER_URL, 'http://127.0.0.1:7700');
 });
+
+test('buildEngineEnv applies launch overrides above defaults', () => {
+  // Bundled backends resolve to dynamic ports + an auto-provisioned scanner key.
+  const env = buildEngineEnv(
+    {},
+    {},
+    { SCANNER_URL: 'http://127.0.0.1:51234', SCANNER_KEY: 'auto-secret', INTEL_URL: 'http://127.0.0.1:51235' },
+  );
+
+  assert.equal(env.SCANNER_URL, 'http://127.0.0.1:51234');
+  assert.equal(env.SCANNER_KEY, 'auto-secret');
+  assert.equal(env.INTEL_URL, 'http://127.0.0.1:51235');
+});
+
+test('buildEngineEnv lets saved settings win over launch overrides', () => {
+  // A user-configured remote backend must never be clobbered by a bundled one.
+  const env = buildEngineEnv(
+    {},
+    { SCANNER_URL: 'https://remote.scanner', SCANNER_KEY: 'user-key' },
+    { SCANNER_URL: 'http://127.0.0.1:51234', SCANNER_KEY: 'auto-secret', INTEL_URL: 'http://127.0.0.1:51235' },
+  );
+
+  assert.equal(env.SCANNER_URL, 'https://remote.scanner');
+  assert.equal(env.SCANNER_KEY, 'user-key');
+  // Intel had no user override, so the bundled one still applies.
+  assert.equal(env.INTEL_URL, 'http://127.0.0.1:51235');
+});
+
+test('buildEngineEnv ignores blank launch overrides', () => {
+  const env = buildEngineEnv({}, {}, { SCANNER_URL: '', INTEL_URL: '   ' });
+
+  assert.equal(env.SCANNER_URL, 'http://127.0.0.1:7700');
+  assert.equal(env.INTEL_URL, 'http://127.0.0.1:4000');
+});

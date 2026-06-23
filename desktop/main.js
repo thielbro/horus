@@ -15,6 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const net = require('net');
 const http = require('http');
+const crypto = require('crypto');
 const { fork } = require('child_process');
 const { buildEngineEnv } = require('./runtime-config');
 
@@ -34,6 +35,15 @@ const MAX_SERVER_RESTARTS = 3;
 const SERVER_RESTART_BASE_MS = 1000;
 const SERVER_RESTART_MAX_MS = 10000;
 const SERVER_STABLE_RESET_MS = 5 * 60 * 1000;
+const MAX_BACKEND_RESTARTS = 3;
+const BACKEND_RESTART_BASE_MS = 1000;
+const BACKEND_RESTART_MAX_MS = 10000;
+
+// Bundled OSINT backends (scanner = RECON, intel = ontology engine). Each is a tiny
+// self-contained Express app forked the same way as the Next server (Electron's node via
+// ELECTRON_RUN_AS_NODE), shipped under resources/<dir> by desktop/after-pack.js.
+let managedBackends = [];
+let backendUrlOverrides = null;
 const MAX_RENDERER_RELOADS = 5;
 const RENDERER_RELOAD_BASE_MS = 500;
 const RENDERER_RELOAD_MAX_MS = 10000;
@@ -116,6 +126,161 @@ function waitForServer(url, timeoutMs = 30000) {
   });
 }
 
+function isNonBlank(value) {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+// Resolve a bundled backend's directory: packaged → resources/<dir>; dev → project/<dir>.
+function backendDir(dirName) {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, dirName)
+    : path.join(__dirname, '..', dirName);
+}
+
+function armBackendStableReset(state) {
+  if (state.stableTimer) clearTimeout(state.stableTimer);
+  state.stableTimer = setTimeout(() => {
+    state.attempts = 0;
+    state.stableTimer = null;
+  }, SERVER_STABLE_RESET_MS);
+  state.stableTimer.unref?.();
+}
+
+function scheduleBackendRestart(state) {
+  if (isQuitting) return;
+  if (state.attempts >= MAX_BACKEND_RESTARTS) {
+    console.error(`[osiris] backend ${state.id} restart limit reached`);
+    return;
+  }
+  const delay = Math.min(BACKEND_RESTART_BASE_MS * 2 ** state.attempts, BACKEND_RESTART_MAX_MS);
+  state.attempts++;
+  setTimeout(() => {
+    forkBackend(state).catch((err) => {
+      console.error(`[osiris] backend ${state.id} restart failed:`, err.message);
+      scheduleBackendRestart(state);
+    });
+  }, delay).unref?.();
+}
+
+// Fork (or re-fork) one backend on its already-assigned port so the URL handed to the Next
+// server stays valid across crashes. Resolves once its /health responds.
+async function forkBackend(state) {
+  if (state.child) return;
+  const entry = path.join(backendDir(state.dirName), state.entry);
+  if (!fs.existsSync(entry)) throw new Error(`backend entry not found: ${entry}`);
+
+  let stdio = ['ignore', 'inherit', 'inherit', 'ipc'];
+  try {
+    const logPath = path.join(app.getPath('userData'), `${state.id}.log`);
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    state.logFd = fs.openSync(logPath, 'a');
+    fs.writeSync(state.logFd, `\n[${new Date().toISOString()}] starting ${state.id} on :${state.port}\n`);
+    stdio = ['ignore', state.logFd, state.logFd, 'ipc'];
+  } catch {
+    /* fall back to inherit */
+  }
+
+  const child = fork(entry, [], {
+    cwd: backendDir(state.dirName),
+    env: {
+      ...process.env,
+      ...state.extraEnv,
+      NODE_ENV: 'production',
+      [state.portEnv]: String(state.port),
+      ELECTRON_RUN_AS_NODE: '1',
+    },
+    stdio,
+  });
+  state.child = child;
+
+  let handled = false;
+  const releaseChild = () => {
+    if (handled) return false;
+    handled = true;
+    state.child = null;
+    if (state.logFd !== null) {
+      try { fs.closeSync(state.logFd); } catch { /* ignore */ }
+      state.logFd = null;
+    }
+    return true;
+  };
+  child.on('error', (err) => {
+    console.error(`[osiris] backend ${state.id} error:`, err);
+    if (releaseChild()) scheduleBackendRestart(state);
+  });
+  child.on('exit', (code) => {
+    console.error(`[osiris] backend ${state.id} exited:`, code);
+    if (releaseChild() && !isQuitting) scheduleBackendRestart(state);
+  });
+
+  await waitForServer(`http://127.0.0.1:${state.port}${state.healthPath}`, 30000);
+  armBackendStableReset(state);
+}
+
+// Start the bundled backends the app should manage and return the engine-env overrides
+// (their resolved URLs + the scanner shared key). Idempotent: a second call (e.g. on a
+// Next-server restart) returns the cached overrides without re-forking. A user-configured
+// SCANNER_URL / INTEL_URL opts that backend out — we don't launch a bundled copy.
+async function startManagedBackends(apiKeys) {
+  if (backendUrlOverrides) return backendUrlOverrides;
+  const overrides = {};
+  const specs = [];
+
+  if (!isNonBlank(apiKeys.SCANNER_URL)) {
+    // The /api/scanner proxy 503s without a key, so provision a shared secret for both
+    // sides when the user hasn't set one — RECON then works zero-config.
+    const key = isNonBlank(apiKeys.SCANNER_KEY) ? apiKeys.SCANNER_KEY.trim() : crypto.randomUUID();
+    specs.push({
+      id: 'scanner', dirName: 'scanner', entry: 'server.js', healthPath: '/health',
+      portEnv: 'PORT', extraEnv: { OSIRIS_KEY: key },
+      urls: (port) => ({ SCANNER_URL: `http://127.0.0.1:${port}`, SCANNER_KEY: key }),
+    });
+  }
+  if (!isNonBlank(apiKeys.INTEL_URL)) {
+    specs.push({
+      id: 'intel', dirName: 'intel', entry: 'server.js', healthPath: '/health',
+      portEnv: 'INTEL_PORT', extraEnv: {},
+      urls: (port) => ({ INTEL_URL: `http://127.0.0.1:${port}` }),
+    });
+  }
+
+  for (const spec of specs) {
+    try {
+      const port = await getFreePort();
+      const state = { ...spec, port, child: null, logFd: null, attempts: 0, stableTimer: null };
+      await forkBackend(state);
+      managedBackends.push(state);
+      Object.assign(overrides, spec.urls(port));
+      console.log(`[osiris] backend ${spec.id} ready on :${port}`);
+    } catch (err) {
+      // Non-fatal: the Next app still loads; only this backend's feature is unavailable.
+      console.error(`[osiris] backend ${spec.id} failed to start:`, err.message);
+    }
+  }
+
+  backendUrlOverrides = overrides;
+  return overrides;
+}
+
+function stopManagedBackends() {
+  for (const state of managedBackends) {
+    if (state.stableTimer) {
+      clearTimeout(state.stableTimer);
+      state.stableTimer = null;
+    }
+    if (state.child) {
+      try { state.child.kill(); } catch { /* ignore */ }
+      state.child = null;
+    }
+    if (state.logFd !== null) {
+      try { fs.closeSync(state.logFd); } catch { /* ignore */ }
+      state.logFd = null;
+    }
+  }
+  managedBackends = [];
+  backendUrlOverrides = null;
+}
+
 function stopEmbeddedServer() {
   if (serverStableResetTimer) {
     clearTimeout(serverStableResetTimer);
@@ -138,6 +303,9 @@ function stopEmbeddedServer() {
     logFd = null;
   }
   embeddedServerUrl = null;
+  // Tear down the bundled backends alongside the server (quit / relaunch only — this is
+  // not called on the Next-server auto-restart path, so backends survive that).
+  stopManagedBackends();
 }
 
 function armServerStableReset() {
@@ -197,7 +365,9 @@ async function startEmbeddedServer() {
 
   // User-configured API keys (Settings panel) override process.env for the engine.
   const apiKeys = readSettingsFile().apiKeys || {};
-  const engineEnv = buildEngineEnv(process.env, apiKeys);
+  // Launch the bundled scanner/intel backends (idempotent) and point the engine at them.
+  const backendOverrides = await startManagedBackends(apiKeys);
+  const engineEnv = buildEngineEnv(process.env, apiKeys, backendOverrides);
 
   serverChild = fork(serverJs, [], {
     cwd: path.dirname(serverJs),

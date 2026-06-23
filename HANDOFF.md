@@ -237,6 +237,40 @@ Safe verification for Claude:
 - `npm run build`
 - `npm run desktop:prepare`
 
+**Desktop — bundled scanner + intel backends — DONE:**
+The two OSINT backends (`scanner/` = RECON port-scan, `intel/` = OpenSanctions/Wikidata
+ontology engine) are now packaged into the installer and run as child processes of the
+Electron app — no Docker needed for the desktop build. They were already *referenced* by
+`runtime-config.js` (`SCANNER_URL`/`INTEL_URL` default to localhost) but nothing launched them.
+- **Packaging:** `desktop/prepare-standalone.js` now also stages `desktop/.staging/{scanner,intel}`
+  with production deps installed (`express`, pure-JS → cross-platform portable). `after-pack.js`
+  copies all three trees (`server`, `scanner`, `intel`) into `resources/*`, each verified to
+  carry its `node_modules` (`next` / `express` / `express`). `npm` install is resilient: it
+  falls back to an isolated user config **and strips `npm_config_allow_scripts`** as a last
+  resort, because a global `~/.npmrc` here sets `allow-scripts=…` which npm 11 rejects for
+  project-scoped installs (would otherwise break the packaged build).
+- **Launch/kill:** `desktop/main.js` forks each backend (Electron's node via
+  `ELECTRON_RUN_AS_NODE`, same as the Next server) on a stored free port during the packaged
+  embedded-server start, waits for its `/health`, and injects the resolved URLs into the engine
+  env via `buildEngineEnv(env, apiKeys, overrides)`. Backends are killed in `stopManagedBackends`
+  (called from `stopEmbeddedServer`, so they die on quit/relaunch but **survive a Next-server
+  auto-restart**), with bounded same-port restart on crash.
+- **Zero-config RECON:** the `/api/scanner` proxy 503s without a key, so when the user hasn't set
+  `SCANNER_KEY` the app auto-provisions an ephemeral `crypto.randomUUID()` shared secret to both
+  the scanner (`OSIRIS_KEY`) and the proxy (`SCANNER_KEY`). A user-set `SCANNER_URL`/`INTEL_URL`
+  opts that backend out (we don't launch a bundled copy; the saved URL wins in `buildEngineEnv`).
+  Dynamic ports mean a packaged app and a Docker stack on 7700/4000 can coexist.
+- **Scope notes:** backends only start in the **packaged** path (`app.isPackaged`); `desktop:dev`
+  and unpackaged `desktop:smoke` don't launch them (dev runs its own / via Docker). intel
+  degrades gracefully with cache + Yente disabled (it still loads ~20k OpenSanctions entries
+  directly). Per-backend logs land in `userData/{scanner,intel}.log`.
+- **Verification:** staged trees boot standalone and answer `/health` (scanner
+  `configured:true`; intel `status:ok` with 19,805 sanctions entries, cache/yente disabled);
+  `node --test desktop/runtime-config.test.js tests/desktop-backends.test.mjs` → 14/14;
+  full suite 64/64; tsc 0; lint 76-warning baseline; `npm run build` + `npm run desktop:prepare`
+  (installs both backends' deps) pass. **Not yet run here:** the full `electron-builder --win`
+  packaging + an end-to-end launch of the installed `.exe` (needs a non-sandboxed Windows build).
+
 ---
 
 ## Phase 2 — the registry migration recipe (follow this for each remaining group)

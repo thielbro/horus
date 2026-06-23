@@ -13,7 +13,12 @@ function cleanSettingsEnv(settings = {}) {
   );
 }
 
-function buildEngineEnv(processEnv = process.env, settings = {}) {
+// Precedence (lowest → highest): processEnv, DESKTOP_ENGINE_DEFAULTS, overrides, settings.
+// `overrides` carries values resolved at launch — e.g. the bundled scanner/intel URLs and
+// the auto-provisioned scanner key — so they replace the static localhost defaults. Saved
+// user settings still win over everything, so an explicitly configured remote backend is
+// never clobbered by a bundled one.
+function buildEngineEnv(processEnv = process.env, settings = {}, overrides = {}) {
   const env = { ...processEnv };
 
   for (const [key, value] of Object.entries(DESKTOP_ENGINE_DEFAULTS)) {
@@ -22,6 +27,7 @@ function buildEngineEnv(processEnv = process.env, settings = {}) {
 
   return {
     ...env,
+    ...cleanSettingsEnv(overrides),
     ...cleanSettingsEnv(settings),
   };
 }
