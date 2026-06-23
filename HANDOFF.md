@@ -146,9 +146,27 @@ done by folding extra style layers + render bindings into existing layers:
   - `npm run build` → pass.
   - `npm run desktop:prepare` → pass, assembled `desktop\.staging\server`.
 
-**Phase 2 is feature-complete except Step 5 cleanup. Phase 3 has a working foundation but
-still needs hardening, UX refinement, and more real plugin/custom-source dogfooding.**
-Next: **Step 5 cleanup**, then **extension hardening**.
+**Phase 2 Step 5 cleanup — DONE:**
+- `OsirisMap`'s static `sources = [...]` list is now raw-only:
+  `war-alerts-targets`, `war-alerts-lines`, `balloons`, and `radiation`.
+- The registry render engine now creates GeoJSON sources for both `styleLayers` and
+  `render` bindings, so render-only registry sources such as `maritime-ships` are owned
+  by the registry instead of the map's legacy source list.
+- Internal registry specs now accept SDK-style `mapSource` alongside the older internal
+  `source` field. The plugin adapter preserves `mapSource` when adapting plugin layer
+  definitions, and the map engine resolves both through `getStyleLayerSource()` /
+  `getRenderBindingSource()`.
+- Regression coverage was added for static-source ownership and SDK `mapSource` alignment.
+- Fresh Step 5 verification:
+  - `node --test tests/performance-stability.test.mjs` → 41/41 pass.
+  - `npx tsc --noEmit` → pass.
+  - `npm run lint` → pass with existing warnings only.
+  - `npm run build` → pass.
+  - `npm run desktop:prepare` → pass, assembled `desktop\.staging\server`.
+
+**Phase 2 is complete. Phase 3 has a working foundation but still needs hardening, UX
+refinement, and more real plugin/custom-source dogfooding.**
+Next: **extension hardening**.
 
 ---
 
@@ -170,17 +188,17 @@ Then in `src/components/OsirisMap.tsx`:
 `mapEngine.ts` already try/catches and logs `[OSIRIS] Registry … failed` instead of crashing,
 so a bad spec shows in the console.
 
-## Remaining Phase 2 work
+## Phase 2 status
 - **Step 4c — DONE** (see Current state above).
 - **Step 4d — DONE** (see Current state above): cctv, surveillance, flights migrated; the
-  `Themed<T>` paint/layout extension landed in `addRegistryLayer`. Only **sigint-news/`news_intel`**
-  remains — deferred until `RegistryLayer` gains a headless/hidden flag (see Current state).
+  `Themed<T>` paint/layout extension landed in `addRegistryLayer`. `news_intel` was completed
+  later in Step 4z after the headless flag landed.
 - **Step 4z — DONE** (see Current state above): network-mesh, sdk-links, day/night terminator,
   conflict-zones, sigint-news, ip-sweep/scan-targets (style) all migrated; added the `headless`
   flag. Only war-alerts (no render) + the imperative ip-sweep/scan render are intentionally raw.
-- **Step 5 — cleanup**: prune migrated source names from the `sources = [...]` array in
-  OsirisMap init; converge the internal `RegistryLayer` with the `@osiris/plugin-sdk` `LayerDef`;
-  delete dead code.
+- **Step 5 — DONE** (see Current state above): migrated source names pruned from
+  `OsirisMap`, registry render sources are engine-owned, and the internal registry accepts
+  SDK-style `mapSource` to reduce plugin adapter friction.
 
 ## After Phase 2 (the original plan)
 Phase 3 — no-code custom sources/layers + JS plugins now has its first working foundation

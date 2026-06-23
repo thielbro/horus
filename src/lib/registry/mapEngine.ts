@@ -4,12 +4,19 @@
 // from that layer's existing data-sync effect (preserving its fine-grained deps).
 
 import type { Map as MaplibreMap } from 'maplibre-gl';
-import type { ThemeMode } from './types';
+import { getRenderBindingSource, getStyleLayerSource, type RegistryLayer, type ThemeMode } from './types';
 import { getLayer } from './store';
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 
 type SetGeo = (source: string, features: any[]) => void;
+
+function registryLayerSources(layer: RegistryLayer): Set<string> {
+  return new Set([
+    ...(layer.styleLayers ?? []).map(getStyleLayerSource),
+    ...(layer.render ?? []).map(getRenderBindingSource),
+  ]);
+}
 
 /**
  * Register a layer's sources + style layers (idempotent — skips ones already present).
@@ -19,20 +26,22 @@ type SetGeo = (source: string, features: any[]) => void;
  */
 export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: ThemeMode = 'core'): void {
   const layer = getLayer(layerId);
-  if (!layer?.styleLayers?.length) return;
+  if (!layer) return;
 
-  for (const sl of layer.styleLayers) {
-    if (!map.getSource(sl.source)) {
+  for (const source of registryLayerSources(layer)) {
+    if (!map.getSource(source)) {
       try {
-        map.addSource(sl.source, { type: 'geojson', data: EMPTY_FC } as any);
+        map.addSource(source, { type: 'geojson', data: EMPTY_FC } as any);
       } catch (err) {
-        console.error('[OSIRIS] Registry source add failed', { layerId, source: sl.source, err });
+        console.error('[OSIRIS] Registry source add failed', { layerId, source, err });
       }
     }
   }
-  for (const sl of layer.styleLayers) {
+  if (!layer.styleLayers?.length) return;
+  for (const sl of layer.styleLayers ?? []) {
     if (map.getLayer(sl.id)) continue;
-    const spec: Record<string, unknown> = { id: sl.id, type: sl.type, source: sl.source };
+    const source = getStyleLayerSource(sl);
+    const spec: Record<string, unknown> = { id: sl.id, type: sl.type, source };
     const paint = typeof sl.paint === 'function' ? sl.paint(theme) : sl.paint;
     const layout = typeof sl.layout === 'function' ? sl.layout(theme) : sl.layout;
     if (paint) spec.paint = paint;
@@ -43,7 +52,7 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
     try {
       map.addLayer(spec as any);
     } catch (err) {
-      console.error('[OSIRIS] Registry layer add failed', { layerId, styleLayerId: sl.id, source: sl.source, err });
+      console.error('[OSIRIS] Registry layer add failed', { layerId, styleLayerId: sl.id, source, err });
     }
   }
 }
@@ -51,11 +60,10 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
 /** Remove a layer's style layers (and its now-unused sources) — used when a dynamic layer is disposed. */
 export function removeRegistryLayer(map: MaplibreMap, layerId: string): void {
   const layer = getLayer(layerId);
-  if (!layer?.styleLayers?.length) return;
-  const sources = new Set<string>();
-  for (const sl of layer.styleLayers) {
+  if (!layer) return;
+  const sources = registryLayerSources(layer);
+  for (const sl of layer.styleLayers ?? []) {
     try { if (map.getLayer(sl.id)) map.removeLayer(sl.id); } catch { /* ignore */ }
-    sources.add(sl.source);
   }
   // Drop sources no other surviving style layer still references.
   const style = (() => { try { return map.getStyle(); } catch { return null; } })();
@@ -99,10 +107,11 @@ export function renderRegistryLayer(
   const layer = getLayer(layerId);
   if (!layer?.render?.length) return;
   for (const binding of layer.render) {
+    const source = getRenderBindingSource(binding);
     try {
-      setGeo(binding.source, binding.toFeatures(data, active));
+      setGeo(source, binding.toFeatures(data, active));
     } catch (err) {
-      console.error('[OSIRIS] Registry render binding failed', { layerId, source: binding.source, err });
+      console.error('[OSIRIS] Registry render binding failed', { layerId, source, err });
     }
   }
 }

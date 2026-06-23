@@ -75,10 +75,14 @@ export interface RegistryLayer {
 /** A value that may be a constant or computed from the active theme (e.g. ghost recolors). */
 export type Themed<T> = T | ((theme: ThemeMode) => T);
 
+/** Internal specs accept both the original `source` name and the plugin SDK's `mapSource`. */
+export type RegistrySourceRef =
+  | { source: string; mapSource?: string }
+  | { source?: string; mapSource: string };
+
 /** A single MapLibre style layer bound to a geojson source. */
-export interface StyleLayerSpec {
+export type StyleLayerSpec = RegistrySourceRef & {
   id: string;
-  source: string;
   type: 'circle' | 'symbol' | 'line' | 'fill' | 'heatmap';
   /** Paint object, or a theme→paint function for ghost-recolored layers (cctv, surveillance). */
   paint?: Themed<Record<string, unknown>>;
@@ -87,12 +91,23 @@ export interface StyleLayerSpec {
   filter?: unknown[];
   minzoom?: number;
   maxzoom?: number;
-}
+};
 
 /** Computes the features for a map source from the data store + active layer state. */
-export interface RenderBinding {
-  source: string;
+export type RenderBinding = RegistrySourceRef & {
   toFeatures: (data: any, active: Record<string, boolean>) => any[];
+};
+
+export function getStyleLayerSource(styleLayer: StyleLayerSpec): string {
+  const source = styleLayer.source ?? styleLayer.mapSource;
+  if (!source) throw new Error('Registry style layer is missing source/mapSource');
+  return source;
+}
+
+export function getRenderBindingSource(binding: RenderBinding): string {
+  const source = binding.source ?? binding.mapSource;
+  if (!source) throw new Error('Registry render binding is missing source/mapSource');
+  return source;
 }
 
 export function resolveColor(c: ResolvableColor, theme: ThemeMode): string {

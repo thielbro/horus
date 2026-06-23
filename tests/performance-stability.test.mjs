@@ -465,3 +465,29 @@ test('delta review map and registry cleanup recommendations stay fixed', () => {
   assert.match(registry, /Number\.isFinite/);
   assert.match(registry, /GeoJSON expects \[lng, lat\]/);
 });
+
+test('registry cleanup keeps source ownership and SDK mapSource contract aligned', () => {
+  const map = file('src/components/OsirisMap.tsx');
+  const mapEngine = file('src/lib/registry/mapEngine.ts');
+  const types = file('src/lib/registry/types.ts');
+  const context = file('src/lib/plugins/context.ts');
+  const sourceList = map.match(/const sources = \[([\s\S]*?)\];/)?.[1] ?? '';
+
+  for (const rawSource of ['war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation']) {
+    assert.ok(sourceList.includes(`'${rawSource}'`), `${rawSource} remains an imperative source`);
+  }
+  for (const registrySource of [
+    'flights', 'military', 'jets', 'private-fl', 'satellites', 'earthquakes', 'gdelt',
+    'gps-jamming', 'day-night', 'cctv', 'surveillance', 'fires', 'weather', 'infrastructure',
+    'maritime', 'maritime-choke', 'maritime-ships', 'live-news', 'sigint-news', 'conflict-zones',
+    'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets',
+    'sdk-entities', 'sdk-links', 'malware-nodes', 'network-mesh',
+  ]) {
+    assert.ok(!sourceList.includes(`'${registrySource}'`), `${registrySource} is registry-owned`);
+  }
+
+  assert.match(types, /mapSource\?: string/);
+  assert.match(mapEngine, /getRenderBindingSource/);
+  assert.match(context, /mapSource: ns\(sl\.mapSource/);
+  assert.doesNotMatch(context, /source: ns\(sl\.mapSource/);
+});

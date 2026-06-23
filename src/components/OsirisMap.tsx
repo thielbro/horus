@@ -3,7 +3,15 @@
 import { useEffect, useRef, useState, useCallback, memo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { addRegistryLayer, renderRegistryLayer, getLayers, useRegistryVersion, updateRegistryLayerTheme } from '@/lib/registry';
+import {
+  addRegistryLayer,
+  renderRegistryLayer,
+  getLayers,
+  useRegistryVersion,
+  updateRegistryLayerTheme,
+  getRenderBindingSource,
+  getStyleLayerSource,
+} from '@/lib/registry';
 import { setHostServices, getHost } from '@/lib/plugins';
 
 interface OsirisMapProps {
@@ -188,7 +196,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createDot(map, 'dot-fire', isGhost ? phantomPurple : '#E65100', 10);
       createDot(map, 'dot-cctv', cameraColor, 10);
 
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','gps-jamming','day-night','cctv','surveillance','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','sigint-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'network-mesh'];
+      const sources = ['war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
 
       // Warning icon generator (parameterized — eliminates 3x copy-paste)
@@ -883,7 +891,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
       addRegistryLayer(map, l.id, themeMode);
       const styleIds = (l.styleLayers ?? []).map(s => s.id);
-      const sources = [...new Set((l.styleLayers ?? []).map(s => s.source))];
+      const sources = [...new Set([
+        ...(l.styleLayers ?? []).map(getStyleLayerSource),
+        ...(l.render ?? []).map(getRenderBindingSource),
+      ])];
       const offs: Array<() => void> = [];
       const inter = l.interaction;
       if (inter) {

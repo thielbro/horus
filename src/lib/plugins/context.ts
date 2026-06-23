@@ -43,20 +43,20 @@ export function createPluginContext(pluginId: string, meta: { name: string; vers
 
   const adaptLayer = (def: any): RegistryLayer => {
     const styleLayers = (def.styleLayers ?? []).map((sl: any) => ({
-      id: ns(sl.id), source: ns(sl.mapSource ?? def.id), type: sl.type,
+      id: ns(sl.id), mapSource: ns(sl.mapSource ?? def.id), type: sl.type,
       paint: sl.paint, layout: sl.layout, filter: sl.filter, minzoom: sl.minzoom, maxzoom: sl.maxzoom,
     }));
     const render = (def.render ?? []).map((rb: any) => {
-      const source = ns(rb.mapSource);
+      const mapSource = ns(rb.mapSource);
       const s = rb.source ?? {};
       if (typeof s.compute === 'function') {
-        return { source, toFeatures: (data: any, active: any) => (active[def.id] ? s.compute(data, active) : []) };
+        return { mapSource, toFeatures: (data: any, active: any) => (active[def.id] ? s.compute(data, active) : []) };
       }
       const bucket: string = s.bucket;
       const decimate: number = s.decimate ?? 1;
       const toF = s.toFeatures;
       return {
-        source,
+        mapSource,
         toFeatures: (data: any, active: any) => {
           if (!active[def.id]) return [];
           let arr: any[] = Array.isArray(data[bucket]) ? data[bucket] : [];
