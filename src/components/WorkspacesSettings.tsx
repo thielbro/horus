@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Layers, Save, Download, Copy, Pencil, Trash2, Check, X } from 'lucide-react';
 import { useSettings, type Workspace } from '@/lib/settings';
 import type { WorkspaceSnapshot } from '@/lib/workspaces';
@@ -34,24 +34,45 @@ export default function WorkspacesSettings({ getCurrentSnapshot, onApply }: Work
   const [newName, setNewName] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [flash, setFlash] = useState<string | null>(null);
+  // One transient message slot: an error persists until the next action; a flash
+  // auto-dismisses. Unifying them avoids a stale flash resurfacing under an error.
+  const [notice, setNotice] = useState<{ kind: 'error' | 'flash'; message: string } | null>(null);
+
+  const fail = (message: string) => setNotice({ kind: 'error', message });
+  const flashMsg = (message: string) => setNotice({ kind: 'flash', message });
+
+  // Auto-dismiss success flashes; errors stay until cleared by the next action.
+  useEffect(() => {
+    if (notice?.kind !== 'flash') return;
+    const t = setTimeout(() => setNotice(null), 3000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   const persist = (next: Workspace[]) => update({ workspaces: next });
 
-  const flashMsg = (msg: string) => {
-    setError(null);
-    setFlash(msg);
+  // Case-insensitive name collision check, optionally ignoring one workspace (for rename).
+  const nameTaken = (name: string, ignoreId?: string) =>
+    workspaces.some((w) => w.id !== ignoreId && w.name.toLowerCase() === name.toLowerCase());
+
+  // Derive a non-colliding "<base> copy" / "<base> copy N" name for duplication.
+  const uniqueName = (base: string) => {
+    let candidate = `${base} copy`;
+    for (let n = 2; nameTaken(candidate); n++) candidate = `${base} copy ${n}`;
+    return candidate;
   };
 
   const saveCurrent = () => {
     const name = newName.trim();
     if (!name) {
-      setError('Name the workspace first.');
+      fail('Name the workspace first.');
+      return;
+    }
+    if (nameTaken(name)) {
+      fail('A workspace with that name already exists.');
       return;
     }
     if (workspaces.length >= MAX_WORKSPACES) {
-      setError(`Workspace limit reached (${MAX_WORKSPACES}).`);
+      fail(`Workspace limit reached (${MAX_WORKSPACES}).`);
       return;
     }
     persist([...workspaces, { id: newId(), name, state: getCurrentSnapshot() }]);
@@ -66,11 +87,11 @@ export default function WorkspacesSettings({ getCurrentSnapshot, onApply }: Work
 
   const duplicate = (ws: Workspace) => {
     if (workspaces.length >= MAX_WORKSPACES) {
-      setError(`Workspace limit reached (${MAX_WORKSPACES}).`);
+      fail(`Workspace limit reached (${MAX_WORKSPACES}).`);
       return;
     }
     const idx = workspaces.findIndex((w) => w.id === ws.id);
-    const copy: Workspace = { id: newId(), name: `${ws.name} copy`, state: ws.state };
+    const copy: Workspace = { id: newId(), name: uniqueName(ws.name), state: ws.state };
     const next = [...workspaces];
     next.splice(idx + 1, 0, copy);
     persist(next);
@@ -91,13 +112,17 @@ export default function WorkspacesSettings({ getCurrentSnapshot, onApply }: Work
   const beginRename = (ws: Workspace) => {
     setRenamingId(ws.id);
     setRenameValue(ws.name);
-    setError(null);
+    setNotice(null);
   };
 
   const commitRename = (ws: Workspace) => {
     const name = renameValue.trim();
     if (!name) {
-      setError('Name cannot be empty.');
+      fail('Name cannot be empty.');
+      return;
+    }
+    if (nameTaken(name, ws.id)) {
+      fail('A workspace with that name already exists.');
       return;
     }
     persist(workspaces.map((w) => (w.id === ws.id ? { ...w, name } : w)));
@@ -131,8 +156,15 @@ export default function WorkspacesSettings({ getCurrentSnapshot, onApply }: Work
         </button>
       </div>
 
-      {error && <p className="text-[9px] font-mono text-[var(--alert-red,#ff5a5a)] mb-2">{error}</p>}
-      {!error && flash && <p className="text-[9px] font-mono text-[var(--alert-green)] mb-2">{flash}</p>}
+      {notice && (
+        <p
+          className={`text-[9px] font-mono mb-2 ${
+            notice.kind === 'error' ? 'text-[var(--alert-red,#ff5a5a)]' : 'text-[var(--alert-green)]'
+          }`}
+        >
+          {notice.message}
+        </p>
+      )}
 
       {workspaces.length === 0 ? (
         <p className="text-[10px] font-mono text-white/30 leading-relaxed">

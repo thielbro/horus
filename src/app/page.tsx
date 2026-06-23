@@ -282,6 +282,8 @@ export default function Dashboard() {
     setWorkspaceNotice(dropped.length
       ? `${dropped.length} unavailable layer${dropped.length === 1 ? '' : 's'} skipped: ${dropped.join(', ')}`
       : null);
+    // Deps are complete: every other reference is a stable useState setter, a module-level
+    // constant (DEFAULT_ACTIVE_LAYERS), or an import (getLayers / normalize / restore).
   }, [updateSettings]);
 
   // Auto-dismiss the dropped-layer notice.
