@@ -102,5 +102,5 @@ if (!fs.existsSync(path.join(out, 'server.js'))) fail('assembled tree has no ser
 console.log('[prepare-standalone] assembled →', path.relative(root, out));
 
 // Bundled OSINT backends. intel additionally needs sources.js (required by server.js).
-stageBackend('scanner', ['server.js', 'package.json', 'package-lock.json']);
+stageBackend('scanner', ['server.js', 'portscan.js', 'package.json', 'package-lock.json']);
 stageBackend('intel', ['server.js', 'sources.js', 'package.json', 'package-lock.json']);

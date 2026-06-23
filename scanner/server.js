@@ -18,7 +18,9 @@
  * test. All data sources are public.
  *
  * Endpoints (all GET, all require ?key=&target=):
- *   /scan/quick       bounded TCP-connect port scan (top common ports)
+ *   /scan/quick       bounded TCP-connect port scan (~120 curated common ports)
+ *   /scan/ports       top ~1000 ports (well-known 1-1024 + common service ports)
+ *   /scan/deep        full 1-65535 sweep (bounded by a 4-minute deadline)
  *   /scan/ssl         TLS certificate + protocol/cipher
  *   /scan/headers     HTTP response headers
  *   /scan/rdns        reverse DNS
@@ -130,69 +132,10 @@ async function validateTarget(raw) {
 // §2 — PORT SCAN (bounded TCP connect)
 // ════════════════════════════════════════════════════
 
-// Curated common ports (~120) — deliberately NOT the full 65,535 range.
-const COMMON_PORTS = {
-  21: 'ftp', 22: 'ssh', 23: 'telnet', 25: 'smtp', 53: 'dns', 80: 'http',
-  81: 'http-alt', 88: 'kerberos', 110: 'pop3', 111: 'rpcbind', 135: 'msrpc',
-  139: 'netbios-ssn', 143: 'imap', 161: 'snmp', 389: 'ldap', 443: 'https',
-  445: 'smb', 465: 'smtps', 514: 'syslog', 515: 'printer', 587: 'submission',
-  631: 'ipp', 636: 'ldaps', 873: 'rsync', 990: 'ftps', 993: 'imaps',
-  995: 'pop3s', 1025: 'msrpc', 1080: 'socks', 1194: 'openvpn', 1433: 'mssql',
-  1521: 'oracle', 1723: 'pptp', 1883: 'mqtt', 2049: 'nfs', 2082: 'cpanel',
-  2083: 'cpanel-ssl', 2086: 'whm', 2087: 'whm-ssl', 2095: 'webmail',
-  2096: 'webmail-ssl', 2181: 'zookeeper', 2375: 'docker', 2376: 'docker-ssl',
-  3000: 'node', 3128: 'squid', 3306: 'mysql', 3389: 'rdp', 3478: 'stun',
-  4444: 'metasploit', 5000: 'upnp', 5432: 'postgres', 5601: 'kibana',
-  5672: 'amqp', 5900: 'vnc', 5985: 'winrm', 5986: 'winrm-ssl', 6379: 'redis',
-  6443: 'kubernetes', 7001: 'weblogic', 7077: 'spark', 8000: 'http-alt',
-  8008: 'http-alt', 8080: 'http-proxy', 8081: 'http-alt', 8086: 'influxdb',
-  8088: 'http-alt', 8443: 'https-alt', 8888: 'http-alt', 9000: 'php-fpm',
-  9092: 'kafka', 9200: 'elasticsearch', 9300: 'elasticsearch', 9418: 'git',
-  9999: 'http-alt', 10000: 'webmin', 11211: 'memcached', 15672: 'rabbitmq',
-  27017: 'mongodb', 27018: 'mongodb', 5984: 'couchdb', 8200: 'vault',
-  9090: 'prometheus', 3001: 'http-alt', 4040: 'spark-ui', 50070: 'hadoop',
-};
+// Port-scan logic lives in ./portscan.js (net-only, no express) so it's unit-testable.
+const { portScan, buildTopPorts, buildAllPorts } = require('./portscan');
 
-const PORT_CONNECT_TIMEOUT = 1500;
-const PORT_SCAN_CONCURRENCY = 100;
 const MAX_WHOIS_BYTES = 64 * 1024;
-
-function probePort(ip, port, timeout = PORT_CONNECT_TIMEOUT) {
-  return new Promise((resolve) => {
-    const sock = new net.Socket();
-    let done = false;
-    const finish = (open) => {
-      if (done) return;
-      done = true;
-      sock.destroy();
-      resolve(open);
-    };
-    sock.setTimeout(timeout);
-    sock.once('connect', () => finish(true));
-    sock.once('timeout', () => finish(false));
-    sock.once('error', () => finish(false));
-    sock.connect(port, ip);
-  });
-}
-
-async function portScan(ip) {
-  const ports = Object.keys(COMMON_PORTS).map(Number);
-  const open = [];
-  let idx = 0;
-  async function worker() {
-    while (idx < ports.length) {
-      const port = ports[idx++];
-      if (await probePort(ip, port)) {
-        open.push({ port, state: 'open', service: COMMON_PORTS[port] || 'unknown' });
-      }
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(PORT_SCAN_CONCURRENCY, ports.length) }, worker),
-  );
-  open.sort((a, b) => a.port - b.port);
-  return open;
-}
 
 // ════════════════════════════════════════════════════
 // §3 — OTHER RECON HELPERS
@@ -385,14 +328,39 @@ function scan(needsIp, fn) {
   };
 }
 
+// Precompute the larger profiles once.
+const PORTS_TOP = buildTopPorts();
+const PORTS_ALL = buildAllPorts();
+
+function portScanResponse(v, scanType, result, t0) {
+  return {
+    target: v.host, host: v.host, ip: v.ip, scan_type: scanType,
+    duration: `${((Date.now() - t0) / 1000).toFixed(1)}s`,
+    open_count: result.open.length, ports: result.open,
+    ports_scanned: result.scanned,
+    ...(result.truncated ? { truncated: true } : {}),
+  };
+}
+
 app.get('/scan/quick', scan(true, async (v) => {
   const t0 = Date.now();
-  const ports = await portScan(v.ip);
-  return {
-    target: v.host, host: v.host, ip: v.ip, scan_type: 'quick',
-    duration: `${((Date.now() - t0) / 1000).toFixed(1)}s`,
-    open_count: ports.length, ports,
-  };
+  const result = await portScan(v.ip);
+  return portScanResponse(v, 'quick', result, t0);
+}));
+
+// Top ~1000 ports (well-known 1-1024 + common service ports). ~5-15s.
+app.get('/scan/ports', scan(true, async (v) => {
+  const t0 = Date.now();
+  const result = await portScan(v.ip, PORTS_TOP, { concurrency: 250, timeout: 1200 });
+  return portScanResponse(v, 'ports', result, t0);
+}));
+
+// Full 1-65535 sweep. Slow; capped at a 4-minute overall deadline (returns partial
+// results with truncated:true if the host firewalls most ports).
+app.get('/scan/deep', scan(true, async (v) => {
+  const t0 = Date.now();
+  const result = await portScan(v.ip, PORTS_ALL, { concurrency: 500, timeout: 1000, deadlineMs: 240000 });
+  return portScanResponse(v, 'deep', result, t0);
 }));
 
 app.get('/scan/ssl', scan(false, (v) => tlsInfo(v.host)));
@@ -407,27 +375,31 @@ app.get('/scan/whois', scan(false, (v) => whois(v.host)));
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'osiris-scanner', configured: !!OSIRIS_KEY }));
 app.get('/', (_req, res) => res.json({
   service: 'osiris-scanner',
-  endpoints: ['/scan/quick', '/scan/ssl', '/scan/headers', '/scan/tech', '/scan/subdomains', '/scan/rdns', '/scan/geoloc', '/scan/vuln', '/scan/whois'],
+  endpoints: ['/scan/quick', '/scan/ports', '/scan/deep', '/scan/ssl', '/scan/headers', '/scan/tech', '/scan/subdomains', '/scan/rdns', '/scan/geoloc', '/scan/vuln', '/scan/whois'],
 }));
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[SCANNER] OSIRIS RECON backend on port ${PORT}`);
-  if (!OSIRIS_KEY) console.warn('[SCANNER] WARNING: OSIRIS_KEY not set — all requests will be rejected. Set it (and the app SCANNER_KEY to match).');
-});
+// Only bind/listen when run as the entrypoint (node server.js or forked by Electron).
+// When require()'d by a test, we just expose the internals below without opening a socket.
+if (require.main === module) {
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[SCANNER] OSIRIS RECON backend on port ${PORT}`);
+    if (!OSIRIS_KEY) console.warn('[SCANNER] WARNING: OSIRIS_KEY not set — all requests will be rejected. Set it (and the app SCANNER_KEY to match).');
+  });
 
-function shutdown(signal) {
-  console.log(`[SCANNER] ${signal} received; shutting down`);
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 5000).unref();
+  const shutdown = (signal) => {
+    console.log(`[SCANNER] ${signal} received; shutting down`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 5000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('unhandledRejection', (err) => {
+    console.error('[SCANNER] Unhandled rejection:', err);
+    shutdown('unhandledRejection');
+  });
+  process.on('uncaughtException', (err) => {
+    console.error('[SCANNER] Uncaught exception:', err);
+    shutdown('uncaughtException');
+  });
 }
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('unhandledRejection', (err) => {
-  console.error('[SCANNER] Unhandled rejection:', err);
-  shutdown('unhandledRejection');
-});
-process.on('uncaughtException', (err) => {
-  console.error('[SCANNER] Uncaught exception:', err);
-  shutdown('uncaughtException');
-});

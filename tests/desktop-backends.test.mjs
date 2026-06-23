@@ -55,7 +55,7 @@ test('Electron main waits for backend health and tears them down on quit', () =>
 test('prepare-standalone stages both backends with production deps', () => {
   const prep = file('desktop/prepare-standalone.js');
 
-  assert.match(prep, /stageBackend\('scanner', \['server\.js', 'package\.json', 'package-lock\.json'\]\)/);
+  assert.match(prep, /stageBackend\('scanner', \['server\.js', 'portscan\.js', 'package\.json', 'package-lock\.json'\]\)/);
   assert.match(prep, /stageBackend\('intel', \['server\.js', 'sources\.js', 'package\.json', 'package-lock\.json'\]\)/);
   // Production-only install, verified by express landing in node_modules.
   assert.match(prep, /--omit=dev/);

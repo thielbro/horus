@@ -9,6 +9,10 @@ import { validateHost, isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 const SCANNER_URL = process.env.SCANNER_URL || '';
 const SCANNER_KEY = process.env.SCANNER_KEY || '';
 const VALIDATE_HOST_TIMEOUT_MS = 5000;
+// The desktop app sets this for its bundled, local, single-user scanner. It un-gates the
+// heavier port scans (`ports`, `deep`) that stay disabled on the public web deployment,
+// where an open proxy could be abused to scan arbitrary targets from the server's IP.
+const ALLOW_DEEP = process.env.SCANNER_ALLOW_DEEP === '1';
 
 async function withDeadline<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -30,8 +34,12 @@ async function withDeadline<T>(promise: Promise<T>, timeoutMs: number, label: st
 // `src/lib/ssrf-guard.ts`.
 
 // ── ALLOWED SCAN TYPES (safe subset only) ──
-const ALLOWED_SCANS: Record<string, { endpoint: string; timeout: number }> = {
+// `local: true` entries are only permitted when SCANNER_ALLOW_DEEP=1 (the bundled desktop
+// scanner). Their timeouts are generous because they scan far more ports.
+const ALLOWED_SCANS: Record<string, { endpoint: string; timeout: number; local?: boolean }> = {
   quick:      { endpoint: '/scan/quick',      timeout: 15000 },
+  ports:      { endpoint: '/scan/ports',      timeout: 45000,  local: true },
+  deep:       { endpoint: '/scan/deep',       timeout: 300000, local: true },
   ssl:        { endpoint: '/scan/ssl',        timeout: 10000 },
   headers:    { endpoint: '/scan/headers',    timeout: 10000 },
   rdns:       { endpoint: '/scan/rdns',       timeout: 8000  },
@@ -42,12 +50,9 @@ const ALLOWED_SCANS: Record<string, { endpoint: string; timeout: number }> = {
   vuln:       { endpoint: '/scan/vuln',       timeout: 10000 },
 };
 
-// REMOVED from public access: deep, ports, banner, traceroute
-// These are dangerous in an unauthenticated context:
-//   deep     → scans 65,535 ports (DDoS amplifier)
-//   banner   → harvests software versions from targets using our IP
-//   traceroute → reveals hosting infrastructure
-//   ports    → arbitrary port range scanning
+// Still removed from public access (no backend endpoint either): banner, traceroute —
+// they harvest software versions / reveal hosting infra using our IP. `ports`/`deep`
+// are now allowed only for the local desktop scanner (see ALLOW_DEEP above).
 
 export async function GET(req: Request) {
   // 1. Check scanner is configured
@@ -92,13 +97,16 @@ export async function GET(req: Request) {
     }, { status: 403 });
   }
 
-  // 5. Validate scan type (only safe scans allowed)
+  // 5. Validate scan type (only safe scans allowed; heavy scans require the local scanner)
+  const available = Object.keys(ALLOWED_SCANS).filter((k) => !ALLOWED_SCANS[k].local || ALLOW_DEEP);
   const scanConfig = ALLOWED_SCANS[scanType];
-  if (!scanConfig) {
+  if (!scanConfig || (scanConfig.local && !ALLOW_DEEP)) {
     return NextResponse.json({
       error: 'Scan type not available',
-      detail: `"${scanType}" is restricted. Available: ${Object.keys(ALLOWED_SCANS).join(', ')}`,
-      available_scans: Object.keys(ALLOWED_SCANS),
+      detail: scanConfig?.local
+        ? `"${scanType}" is only available in the OSIRIS desktop app (local scanner).`
+        : `"${scanType}" is restricted. Available: ${available.join(', ')}`,
+      available_scans: available,
     }, { status: 403 });
   }
 

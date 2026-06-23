@@ -753,10 +753,24 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
         
         {/* Secondary Controls */}
         {activeTab === 'scanner' && (
-          <select value={scanType} onChange={e => setScanType(e.target.value)}
-            className="bg-[var(--bg-primary)]/60 border border-[var(--border-primary)] rounded-lg px-2 py-1.5 text-[10px] font-mono text-[var(--text-muted)] outline-none w-full">
-            <option value="quick">QUICK SCAN</option><option value="deep">DEEP SCAN</option><option value="ports">TOP 1000 PORTS</option>
-          </select>
+          <div className="space-y-1">
+            <select value={scanType} onChange={e => setScanType(e.target.value)}
+              className="bg-[var(--bg-primary)]/60 border border-[var(--border-primary)] rounded-lg px-2 py-1.5 text-[10px] font-mono text-[var(--text-muted)] outline-none w-full">
+              <option value="quick">QUICK SCAN — ~120 common ports</option>
+              <option value="ports">TOP 1000 PORTS — well-known + common</option>
+              <option value="deep">DEEP SCAN — full 1-65535</option>
+            </select>
+            {scanType === 'deep' && (
+              <p className="text-[9px] font-mono text-[var(--text-muted)]/70 px-1">
+                Full-range sweep — can take a few minutes; partial results return if the host firewalls most ports.
+              </p>
+            )}
+            {scanType === 'ports' && (
+              <p className="text-[9px] font-mono text-[var(--text-muted)]/70 px-1">
+                ~1000 ports — typically 5-15 seconds.
+              </p>
+            )}
+          </div>
         )}
         {(activeTab === 'sweep' || activeTab === 'vuln') && (
           <div className="flex items-center justify-between bg-[var(--bg-primary)]/60 border border-[var(--border-primary)] rounded-lg p-1">

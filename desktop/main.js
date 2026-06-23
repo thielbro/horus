@@ -233,7 +233,9 @@ async function startManagedBackends(apiKeys) {
     specs.push({
       id: 'scanner', dirName: 'scanner', entry: 'server.js', healthPath: '/health',
       portEnv: 'PORT', extraEnv: { OSIRIS_KEY: key },
-      urls: (port) => ({ SCANNER_URL: `http://127.0.0.1:${port}`, SCANNER_KEY: key }),
+      // SCANNER_ALLOW_DEEP un-gates the heavier ports/deep scans for the bundled local
+      // scanner only (the public web build never sets it).
+      urls: (port) => ({ SCANNER_URL: `http://127.0.0.1:${port}`, SCANNER_KEY: key, SCANNER_ALLOW_DEEP: '1' }),
     });
   }
   if (!isNonBlank(apiKeys.INTEL_URL)) {
