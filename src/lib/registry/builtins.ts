@@ -360,7 +360,10 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
         toFeatures: (data, active) => {
           const items = data.news || [];
           return (active.news_intel && items.length > 0)
-            ? items.filter((n: any) => n.coords?.length === 2).map((n: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [n.coords[1], n.coords[0]] }, properties: { title: n.title, source: n.source, risk_score: n.risk_score, link: n.link } }))
+            // Upstream news coords are [lat, lng]; GeoJSON expects [lng, lat].
+            ? items
+                .filter((n: any) => Array.isArray(n.coords) && n.coords.length === 2 && n.coords.every((c: any) => Number.isFinite(c)))
+                .map((n: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [n.coords[1], n.coords[0]] }, properties: { title: n.title, source: n.source, risk_score: n.risk_score, link: n.link } }))
             : [];
         },
       },

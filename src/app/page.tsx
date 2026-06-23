@@ -17,6 +17,7 @@ import GlobalStatusBar from '@/components/GlobalStatusBar';
 import LiveAlerts from '@/components/LiveAlerts';
 import { useSettings, applyAppearance } from '@/lib/settings';
 import { useFeedEngine } from '@/lib/registry';
+import { setHostServices, bootstrapExtensions } from '@/lib/plugins';
 
 const OsirisMap = dynamic(() => import('@/components/OsirisMap'), { ssr: false });
 const LayerPanel = dynamic(() => import('@/components/LayerPanel'));
@@ -117,6 +118,9 @@ function capDataPayload(payload: Record<string, any>): Record<string, any> {
 
 export default function Dashboard() {
   const [data, setData] = useState<Record<string, any>>({});
+  // Live mirror of `data` for the plugin host's getData() (avoids stale closures).
+  const dataRef = useRef<Record<string, any>>({});
+  dataRef.current = data;
 
   const [backendStatus, setBackendStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [mapView, setMapView] = useState({ zoom: 2.5, latitude: 20, longitude: 0 });
@@ -438,6 +442,21 @@ export default function Dashboard() {
       setShowEntityGraph(true);
     }
   }, []);
+
+  // ── Plugin / custom-source host services + bootstrap ──
+  useEffect(() => {
+    setHostServices({
+      getData: () => dataRef.current as Record<string, unknown[]>,
+      setData: (buckets) => setData(prev => ({ ...prev, ...buckets })),
+      flyTo: ({ lat, lng, zoom }) => { setFlyToLocation({ lat, lng, ts: Date.now() }); if (zoom != null) setMapView(v => ({ ...v, latitude: lat, longitude: lng, zoom })); },
+      openCamera: (cam) => setActiveCamera(cam),
+      openLiveFeed: (url, name) => { setLiveFeedUrl(url); setLiveFeedName(name || ''); setLiveFeedEmbedAllowed(true); },
+      openEntityGraph: (ref) => { setEntityGraphTarget({ type: ref.type, id: ref.id, label: ref.label, properties: ref.properties }); setShowEntityGraph(true); },
+    });
+  }, []);
+
+  // Register persisted custom sources + activate enabled plugins once settings are hydrated.
+  useEffect(() => { if (settingsReady) void bootstrapExtensions(); }, [settingsReady]);
 
   // Global handler for map popups to manually open the Intel Graph
   useEffect(() => {

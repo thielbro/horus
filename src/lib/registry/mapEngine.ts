@@ -48,6 +48,47 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
   }
 }
 
+/** Remove a layer's style layers (and its now-unused sources) — used when a dynamic layer is disposed. */
+export function removeRegistryLayer(map: MaplibreMap, layerId: string): void {
+  const layer = getLayer(layerId);
+  if (!layer?.styleLayers?.length) return;
+  const sources = new Set<string>();
+  for (const sl of layer.styleLayers) {
+    try { if (map.getLayer(sl.id)) map.removeLayer(sl.id); } catch { /* ignore */ }
+    sources.add(sl.source);
+  }
+  // Drop sources no other surviving style layer still references.
+  const style = (() => { try { return map.getStyle(); } catch { return null; } })();
+  const stillUsed = new Set((style?.layers ?? []).map((l: any) => l.source).filter(Boolean));
+  for (const src of sources) {
+    if (!stillUsed.has(src)) {
+      try { if (map.getSource(src)) map.removeSource(src); } catch { /* ignore */ }
+    }
+  }
+}
+
+/** Re-resolve themed paint/layout values without tearing down style layers or sources. */
+export function updateRegistryLayerTheme(map: MaplibreMap, layerId: string, theme: ThemeMode = 'core'): void {
+  const layer = getLayer(layerId);
+  if (!layer?.styleLayers?.length) return;
+
+  for (const sl of layer.styleLayers) {
+    if (!map.getLayer(sl.id)) continue;
+    const paint = typeof sl.paint === 'function' ? sl.paint(theme) : sl.paint;
+    const layout = typeof sl.layout === 'function' ? sl.layout(theme) : sl.layout;
+    if (paint) {
+      for (const [key, value] of Object.entries(paint)) {
+        try { map.setPaintProperty(sl.id, key, value as any); } catch { /* ignore bad plugin paint */ }
+      }
+    }
+    if (layout) {
+      for (const [key, value] of Object.entries(layout)) {
+        try { map.setLayoutProperty(sl.id, key, value as any); } catch { /* ignore bad plugin layout */ }
+      }
+    }
+  }
+}
+
 /** Push a layer's render-binding features into its map sources via setGeo. */
 export function renderRegistryLayer(
   setGeo: SetGeo,

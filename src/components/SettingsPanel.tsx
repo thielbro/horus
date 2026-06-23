@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Palette, Globe, KeyRound, RotateCw, Save, Monitor } from 'lucide-react';
 import { useSettings, type ApiKeys, type CustomThemeTokens } from '@/lib/settings';
+import ExtensionsSettings from '@/components/ExtensionsSettings';
 
 interface SettingsPanelProps {
   open: boolean;
@@ -225,6 +226,9 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   </div>
                 )}
               </section>
+
+              {/* ── Extensions: custom sources + plugins ── */}
+              <ExtensionsSettings />
             </div>
           </motion.div>
         </motion.div>

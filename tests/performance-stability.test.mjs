@@ -445,7 +445,23 @@ test('bounded-input and lifecycle fixes remain wired', () => {
 
 test('map popups and computed meshes guard malformed or oversized data', () => {
   const map = file('src/components/OsirisMap.tsx');
+  const registry = file('src/lib/registry/builtins.ts');
   assert.match(map, /safeJsonArray/);
-  assert.match(map, /MAX_MESH_NODES/);
+  assert.match(registry, /MAX_MESH_NODES/);
   assert.match(map, /Map init failed/);
+});
+
+test('delta review map and registry cleanup recommendations stay fixed', () => {
+  const map = file('src/components/OsirisMap.tsx');
+  const layerPanel = file('src/components/LayerPanel.tsx');
+  const registry = file('src/lib/registry/builtins.ts');
+  const mapEngine = file('src/lib/registry/mapEngine.ts');
+
+  assert.doesNotMatch(layerPanel, /ALL_LAYERS/);
+  assert.match(map, /onEntityClickRef/);
+  assert.match(map, /popupRef\.current\?\.remove\(\);[\s\S]*map\.remove\(\)/);
+  assert.doesNotMatch(map, /\[mapReady, registryVersion, theme, onEntityClick\]/);
+  assert.match(mapEngine, /updateRegistryLayerTheme/);
+  assert.match(registry, /Number\.isFinite/);
+  assert.match(registry, /GeoJSON expects \[lng, lat\]/);
 });

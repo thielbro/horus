@@ -38,6 +38,15 @@ export interface Workspace {
   state: Record<string, unknown>;
 }
 
+/** A persisted JS plugin (trusted, in-process). `code` is the plugin's ES-module source. */
+export interface InstalledPlugin {
+  id: string;
+  name: string;
+  version: string;
+  code: string;
+  enabled: boolean;
+}
+
 export interface OsirisSettings {
   version: number;
   appearance: {
@@ -50,6 +59,10 @@ export interface OsirisSettings {
   };
   apiKeys: ApiKeys;
   workspaces: Workspace[];
+  /** Installed JS plugins (see src/lib/plugins). */
+  plugins: InstalledPlugin[];
+  /** No-code custom sources — persisted as serializable CustomSourceSpec objects. */
+  customSources: unknown[];
 }
 
 export const DEFAULT_SETTINGS: OsirisSettings = {
@@ -70,6 +83,8 @@ export const DEFAULT_SETTINGS: OsirisSettings = {
   },
   apiKeys: {},
   workspaces: [],
+  plugins: [],
+  customSources: [],
 };
 
 export type DeepPartial<T> = {

@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useCallback, memo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { addRegistryLayer, renderRegistryLayer } from '@/lib/registry';
+import { addRegistryLayer, renderRegistryLayer, getLayers, useRegistryVersion, updateRegistryLayerTheme } from '@/lib/registry';
+import { setHostServices, getHost } from '@/lib/plugins';
 
 interface OsirisMapProps {
   data: any;
@@ -38,8 +39,13 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
+  const onEntityClickRef = useRef(onEntityClick);
+  const themeRef = useRef(theme);
   const [mapReady, setMapReady] = useState(false);
   const prevStyleRef = useRef(mapStyle);
+
+  useEffect(() => { onEntityClickRef.current = onEntityClick; }, [onEntityClick]);
+  useEffect(() => { themeRef.current = theme; }, [theme]);
 
   // Create aircraft icon on canvas (for WebGL symbol layer)
   const createIcon = useCallback((map: maplibregl.Map, id: string, color: string, size: number) => {
@@ -819,6 +825,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     return () => {
       isMounted = false;
       resizeObserver.disconnect();
+      popupRef.current?.remove();
       map.remove();
       mapRef.current = null;
     };
@@ -846,6 +853,87 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     if (!map) return;
     ids.forEach(id => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none'); });
   }, []);
+
+  // ── Dynamic layers (custom sources + plugins) ──
+  // Publish the live map to the plugin host so plugin ctx.map/flyTo work.
+  const registryVersion = useRegistryVersion();
+  useEffect(() => { if (mapReady && mapRef.current) setHostServices({ map: mapRef.current }); }, [mapReady]);
+
+  // Add/remove dynamic layers and wire their declarative interactions as the registry changes.
+  // `ref` is the registry layer object — when a plugin/source is replaced (same id, new def),
+  // the reference changes, so we tear the old one down and re-add rather than skipping it.
+  const dynState = useRef<Map<string, { ref: any; styleIds: string[]; sources: string[]; offs: Array<() => void> }>>(new Map());
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const themeMode = themeRef.current === 'ghost' ? 'ghost' : 'core';
+    const dyn = getLayers().filter(l => l.origin === 'custom' || l.origin === 'plugin');
+    const live = new Map(dyn.map(l => [l.id, l]));
+
+    const teardownEntry = (st: { styleIds: string[]; sources: string[]; offs: Array<() => void> }) => {
+      st.offs.forEach(o => { try { o(); } catch { /* ignore */ } });
+      for (const sid of st.styleIds) { try { if (map.getLayer(sid)) map.removeLayer(sid); } catch { /* ignore */ } }
+      for (const src of st.sources) { try { if (map.getSource(src)) map.removeSource(src); } catch { /* ignore */ } }
+    };
+
+    for (const l of dyn) {
+      const prev = dynState.current.get(l.id);
+      if (prev && prev.ref === l) continue; // unchanged
+      if (prev) { teardownEntry(prev); dynState.current.delete(l.id); } // replaced → refresh
+
+      addRegistryLayer(map, l.id, themeMode);
+      const styleIds = (l.styleLayers ?? []).map(s => s.id);
+      const sources = [...new Set((l.styleLayers ?? []).map(s => s.source))];
+      const offs: Array<() => void> = [];
+      const inter = l.interaction;
+      if (inter) {
+        for (const sid of styleIds) {
+          const onClick = (e: any) => {
+            const props = e.features?.[0]?.properties ?? {};
+            if (inter.kind === 'popup') {
+              popupRef.current?.remove();
+              popupRef.current = new maplibregl.Popup({ closeButton: true, maxWidth: '420px', offset: 14 }).setLngLat(e.lngLat).setHTML(inter.html(props)).addTo(map);
+            } else if (inter.kind === 'custom') {
+              inter.onClick({ lng: e.lngLat.lng, lat: e.lngLat.lat, layerId: l.id, props });
+            } else if (inter.kind === 'entityGraph') {
+              const ref = inter.map(props);
+              (onEntityClickRef.current ?? getHost().openEntityGraph)(ref);
+            } else if (inter.kind === 'camera') {
+              getHost().openCamera(inter.toCamera ? inter.toCamera(props) : props);
+            } else if (inter.kind === 'liveFeed') {
+              getHost().openLiveFeed(inter.url(props), inter.name?.(props));
+            }
+          };
+          const onEnter = () => { map.getCanvas().style.cursor = 'pointer'; };
+          const onLeave = () => { map.getCanvas().style.cursor = ''; };
+          map.on('click', sid, onClick); map.on('mouseenter', sid, onEnter); map.on('mouseleave', sid, onLeave);
+          offs.push(() => { map.off('click', sid, onClick); map.off('mouseenter', sid, onEnter); map.off('mouseleave', sid, onLeave); });
+        }
+      }
+      dynState.current.set(l.id, { ref: l, styleIds, sources, offs });
+    }
+
+    // Tear down any dynamic layer no longer in the registry.
+    for (const [id, st] of [...dynState.current]) {
+      if (live.has(id)) continue;
+      teardownEntry(st);
+      dynState.current.delete(id);
+    }
+  }, [mapReady, registryVersion]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const themeMode = theme === 'ghost' ? 'ghost' : 'core';
+    for (const id of dynState.current.keys()) updateRegistryLayerTheme(mapRef.current, id, themeMode);
+  }, [mapReady, theme]);
+
+  // Render dynamic layers' data on data/active/registry change.
+  useEffect(() => {
+    if (!mapReady) return;
+    for (const l of getLayers()) {
+      if (l.origin === 'custom' || l.origin === 'plugin') renderRegistryLayer(setGeo, l.id, data, activeLayers);
+    }
+  }, [mapReady, registryVersion, data, activeLayers, setGeo]);
 
   // Flight data → GeoJSON (GPU rendered, registry-driven with per-layer decimation)
   useEffect(() => {

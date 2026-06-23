@@ -7,7 +7,7 @@ import {
   CloudLightning, Radiation, Tv, Anchor, Ship, Newspaper,
   Network, Share2, Radio, Eye
 } from 'lucide-react';
-import { getGroups, getLayersForGroup, resolveColor, resolveIcon } from '@/lib/registry';
+import { getGroups, getLayersForGroup, resolveColor, resolveIcon, useRegistryVersion } from '@/lib/registry';
 
 interface LayerPanelProps {
   data: any;
@@ -45,9 +45,10 @@ function Shield(props: any) {
 
 function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'core', setTheme }: LayerPanelProps) {
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
+  // Re-read the registry when custom sources / plugins register or remove layers.
+  useRegistryVersion();
 
   const LAYER_GROUPS = getLayerGroups(theme);
-  const ALL_LAYERS = LAYER_GROUPS.flatMap(g => g.layers);
 
   const toggle = (key: string) => setActiveLayers((prev: any) => ({ ...prev, [key]: !prev[key] }));
   

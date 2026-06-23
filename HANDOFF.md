@@ -4,9 +4,10 @@
 original `osiris` repo as a clean snapshot to escape worktree/branch trouble. The full
 phase-by-phase history lives in the original osiris repo; here it's **squashed into the
 initial commit**, so the commit hashes named below (e.g. `9b23f2f`, `704c366`) refer to
-that original repo — `git log` here shows one commit. The tree is clean; **continue at
-Phase 2 Step 4c** (see below). Run `npm install` first (node_modules was not copied).
-Read this top-to-bottom, then skim `git log`.
+that original repo. Local commits after the initial snapshot carry the continued registry
+and desktop work. After the latest commit, the tree should be clean; **continue with Phase
+2 Step 5 cleanup plus Phase 3 extension hardening/polish** (see below). Dependencies are
+installed in this workspace. Read this top-to-bottom, then skim `git log`.
 
 > ⚠️ Read `AGENTS.md` first: this is Next.js 16 with breaking changes — consult
 > `node_modules/next/dist/docs/` before touching Next config/conventions.
@@ -55,8 +56,8 @@ plugins** (no sandbox — see decisions), custom themes, saved layouts. The keys
   - `c423073` — Step 3: feed loading → `useFeedEngine` (page.tsx fetch wiring removed).
   - `9b23f2f` — Step 4a: map render engine (`mapEngine.ts`) + **earthquakes** migrated.
 
-## Current state (ALL COMMITTED in the initial commit of this repo)
-Everything below is already in the tree — the working tree is clean. The last work done was:
+## Current state (latest local `main`)
+Everything below is in the tree. The last work done was:
 - **Phase 2 through Step 4b**: registry module, LayerPanel + feed engine, map render engine,
   and the **earthquakes, fires, global_incidents (gdelt), gps_jamming** layers migrated to
   the registry. Verified tsc + next build + standalone (no console errors).
@@ -112,12 +113,42 @@ done by folding extra style layers + render bindings into existing layers:
 - Verified on the live map (read via React-fiber → maplibre source `serialize()`):
   conflict-zones=13 features, day-night=1 polygon, sigint-news=12, sdk-links=127, network-mesh=0
   (malware off). All migrated style layers exist; **no headless labels leak to the sidebar**;
-  tsc 0, next build 0, no console errors/warnings. **NOT committed yet.**
+  tsc 0, next build 0, no console errors/warnings.
 - Left raw on purpose: **war-alerts** (no active render code); the imperative ip-sweep/scan render.
 - Tooling note: `.claude/launch.json` `osiris-standalone` now has `"autoPort": true` (port 3000
   intermittently lands in a Windows excluded range).
 
-**Phase 2 is now feature-complete except Step 5 cleanup.** Next: **Step 5**.
+**Phase 3 extension foundation — DONE (custom sources + trusted plugins):**
+- `src/lib/plugins/` adds the trusted in-process plugin runtime: host service bridge,
+  plugin loader from persisted ES-module source, plugin context adapter, teardown tracking,
+  and an in-app `window.OsirisSDK` helper for editor-authored plugins.
+- `src/lib/registry/` is now reactive: `events.ts` / `reactive.ts` expose a versioned
+  registry change bus; groups/layers/feeds can be registered, unregistered, and cleared by
+  plugin id; `RegistryLayer`/`FeedDef` carry `origin` + `pluginId`; custom sources are
+  converted into a lazy feed plus a registry layer by `customSource.ts`.
+- `LayerPanel`, `useFeedEngine`, and `OsirisMap` subscribe to registry changes so persisted
+  custom sources/plugins appear without reload. `OsirisMap` dynamically adds/removes
+  custom/plugin style layers, wires declarative interactions (`popup`, `custom`,
+  `entityGraph`, `camera`, `liveFeed`), renders dynamic layer data, and cleans handlers +
+  sources when a dynamic layer is removed.
+- Settings now includes `ExtensionsSettings`: a no-code Custom Sources form / raw JSON editor
+  and a trusted Plugins manager with paste/editor install, file load, enable/disable, remove,
+  and an insertable sample plugin. Settings persist `plugins[]` and `customSources[]`.
+- Stability delta polish from `STABILITY_REVIEW_DELTA_4Z.md` was folded in: stale
+  `MAX_MESH_NODES` test fixed, `ALL_LAYERS` dead code removed, map popups are explicitly
+  removed on unmount, dynamic `onEntityClick` handlers read from a ref, dynamic layer theme
+  switches repaint in place via `updateRegistryLayerTheme`, and SIGINT news coordinates now
+  require finite numeric `[lat, lng]` before converting to GeoJSON `[lng, lat]`.
+- Fresh verification:
+  - `node --test tests/performance-stability.test.mjs` → 40/40 pass.
+  - `npx tsc --noEmit` → pass.
+  - `npm run lint` → pass with existing warnings only.
+  - `npm run build` → pass.
+  - `npm run desktop:prepare` → pass, assembled `desktop\.staging\server`.
+
+**Phase 2 is feature-complete except Step 5 cleanup. Phase 3 has a working foundation but
+still needs hardening, UX refinement, and more real plugin/custom-source dogfooding.**
+Next: **Step 5 cleanup**, then **extension hardening**.
 
 ---
 
@@ -152,8 +183,11 @@ so a bad spec shows in the console.
   delete dead code.
 
 ## After Phase 2 (the original plan)
-Phase 3 — no-code custom sources/layers + JS plugins (both register into this registry);
-saved workspaces. The plugin model is **trusted in-process** (no sandbox) — see decisions.
+Phase 3 — no-code custom sources/layers + JS plugins now has its first working foundation
+(see Current state). Remaining work: harden the plugin/custom-source UX, decide import/export
+shape for plugins and sources, add richer validation/error display, dogfood with real feeds,
+and then continue to saved workspaces. The plugin model is **trusted in-process** (no
+sandbox) — see decisions.
 
 ---
 
@@ -172,9 +206,19 @@ saved workspaces. The plugin model is **trusted in-process** (no sandbox) — se
 - `builtins.ts` — the builtin groups + layers (metadata + styleLayers/render as migrated).
 - `feeds.ts` — builtin feeds (core/lazy, transforms, intervals, activatedBy).
 - `store.ts` — group/layer registry (register/get); seeded on import.
+- `events.ts` / `reactive.ts` — registry version bus + React subscription hook for runtime
+  custom source/plugin changes.
+- `customSource.ts` — turns persisted no-code CustomSourceSpecs into feed + layer registrations.
 - `engine.ts` — `useFeedEngine` (data loading; user-hardened with abort + interval lifecycle).
 - `mapEngine.ts` — `addRegistryLayer` / `renderRegistryLayer` (map render glue, try/catch-safe).
 - `icons.tsx` — lucide icon-name resolver (+ local Shield). `index.ts` — barrel.
+
+## Extension file map (`src/lib/plugins/`)
+- `host.ts` — live host services bridge (map, data, flyTo, camera/live-feed/entity graph openers).
+- `context.ts` — plugin `activate(ctx)` adapter into internal registry/feed APIs plus teardown.
+- `loader.ts` — persisted trusted ES-module plugin install/enable/disable/uninstall/bootstrap.
+- `customSources.ts` — persisted custom-source list, live registration, and React subscription.
+- `index.ts` — public plugin/custom-source surface and one-shot `bootstrapExtensions()`.
 
 ## Memory
 The auto-loaded memory files (`~/.claude/projects/.../memory/`) carry the desktop-app plan,

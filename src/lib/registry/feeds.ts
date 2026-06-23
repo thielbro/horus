@@ -1,3 +1,4 @@
+import { bumpRegistry } from './events';
 import type { FeedDef } from './types';
 
 // Faithful 1:1 encoding of page.tsx's former fetch wiring (core feeds + the layer-aware
@@ -26,12 +27,24 @@ export const BUILTIN_FEEDS: FeedDef[] = [
 ];
 
 const feeds = new Map<string, FeedDef>();
+let seeding = false;
 
 export function registerFeed(feed: FeedDef): void {
   feeds.set(feed.id, feed);
+  if (!seeding) bumpRegistry();
+}
+export function unregisterFeed(id: string): void {
+  if (feeds.delete(id)) bumpRegistry();
+}
+export function clearFeedsByPlugin(pluginId: string): void {
+  let changed = false;
+  for (const [id, f] of feeds) if (f.pluginId === pluginId) { feeds.delete(id); changed = true; }
+  if (changed) bumpRegistry();
 }
 export function getFeeds(): FeedDef[] {
   return [...feeds.values()];
 }
 
+seeding = true;
 BUILTIN_FEEDS.forEach(registerFeed);
+seeding = false;

@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { getFeeds } from './feeds';
+import { useRegistryVersion } from './reactive';
 import type { DataBuckets } from './types';
 
 type FetchEndpoint = (url: string, transform?: (d: any) => DataBuckets, options?: RequestInit) => unknown;
@@ -17,6 +18,8 @@ export function useFeedEngine(
   fetchEndpoint: FetchEndpoint,
   ifVisible: IfVisible,
 ): void {
+  // Re-run the feed effects when feeds are added/removed at runtime (custom sources, plugins).
+  const registryVersion = useRegistryVersion();
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const lazyIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const runFetch = useCallback((url: string, transform?: (d: any) => DataBuckets) => {
@@ -48,7 +51,7 @@ export function useFeedEngine(
       timers.forEach(clearTimeout);
       intervals.forEach(clearInterval);
     };
-  }, [ifVisible, runFetch]);
+  }, [ifVisible, runFetch, registryVersion]);
 
   // ── Lazy feeds: fetch once when any activating layer first turns on ──
   const fetched = useRef<Set<string>>(new Set());
@@ -61,7 +64,7 @@ export function useFeedEngine(
         fetched.current.add(f.id);
       }
     }
-  }, [activeLayers, runFetch]);
+  }, [activeLayers, runFetch, registryVersion]);
 
   // ── Lazy polling: poll active lazy feeds that declare an interval ──
   useEffect(() => {
@@ -84,5 +87,5 @@ export function useFeedEngine(
         lazyIntervalsRef.current.delete(id);
       }
     }
-  }, [activeLayers, ifVisible, runFetch]);
+  }, [activeLayers, ifVisible, runFetch, registryVersion]);
 }

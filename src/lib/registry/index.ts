@@ -5,6 +5,9 @@
 export * from './types';
 export * from './store';
 export { resolveIcon } from './icons';
-export { registerFeed, getFeeds, BUILTIN_FEEDS } from './feeds';
+export { registerFeed, unregisterFeed, clearFeedsByPlugin, getFeeds, BUILTIN_FEEDS } from './feeds';
 export { useFeedEngine } from './engine';
-export { addRegistryLayer, renderRegistryLayer } from './mapEngine';
+export { addRegistryLayer, renderRegistryLayer, removeRegistryLayer, updateRegistryLayerTheme } from './mapEngine';
+export { getRegistryVersion, subscribeRegistry } from './events';
+export { useRegistryVersion } from './reactive';
+export { buildCustomSource, registerCustomSource, unregisterCustomSource, type CustomSourceSpec } from './customSource';
