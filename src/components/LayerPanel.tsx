@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plane, Satellite, Activity, Sun, AlertTriangle, Camera, Flame, Target,
@@ -46,9 +46,12 @@ function Shield(props: any) {
 function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'core', setTheme }: LayerPanelProps) {
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   // Re-read the registry when custom sources / plugins register or remove layers.
-  useRegistryVersion();
+  const registryVersion = useRegistryVersion();
 
-  const LAYER_GROUPS = getLayerGroups(theme);
+  const LAYER_GROUPS = useMemo(() => {
+    void registryVersion;
+    return getLayerGroups(theme);
+  }, [theme, registryVersion]);
 
   const toggle = (key: string) => setActiveLayers((prev: any) => ({ ...prev, [key]: !prev[key] }));
   

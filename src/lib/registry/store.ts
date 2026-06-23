@@ -7,14 +7,24 @@ import type { RegistryGroup, RegistryLayer } from './types';
 
 const groups = new Map<string, RegistryGroup>();
 const layers = new Map<string, RegistryLayer>(); // insertion order preserved per group
+const MAX_REGISTRY_GROUPS = 100;
+const MAX_REGISTRY_LAYERS = 500;
 
 let seeding = false;
 
 export function registerGroup(group: RegistryGroup): void {
+  if (!groups.has(group.id) && groups.size >= MAX_REGISTRY_GROUPS) {
+    console.warn('[OSIRIS] Registry group limit reached; ignoring group', group.id);
+    return;
+  }
   groups.set(group.id, group);
   if (!seeding) bumpRegistry();
 }
 export function registerLayer(layer: RegistryLayer): void {
+  if (!layers.has(layer.id) && layers.size >= MAX_REGISTRY_LAYERS) {
+    console.warn('[OSIRIS] Registry layer limit reached; ignoring layer', layer.id);
+    return;
+  }
   layers.set(layer.id, layer);
   if (!seeding) bumpRegistry();
 }

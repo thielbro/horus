@@ -491,3 +491,61 @@ test('registry cleanup keeps source ownership and SDK mapSource contract aligned
   assert.match(context, /mapSource: ns\(sl\.mapSource/);
   assert.doesNotMatch(context, /source: ns\(sl\.mapSource/);
 });
+
+test('extension delta review frontend lifecycle fixes stay wired', () => {
+  const page = file('src/app/page.tsx');
+  const map = file('src/components/OsirisMap.tsx');
+  const settingsPanel = file('src/components/SettingsPanel.tsx');
+  const layerPanel = file('src/components/LayerPanel.tsx');
+
+  assert.match(page, /document\.body\.classList\.toggle\('theme-ghost'/);
+  assert.match(page, /return \(\) => \{[\s\S]*if \(urlTimer\.current\) clearTimeout\(urlTimer\.current\)/);
+  assert.match(page, /if \(!r\.ok\) throw new Error\('IP geolocation failed'\)/);
+  assert.match(page, /if \(!res\.ok\) throw new Error\('Stats request failed'\)/);
+  assert.match(page, /let cancelled = false[\s\S]*bootstrapExtensions\(\)[\s\S]*cancelled/);
+  assert.match(page, /active\.forEach\(k => \{[\s\S]*if \(k in next\) \(next as any\)\[k\] = true/);
+  assert.match(page, /function getYouTubeWatchUrl\(url: string\): string \{[\s\S]*new URL\(url\)/);
+  assert.match(page, /sandbox="allow-scripts allow-same-origin allow-presentation"/);
+  assert.match(page, /const handleSweepVisualize = useCallback/);
+  assert.match(page, /setMapProjection\('globe'\)[\s\S]*setSweepData/);
+
+  assert.doesNotMatch(map, /getContext\('2d'\)!/);
+  assert.match(map, /if \(!ctx\) return/);
+  assert.match(map, /return \(\) => \{[\s\S]*dynState\.current[\s\S]*teardownEntry/);
+  assert.match(map, /data\.sdk_entities/);
+  assert.match(map, /data\.conflict_zones/);
+  assert.match(map, /data\.gdelt/);
+
+  assert.match(layerPanel, /useMemo/);
+  assert.match(layerPanel, /void registryVersion;[\s\S]*return getLayerGroups\(theme\);[\s\S]*\[theme, registryVersion\]/);
+  assert.match(settingsPanel, /export default memo\(SettingsPanel\)/);
+});
+
+test('extension delta review registry engine avoids timer churn and stale intervals', () => {
+  const engine = file('src/lib/registry/engine.ts');
+  const mapEngine = file('src/lib/registry/mapEngine.ts');
+  const customSource = file('src/lib/registry/customSource.ts');
+  const store = file('src/lib/registry/store.ts');
+  const feeds = file('src/lib/registry/feeds.ts');
+  const events = file('src/lib/registry/events.ts');
+  const builtins = file('src/lib/registry/builtins.ts');
+
+  assert.match(engine, /coreIntervalsRef/);
+  assert.match(engine, /coreStartupTimersRef/);
+  assert.match(engine, /getFeedSignature/);
+  assert.match(engine, /\.catch\(\(err\) =>/);
+  assert.match(engine, /fetched\.current\?\.delete\(id\)/);
+  assert.match(engine, /entry\.signature !== signature/);
+
+  assert.match(mapEngine, /safeRegistryLayerSources/);
+  assert.match(mapEngine, /try\s*\{[\s\S]*registryLayerSources\(layer\)/);
+  assert.match(mapEngine, /try\s*\{[\s\S]*getRenderBindingSource\(binding\)/);
+
+  assert.match(customSource, /console\.warn\('\[OSIRIS\] Custom source jsonPath did not resolve to an array'/);
+  assert.match(store, /MAX_REGISTRY_LAYERS/);
+  assert.match(store, /MAX_REGISTRY_GROUPS/);
+  assert.match(feeds, /MAX_REGISTRY_FEEDS/);
+  assert.match(events, /console\.error\('\[OSIRIS\] Registry listener failed'/);
+  assert.match(builtins, /SOLAR_TERMINATOR_TTL_MS/);
+  assert.match(builtins, /s\.name \|\| s\.mmsi\?\.toString\(\) \|\| 'Unknown'/);
+});

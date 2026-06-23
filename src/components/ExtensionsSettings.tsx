@@ -45,7 +45,7 @@ function ExtensionBundleSection() {
     a.href = url;
     a.download = `osiris-extensions-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,12 +112,16 @@ function CustomSourcesSection() {
     try {
       let spec: CustomSourceSpec;
       if (raw) {
-        spec = JSON.parse(rawText);
+        const parsed = JSON.parse(rawText);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('Raw custom source JSON must be an object.');
+        }
+        spec = parsed;
         if (!spec.id) spec.id = `custom_${slug(spec.label || 'source')}`;
       } else {
         if (!draft.label.trim()) throw new Error('Name is required.');
         if (!draft.url.trim()) throw new Error('Feed URL is required.');
-        spec = { ...draft, id: draft.id ?? `custom_${slug(draft.label)}` } as CustomSourceSpec;
+        spec = { ...draft, id: draft.id ?? `custom_${slug(draft.label)}` };
         if (!spec.intervalMs) delete (spec as any).intervalMs;
         if (!spec.labelProp) delete (spec as any).labelProp;
         if (!spec.jsonPath) delete (spec as any).jsonPath;
@@ -128,7 +132,7 @@ function CustomSourcesSection() {
         currentId: spec.id,
       });
       if (!validation.ok) throw new Error(formatValidationErrors(validation.errors));
-      const result = upsertCustomSource(validation.value as CustomSourceSpec);
+      const result = upsertCustomSource(validation.value);
       if (!result.ok) throw new Error(result.error ?? 'Custom source could not be registered.');
       setDraft(EMPTY_DRAFT(groups[0]?.id ?? 'THREAT'));
       setRawText('');
@@ -286,10 +290,15 @@ function PluginsSection() {
 
   const install = async (src: string) => {
     setBusy(true); setError(null);
-    const res = await installPlugin(src);
-    setBusy(false);
-    if (!res.ok || res.error) setError(res.error ?? 'Install failed.');
-    else setCode('');
+    try {
+      const res = await installPlugin(src);
+      if (!res.ok || res.error) setError(res.error ?? 'Install failed.');
+      else setCode('');
+    } catch (err: any) {
+      setError(String(err?.message ?? err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {

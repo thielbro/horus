@@ -15,10 +15,13 @@ export interface CustomSourceRecord extends CustomSourceSpec {
 let specs: CustomSourceRecord[] = [];
 let bootstrapped = false;
 const listeners = new Set<() => void>();
-const notify = () => listeners.forEach((l) => l());
+const MAX_CUSTOM_SOURCES = 200;
+const notify = () => listeners.forEach((l) => {
+  try { l(); } catch (err) { console.error('[OSIRIS] custom source listener failed', err); }
+});
 
 function persist() {
-  updateSettings({ customSources: specs.filter((s) => !s.error).map(stripRuntimeFields) });
+  updateSettings({ customSources: specs.map(stripRuntimeFields) });
 }
 
 function stripRuntimeFields(spec: CustomSourceRecord): CustomSourceSpec {
@@ -36,7 +39,31 @@ export function getCustomSources(): CustomSourceRecord[] {
 }
 
 export function getCustomSourceSpecs(): CustomSourceSpec[] {
-  return specs.filter((s) => !s.error).map(stripRuntimeFields);
+  return specs.map(stripRuntimeFields);
+}
+
+function commitSpecs(nextSpecs: CustomSourceRecord[]): void {
+  const previousSpecs = specs;
+  specs = nextSpecs;
+  try {
+    persist();
+    notify();
+  } catch (err) {
+    specs = previousSpecs;
+    notify();
+    throw err;
+  }
+}
+
+function rollbackLiveRegistry(id: string, previousRecord: CustomSourceRecord | null): void {
+  try { unregisterCustomSource(id); } catch { /* best effort cleanup */ }
+  if (previousRecord) {
+    try {
+      registerCustomSource(stripRuntimeFields(previousRecord));
+    } catch (restoreErr) {
+      console.error('[OSIRIS] custom source rollback failed', previousRecord.id, restoreErr);
+    }
+  }
 }
 
 /** Create or replace a custom source (re-registers it live and persists). */
@@ -50,37 +77,49 @@ export function upsertCustomSource(spec: CustomSourceSpec): { ok: boolean; id?: 
 
   const clean = validation.value as CustomSourceSpec;
   const previous = specs.find((s) => s.id === clean.id);
-  if (previous) unregisterCustomSource(clean.id);
+  const previousRecord = previous ? { ...previous } : null;
+  if (!previous && specs.length >= MAX_CUSTOM_SOURCES) {
+    return { ok: false, error: `Custom source limit reached (${MAX_CUSTOM_SOURCES}).` };
+  }
 
   try {
+    if (previous) unregisterCustomSource(clean.id);
     registerCustomSource(clean);
     const record: CustomSourceRecord = { ...clean, error: null };
-    specs = previous ? specs.map((s) => (s.id === clean.id ? record : s)) : [...specs, record];
+    commitSpecs(previous ? specs.map((s) => (s.id === clean.id ? record : s)) : [...specs, record]);
   } catch (e: any) {
     const error = String(e?.message ?? e);
     console.error('[OSIRIS] custom source register failed', clean.id, e);
-    const record: CustomSourceRecord = { ...clean, error };
-    specs = previous ? specs.map((s) => (s.id === clean.id ? record : s)) : [...specs, record];
-    persist();
-    notify();
+    rollbackLiveRegistry(clean.id, previousRecord);
+    const record: CustomSourceRecord = previousRecord ? { ...previousRecord, error } : { ...clean, error };
+    try {
+      commitSpecs(previous ? specs.map((s) => (s.id === clean.id ? record : s)) : [...specs, record]);
+    } catch (persistErr) {
+      console.error('[OSIRIS] custom source persist failed', clean.id, persistErr);
+      return { ok: false, id: clean.id, error: String((persistErr as any)?.message ?? persistErr) };
+    }
     return { ok: false, id: clean.id, error };
   }
-  persist();
-  notify();
   return { ok: true, id: clean.id };
 }
 
 export function removeCustomSource(id: string): void {
+  const previousSpecs = specs;
+  const previousRecord = specs.find((s) => s.id === id) ?? null;
   unregisterCustomSource(id);
-  specs = specs.filter((s) => s.id !== id);
-  persist();
-  notify();
+  try {
+    commitSpecs(specs.filter((s) => s.id !== id));
+  } catch (err) {
+    rollbackLiveRegistry(id, previousRecord);
+    specs = previousSpecs;
+    console.error('[OSIRIS] custom source remove persist failed', id, err);
+    throw err;
+  }
 }
 
 /** Register all persisted custom sources into the registry. Call once settings are ready. */
 export function bootstrapCustomSources(): void {
   if (bootstrapped) return;
-  bootstrapped = true;
   const persisted = (getSettings().customSources ?? []) as CustomSourceSpec[];
   specs = [];
   const seen = new Set<string>();
@@ -104,6 +143,7 @@ export function bootstrapCustomSources(): void {
       seen.add(clean.id);
     }
   }
+  bootstrapped = true;
   notify();
 }
 

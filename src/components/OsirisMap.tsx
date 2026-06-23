@@ -60,7 +60,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     if (map.hasImage(id)) return;
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     const cx = size / 2, cy = size / 2;
     ctx.fillStyle = color;
     ctx.beginPath();
@@ -83,7 +84,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     if (map.hasImage(id)) return;
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(size/2, size/2, size/2 - 1, 0, Math.PI * 2);
@@ -204,7 +206,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         const s = 20;
         const c = document.createElement('canvas');
         c.width = s; c.height = s;
-        const ctx = c.getContext('2d')!;
+        const ctx = c.getContext('2d');
+        if (!ctx) return;
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.moveTo(s/2, 1);
@@ -932,6 +935,23 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     }
   }, [mapReady, registryVersion]);
 
+  useEffect(() => () => {
+    const map = mapRef.current;
+    if (!map) {
+      dynState.current.clear();
+      return;
+    }
+    const teardownEntry = (st: { styleIds: string[]; sources: string[]; offs: Array<() => void> }) => {
+      st.offs.forEach(o => { try { o(); } catch { /* ignore */ } });
+      for (const sid of st.styleIds) { try { if (map.getLayer(sid)) map.removeLayer(sid); } catch { /* ignore */ } }
+      for (const src of st.sources) { try { if (map.getSource(src)) map.removeSource(src); } catch { /* ignore */ } }
+    };
+    for (const [id, st] of [...dynState.current]) {
+      teardownEntry(st);
+      dynState.current.delete(id);
+    }
+  }, []);
+
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
     const themeMode = theme === 'ghost' ? 'ghost' : 'core';
@@ -977,7 +997,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         if (!map.hasImage(id)) return;
         const canvas = document.createElement('canvas');
         canvas.width = size; canvas.height = size;
-        const ctx = canvas.getContext('2d')!;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
         const cx = size / 2, cy = size / 2;
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -1000,7 +1021,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         if (!map.hasImage(id)) return;
         const canvas = document.createElement('canvas');
         canvas.width = size; canvas.height = size;
-        const ctx = canvas.getContext('2d')!;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
@@ -1098,7 +1120,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   useEffect(() => {
     if (!mapReady) return;
     renderRegistryLayer(setGeo, 'sdk_sea', data, activeLayers);
-  }, [mapReady, activeLayers.sdk_sea, activeLayers.sdk_air, activeLayers.sdk_naval, data.submarine_cables, setGeo]);
+  }, [mapReady, activeLayers.sdk_sea, activeLayers.sdk_air, activeLayers.sdk_naval, data.submarine_cables, data.sdk_entities, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;
@@ -1114,7 +1136,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   useEffect(() => {
     if (!mapReady) return;
     renderRegistryLayer(setGeo, 'conflict_zones', data, activeLayers);
-  }, [mapReady, setGeo]);
+  }, [mapReady, data.conflict_zones, data.gdelt, setGeo]);
 
 
   // Visibility

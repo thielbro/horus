@@ -31,9 +31,14 @@ type PluginDefinition = {
 
 let records: PluginRecord[] = [];
 let bootstrapped = false;
+let bootstrapPromise: Promise<void> | null = null;
 const handles = new Map<string, PluginContextHandle>();
 const listeners = new Set<() => void>();
-const notify = () => listeners.forEach((l) => l());
+const installLocks = new Map<string, Promise<void>>();
+const MAX_PLUGINS = 50;
+const notify = () => listeners.forEach((l) => {
+  try { l(); } catch (err) { console.error('[OSIRIS] plugin listener failed', err); }
+});
 
 // Bundler-opaque dynamic import so webpack/turbopack don't try to resolve the blob URL.
 const dynamicImport: (u: string) => Promise<any> = new Function('u', 'return import(u)') as any;
@@ -55,10 +60,25 @@ async function importDef(code: string): Promise<any> {
 }
 
 function teardown(id: string) {
-  try { handles.get(id)?.dispose(); } catch { /* ignore */ }
+  try { handles.get(id)?.dispose(); } catch (err) { console.error('[OSIRIS] plugin teardown failed', id, err); }
   handles.delete(id);
   clearByPlugin(id);
   clearFeedsByPlugin(id);
+}
+
+async function withPluginLock<T>(id: string, task: () => Promise<T>): Promise<T> {
+  const previous = installLocks.get(id) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const next = previous.catch(() => undefined).then(() => current);
+  installLocks.set(id, next);
+  await previous.catch(() => undefined);
+  try {
+    return await task();
+  } finally {
+    release();
+    if (installLocks.get(id) === next) installLocks.delete(id);
+  }
 }
 
 async function runActivate(def: PluginDefinition, rec: PluginRecord) {
@@ -87,6 +107,7 @@ async function activateFromCode(rec: PluginRecord) {
     teardown(rec.id);
     rec.error = String(e?.message ?? e);
     rec.loaded = false;
+    rec.enabled = false;
   }
 }
 
@@ -105,20 +126,33 @@ export async function installPlugin(code: string, opts?: { name?: string; enable
   const name = opts?.name ?? def.name;
   const version = def.version;
 
-  teardown(id); // replacing an existing plugin with the same id
-  const rec: PluginRecord = { id, name, version, code, enabled: opts?.enabled ?? true, error: null, loaded: false };
-  records = [...records.filter((r) => r.id !== id), rec];
-  if (rec.enabled) await runActivate(def, rec);
-  persist();
-  notify();
-  return { ok: true, id, error: rec.error ?? undefined };
+  return withPluginLock(id, async () => {
+    const replacing = records.some((r) => r.id === id);
+    if (!replacing && records.length >= MAX_PLUGINS) {
+      return { ok: false, id, error: `Plugin limit reached (${MAX_PLUGINS}).` };
+    }
+
+    teardown(id); // replacing an existing plugin with the same id
+    const rec: PluginRecord = { id, name, version, code, enabled: opts?.enabled ?? true, error: null, loaded: false };
+    records = [...records.filter((r) => r.id !== id), rec];
+    if (rec.enabled) {
+      await runActivate(def, rec);
+      if (rec.error) rec.enabled = false;
+    }
+    persist();
+    notify();
+    return { ok: true, id, error: rec.error ?? undefined };
+  });
 }
 
 export async function setPluginEnabled(id: string, enabled: boolean): Promise<void> {
   const rec = records.find((r) => r.id === id);
   if (!rec) return;
   rec.enabled = enabled;
-  if (enabled) await activateFromCode(rec);
+  if (enabled) {
+    await activateFromCode(rec);
+    if (rec.error) rec.enabled = false;
+  }
   else { teardown(id); rec.loaded = false; rec.error = null; }
   records = [...records];
   persist();
@@ -139,14 +173,24 @@ export function getPlugins(): PluginRecord[] {
 /** Re-activate every enabled persisted plugin. Call once settings are ready. */
 export async function bootstrapPlugins(): Promise<void> {
   if (bootstrapped) return;
-  bootstrapped = true;
-  const persisted = getSettings().plugins ?? [];
-  records = persisted.map((p) => ({ ...p, error: null, loaded: false }));
-  notify();
-  for (const rec of records) {
-    if (rec.enabled) await activateFromCode(rec);
-  }
-  notify();
+  if (bootstrapPromise) return bootstrapPromise;
+  bootstrapPromise = (async () => {
+    const persisted = getSettings().plugins ?? [];
+    records = persisted.slice(0, MAX_PLUGINS).map((p) => ({ ...p, error: null, loaded: false }));
+    notify();
+    for (const rec of records) {
+      if (rec.enabled) {
+        await activateFromCode(rec);
+        if (rec.error) rec.enabled = false;
+      }
+    }
+    persist();
+    notify();
+    bootstrapped = true;
+  })().finally(() => {
+    bootstrapPromise = null;
+  });
+  return bootstrapPromise;
 }
 
 const subscribe = (cb: () => void) => { listeners.add(cb); return () => { listeners.delete(cb); }; };

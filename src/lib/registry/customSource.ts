@@ -36,7 +36,11 @@ function getPath(obj: any, path?: string): any {
   if (!path) return obj;
   return path.split('.').reduce((acc, k) => (acc == null ? acc : acc[k]), obj);
 }
-const asArray = (v: any): any[] => (Array.isArray(v) ? v : []);
+const asArray = (v: any, sourceId: string, jsonPath?: string): any[] => {
+  if (Array.isArray(v)) return v;
+  console.warn('[OSIRIS] Custom source jsonPath did not resolve to an array', { sourceId, jsonPath });
+  return [];
+};
 
 function escapeHtml(v: unknown): string {
   return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
@@ -62,7 +66,7 @@ export function buildCustomSource(spec: CustomSourceSpec): { feed: FeedDef; laye
     priority: 'lazy',
     activatedBy: [spec.id],
     intervalMs: spec.intervalMs,
-    transform: (raw) => ({ [src]: asArray(getPath(raw, spec.jsonPath)) }),
+    transform: (raw) => ({ [src]: asArray(getPath(raw, spec.jsonPath), spec.id, spec.jsonPath) }),
     origin: 'custom',
   };
 

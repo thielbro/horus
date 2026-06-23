@@ -146,3 +146,53 @@ test('extension bundle contract and settings UI import-export surfaces are wired
   assert.match(context, /validatePluginFeedDefinition/);
   assert.match(context, /validatePluginGroupDefinition/);
 });
+
+test('custom source updates preserve persisted specs and roll back live registry failures', () => {
+  const customSources = file('src/lib/plugins/customSources.ts');
+
+  assert.doesNotMatch(customSources, /specs\.filter\(\(s\) => !s\.error\)/);
+  assert.match(customSources, /MAX_CUSTOM_SOURCES/);
+  assert.match(customSources, /previousRecord/);
+  assert.match(customSources, /rollbackLiveRegistry/);
+  assert.match(customSources, /catch[\s\S]*previousRecord[\s\S]*registerCustomSource\(stripRuntimeFields\(previousRecord\)\)/);
+  assert.match(customSources, /try\s*\{[\s\S]*persist\(\)[\s\S]*notify\(\)[\s\S]*\}/);
+});
+
+test('plugin loader bootstrap, activation, and install paths are retry-safe', () => {
+  const loader = file('src/lib/plugins/loader.ts');
+  const pluginIndex = file('src/lib/plugins/index.ts');
+  const settings = file('src/components/ExtensionsSettings.tsx');
+
+  assert.match(loader, /MAX_PLUGINS/);
+  assert.match(loader, /installLocks/);
+  assert.match(loader, /withPluginLock/);
+  assert.doesNotMatch(loader, /bootstrapped = true;\s*const persisted = getSettings\(\)/);
+  assert.match(loader, /bootstrapPromise/);
+  assert.match(loader, /notify\(\);\s*bootstrapped = true/);
+  assert.match(loader, /if \(rec\.error\) rec\.enabled = false/);
+  assert.match(loader, /listeners\.forEach\(\(l\) => \{[\s\S]*try\s*\{ l\(\); \}/);
+
+  assert.doesNotMatch(pluginIndex, /started = true;\s*installSdkGlobal\(\)/);
+  assert.match(pluginIndex, /try\s*\{[\s\S]*installSdkGlobal\(\)[\s\S]*await bootstrapPlugins\(\)[\s\S]*started = true/);
+
+  assert.match(settings, /try\s*\{[\s\S]*await installPlugin\(src\)[\s\S]*\}\s*catch[\s\S]*finally\s*\{[\s\S]*setBusy\(false\)/);
+});
+
+test('plugin contexts abort outstanding fetches and report local storage/dispose failures', () => {
+  const context = file('src/lib/plugins/context.ts');
+
+  assert.match(context, /fetchControllers/);
+  assert.match(context, /new AbortController\(\)/);
+  assert.match(context, /fetchControllers\.forEach\(\(controller\) => controller\.abort\(\)\)/);
+  assert.match(context, /signal:\s*controller\.signal/);
+  assert.match(context, /console\.warn\(`\[OSIRIS plugin:\$\{pluginId\}\] settings/);
+  assert.match(context, /console\.error\(`\[OSIRIS plugin:\$\{pluginId\}\] dispose failed/);
+});
+
+test('extension settings harden export and raw source import edge cases', () => {
+  const settings = file('src/components/ExtensionsSettings.tsx');
+
+  assert.match(settings, /setTimeout\(\(\) => URL\.revokeObjectURL\(url\), 1000\)/);
+  assert.match(settings, /typeof parsed !== 'object'/);
+  assert.doesNotMatch(settings, /validation\.value as CustomSourceSpec/);
+});

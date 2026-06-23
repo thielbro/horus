@@ -18,6 +18,22 @@ function registryLayerSources(layer: RegistryLayer): Set<string> {
   ]);
 }
 
+function safeRegistryLayerSources(layer: RegistryLayer, layerId: string): Set<string> {
+  try {
+    return registryLayerSources(layer);
+  } catch (err) {
+    console.error('[OSIRIS] Registry source resolution failed', { layerId, err });
+    const sources = new Set<string>();
+    for (const sl of layer.styleLayers ?? []) {
+      try { sources.add(getStyleLayerSource(sl)); } catch (sourceErr) { console.error('[OSIRIS] Registry style source resolution failed', { layerId, styleLayerId: sl.id, err: sourceErr }); }
+    }
+    for (const binding of layer.render ?? []) {
+      try { sources.add(getRenderBindingSource(binding)); } catch (sourceErr) { console.error('[OSIRIS] Registry render source resolution failed', { layerId, err: sourceErr }); }
+    }
+    return sources;
+  }
+}
+
 /**
  * Register a layer's sources + style layers (idempotent — skips ones already present).
  * `theme` resolves any theme→paint/layout functions (ghost-recolored layers like cctv);
@@ -28,7 +44,7 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
   const layer = getLayer(layerId);
   if (!layer) return;
 
-  for (const source of registryLayerSources(layer)) {
+  for (const source of safeRegistryLayerSources(layer, layerId)) {
     if (!map.getSource(source)) {
       try {
         map.addSource(source, { type: 'geojson', data: EMPTY_FC } as any);
@@ -40,7 +56,13 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
   if (!layer.styleLayers?.length) return;
   for (const sl of layer.styleLayers ?? []) {
     if (map.getLayer(sl.id)) continue;
-    const source = getStyleLayerSource(sl);
+    let source: string;
+    try {
+      source = getStyleLayerSource(sl);
+    } catch (err) {
+      console.error('[OSIRIS] Registry style source resolution failed', { layerId, styleLayerId: sl.id, err });
+      continue;
+    }
     const spec: Record<string, unknown> = { id: sl.id, type: sl.type, source };
     const paint = typeof sl.paint === 'function' ? sl.paint(theme) : sl.paint;
     const layout = typeof sl.layout === 'function' ? sl.layout(theme) : sl.layout;
@@ -61,7 +83,7 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
 export function removeRegistryLayer(map: MaplibreMap, layerId: string): void {
   const layer = getLayer(layerId);
   if (!layer) return;
-  const sources = registryLayerSources(layer);
+  const sources = safeRegistryLayerSources(layer, layerId);
   for (const sl of layer.styleLayers ?? []) {
     try { if (map.getLayer(sl.id)) map.removeLayer(sl.id); } catch { /* ignore */ }
   }
@@ -107,11 +129,11 @@ export function renderRegistryLayer(
   const layer = getLayer(layerId);
   if (!layer?.render?.length) return;
   for (const binding of layer.render) {
-    const source = getRenderBindingSource(binding);
     try {
+      const source = getRenderBindingSource(binding);
       setGeo(source, binding.toFeatures(data, active));
     } catch (err) {
-      console.error('[OSIRIS] Registry render binding failed', { layerId, source, err });
+      console.error('[OSIRIS] Registry render binding failed', { layerId, err });
     }
   }
 }

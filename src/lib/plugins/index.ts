@@ -42,11 +42,23 @@ function installSdkGlobal() {
 }
 
 let started = false;
+let bootstrapPromise: Promise<void> | null = null;
 /** Register persisted custom sources + activate enabled plugins. Idempotent. */
 export async function bootstrapExtensions(): Promise<void> {
   if (started) return;
-  started = true;
-  installSdkGlobal();
-  bootstrapCustomSources();
-  await bootstrapPlugins();
+  if (bootstrapPromise) return bootstrapPromise;
+  bootstrapPromise = (async () => {
+    try {
+      installSdkGlobal();
+      bootstrapCustomSources();
+      await bootstrapPlugins();
+      started = true;
+    } catch (err) {
+      console.error('[OSIRIS] extension bootstrap failed', err);
+      throw err;
+    }
+  })().finally(() => {
+    bootstrapPromise = null;
+  });
+  return bootstrapPromise;
 }

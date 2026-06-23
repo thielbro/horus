@@ -82,8 +82,15 @@ const ActiveEntityCount = ({ data }: { data: Record<string, unknown[]> }) => {
 
 /** Extracts a watchable YouTube URL from embed/channel URLs */
 function getYouTubeWatchUrl(url: string): string {
-  if (url.includes('channel=')) return `https://www.youtube.com/channel/${url.split('channel=')[1].split('&')[0]}/live`;
-  if (url.includes('/embed/')) return `https://www.youtube.com/watch?v=${url.split('/embed/')[1].split('?')[0]}`;
+  try {
+    const parsed = new URL(url);
+    const channel = parsed.searchParams.get('channel');
+    if (channel) return `https://www.youtube.com/channel/${channel}/live`;
+    const embedMatch = /^\/embed\/([^/]+)$/.exec(parsed.pathname);
+    if (embedMatch?.[1]) return `https://www.youtube.com/watch?v=${embedMatch[1]}`;
+  } catch {
+    // Keep the original URL when browser parsing rejects it.
+  }
   return url;
 }
 
@@ -157,7 +164,8 @@ export default function Dashboard() {
 
   // Base theme class (core/ghost)
   useEffect(() => {
-    document.body.className = osirisTheme === 'core' ? '' : `theme-${osirisTheme}`;
+    document.body.classList.toggle('theme-ghost', osirisTheme === 'ghost');
+    return () => { document.body.classList.remove('theme-ghost'); };
   }, [osirisTheme]);
 
   // Custom-theme CSS variable overrides (layered on top of the base class)
@@ -237,7 +245,10 @@ export default function Dashboard() {
       ipGeoController = controller;
       const timeout = setTimeout(() => controller.abort(), 5000);
       fetch('https://ipapi.co/json/', { signal: controller.signal })
-        .then(r => r.json())
+        .then(r => {
+          if (!r.ok) throw new Error('IP geolocation failed');
+          return r.json();
+        })
         .then(geo => {
           const lat = Number(geo.latitude);
           const lng = Number(geo.longitude);
@@ -264,7 +275,9 @@ export default function Dashboard() {
       const active = layers.split(',');
       setActiveLayers(prev => {
         const next = { ...prev };
-        Object.keys(next).forEach(k => { (next as any)[k] = active.includes(k); });
+        active.forEach(k => {
+          if (k in next) (next as any)[k] = true;
+        });
         return next;
       });
     }
@@ -286,6 +299,9 @@ export default function Dashboard() {
       const url = `${window.location.pathname}?${p.toString()}`;
       window.history.replaceState(null, '', url);
     }, 1500);
+    return () => {
+      if (urlTimer.current) clearTimeout(urlTimer.current);
+    };
   }, [mapView, activeLayers]);
 
   // Global Stats Fetch
@@ -293,7 +309,10 @@ export default function Dashboard() {
     const controller = new AbortController();
     statsAbort.current = controller;
     fetch('/api/stats', { signal: controller.signal })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Stats request failed');
+        return res.json();
+      })
       .then(d => {
         if (!controller.signal.aborted && d.stats) setGlobalStats(d.stats);
       })
@@ -442,6 +461,19 @@ export default function Dashboard() {
       setShowEntityGraph(true);
     }
   }, []);
+  const handleSweepVisualize = useCallback((nextSweepData: any) => {
+    setMapProjection('globe');
+    setSweepData(nextSweepData);
+  }, []);
+  const handleScanGeolocate = useCallback((target: string, scanData: any) => {
+    setScanTargets(prev => {
+      const existing = prev.filter(t => t.id !== target);
+      return [{ id: target, timestamp: Date.now(), ...scanData }, ...existing].slice(0, 10);
+    });
+    setFlyToLocation({ lat: scanData.lat, lng: scanData.lng, ts: Date.now() });
+  }, []);
+  const closeMobilePanel = useCallback(() => setMobilePanel(null), []);
+  const closeSettings = useCallback(() => setShowSettings(false), []);
 
   // ── Plugin / custom-source host services + bootstrap ──
   useEffect(() => {
@@ -456,7 +488,15 @@ export default function Dashboard() {
   }, []);
 
   // Register persisted custom sources + activate enabled plugins once settings are hydrated.
-  useEffect(() => { if (settingsReady) void bootstrapExtensions(); }, [settingsReady]);
+  useEffect(() => {
+    let cancelled = false;
+    if (settingsReady) {
+      void bootstrapExtensions().catch((err) => {
+        if (!cancelled) console.error('[OSIRIS] Extension bootstrap failed', err);
+      });
+    }
+    return () => { cancelled = true; };
+  }, [settingsReady]);
 
   // Global handler for map popups to manually open the Intel Graph
   useEffect(() => {
@@ -979,13 +1019,7 @@ export default function Dashboard() {
           <AnimatePresence>
             {showIntel && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-12 top-1/2 -translate-y-1/2 w-80">
-                <OsintPanel onSweepVisualize={setSweepData} onScanGeolocate={(target, data) => {
-                  setScanTargets(prev => {
-                    const existing = prev.filter(t => t.id !== target);
-                    return [{ id: target, timestamp: Date.now(), ...data }, ...existing].slice(0, 10);
-                  });
-                  setFlyToLocation({ lat: data.lat, lng: data.lng, ts: Date.now() });
-                }} />
+                <OsintPanel onSweepVisualize={handleSweepVisualize} onScanGeolocate={handleScanGeolocate} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -1080,6 +1114,7 @@ export default function Dashboard() {
                   <iframe
                     src={liveFeedUrl}
                     className="w-full h-full absolute inset-0"
+                    sandbox="allow-scripts allow-same-origin allow-presentation"
                     allow="autoplay; encrypted-media"
                     allowFullScreen
                   />
@@ -1158,7 +1193,7 @@ export default function Dashboard() {
                     <span className="hud-text text-[9px] text-[var(--text-primary)]">
                       {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : mobilePanel === 'recon' ? 'OSIRIS RECON' : 'SEARCH'}
                     </span>
-                    <button onClick={() => setMobilePanel(null)} className="text-[var(--text-muted)] p-1"><X className="w-4 h-4" /></button>
+                    <button onClick={closeMobilePanel} className="text-[var(--text-muted)] p-1"><X className="w-4 h-4" /></button>
                   </div>
                   {mobilePanel === 'layers' && (
                     <>
@@ -1173,21 +1208,21 @@ export default function Dashboard() {
                       </div>
                       <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} isMobile={true} theme={osirisTheme} setTheme={setTheme} />
                       <div className="mt-8">
-                      <ViewPresets onNavigate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMapView(v => ({ ...v, latitude: lat, longitude: lng, zoom })); setMobilePanel(null); }} />
+                      <ViewPresets onNavigate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMapView(v => ({ ...v, latitude: lat, longitude: lng, zoom })); closeMobilePanel(); }} />
                       </div>
                     </>
                   )}
                   {mobilePanel === 'markets' && <MarketsPanel data={data} spaceWeather={spaceWeather} />}
-                  {mobilePanel === 'intel' && <IntelFeed data={data} onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMobilePanel(null); }} />}
+                  {mobilePanel === 'intel' && <IntelFeed data={data} onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); closeMobilePanel(); }} />}
                   {mobilePanel === 'search' && (
                     <div className="space-y-2">
-                      <SearchBar onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMobilePanel(null); }} />
+                      <SearchBar onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); closeMobilePanel(); }} />
                       <SharePanel mapView={mapView} activeLayers={activeLayers} mouseCoords={null} />
                     </div>
                   )}
                   {mobilePanel === 'recon' && (
                     <div className="space-y-2">
-                      <OsintPanel isOpen={true} onClose={() => setMobilePanel(null)} isMobile={true} onSweepVisualize={setSweepData} />
+                      <OsintPanel isOpen={true} onClose={closeMobilePanel} isMobile={true} onSweepVisualize={handleSweepVisualize} />
                     </div>
                   )}
                 </div>
@@ -1266,7 +1301,7 @@ export default function Dashboard() {
       )}
 
       {/* ── Settings ── */}
-      <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      <SettingsPanel open={showSettings} onClose={closeSettings} />
 
       {/* ── Entity Graph Panel ── */}
       {showEntityGraph && (

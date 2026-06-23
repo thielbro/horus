@@ -14,12 +14,14 @@ const surveillanceColor = (t: ThemeMode) => (t === 'ghost' ? '#FF80AB' : '#FFAB0
 
 // Cap on malware nodes woven into the botnet mesh (stability — mirrors OsirisMap's constant).
 const MAX_MESH_NODES = 750;
+const SOLAR_TERMINATOR_TTL_MS = 60_000;
+let solarTerminatorCache: { at: number; points: [number, number][] } | null = null;
 
 // SEA-domain submarine-cable background arcs to drop (light blue noise from the source map).
 const SDK_IGNORED_CABLE_COLORS = new Set(['#9BB5CC', '#A0B8CD', '#8EABC2', '#9bb5cc', '#a0b8cd', '#8eabc2']);
 
 // Day/night terminator polygon (current UTC time). Re-run on OsirisMap's 5-min interval.
-function computeSolarTerminator(): [number, number][] {
+function computeSolarTerminatorRaw(): [number, number][] {
   const now = new Date();
   const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
   const declination = -23.44 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));
@@ -36,6 +38,16 @@ function computeSolarTerminator(): [number, number][] {
   points.push([180, darkSide]);
   points.push([-180, darkSide]);
   points.push(points[0]);
+  return points;
+}
+
+function computeSolarTerminator(): [number, number][] {
+  const now = Date.now();
+  if (solarTerminatorCache && now - solarTerminatorCache.at < SOLAR_TERMINATOR_TTL_MS) {
+    return solarTerminatorCache.points;
+  }
+  const points = computeSolarTerminatorRaw();
+  solarTerminatorCache = { at: now, points };
   return points;
 }
 
@@ -160,7 +172,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
     render: [
       { source: 'maritime', toFeatures: (data, active) => (active.maritime && data.maritime_ports) ? data.maritime_ports.map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { name: p.name, country: p.country, type: p.type, volume: p.volume, fleet: p.fleet, rank: p.rank } })) : [] },
       { source: 'maritime-choke', toFeatures: (data, active) => (active.maritime && data.maritime_chokepoints) ? data.maritime_chokepoints.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, traffic: c.traffic, risk: c.risk } })) : [] },
-      { source: 'maritime-ships', toFeatures: (data, active) => (active.maritime && data.maritime_ships) ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name || s.mmsi?.toString(), type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag, mmsi: s.mmsi, imo: s.imo } })) : [] },
+      { source: 'maritime-ships', toFeatures: (data, active) => (active.maritime && data.maritime_ships) ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name || s.mmsi?.toString() || 'Unknown', type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag, mmsi: s.mmsi, imo: s.imo } })) : [] },
     ],
   },
   {

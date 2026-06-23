@@ -36,6 +36,7 @@ const INTERACTION_KINDS = new Set(['popup', 'custom', 'entityGraph', 'camera', '
 export function createPluginContext(pluginId: string, meta: { name: string; version: string }): PluginContextHandle {
   const ns = (s: string) => `${pluginId}__${s}`;
   const disposers: Array<() => void> = [];
+  const fetchControllers = new Set<AbortController>();
   const registeredFeeds = new Map<string, FeedDef>();
   const layerFeedDeps: Array<{ layerId: string; feeds: string[] }> = [];
   const warned = new Set<string>();
@@ -96,6 +97,30 @@ export function createPluginContext(pluginId: string, meta: { name: string; vers
   };
 
   const kvKey = (key: string) => `osiris:plugin:${pluginId}:${key}`;
+  const logSettingsError = (op: string, err: unknown) => {
+    console.warn(`[OSIRIS plugin:${pluginId}] settings.${op} failed`, err);
+  };
+
+  const pluginFetch = (url: string, init: RequestInit = {}) => {
+    const controller = new AbortController();
+    const externalSignal = init.signal;
+    let removeExternalAbort: (() => void) | null = null;
+
+    if (externalSignal?.aborted) {
+      controller.abort();
+    } else if (externalSignal) {
+      const onAbort = () => controller.abort();
+      externalSignal.addEventListener('abort', onAbort, { once: true });
+      removeExternalAbort = () => externalSignal.removeEventListener('abort', onAbort);
+    }
+
+    fetchControllers.add(controller);
+    return fetch(url, { ...init, signal: controller.signal })
+      .finally(() => {
+        removeExternalAbort?.();
+        fetchControllers.delete(controller);
+      });
+  };
 
   const ctx = {
     plugin: Object.freeze({ id: pluginId, name: meta.name, version: meta.version }),
@@ -136,9 +161,9 @@ export function createPluginContext(pluginId: string, meta: { name: string; vers
       subscribe: () => { warnOnce('data.subscribe'); return { dispose() {} }; },
     },
     settings: {
-      get: (key: string, fallback?: unknown) => { try { const v = localStorage.getItem(kvKey(key)); return v == null ? fallback : JSON.parse(v); } catch { return fallback; } },
-      set: (key: string, value: unknown) => { try { localStorage.setItem(kvKey(key), JSON.stringify(value)); } catch { /* ignore */ } },
-      delete: (key: string) => { try { localStorage.removeItem(kvKey(key)); } catch { /* ignore */ } },
+      get: (key: string, fallback?: unknown) => { try { const v = localStorage.getItem(kvKey(key)); return v == null ? fallback : JSON.parse(v); } catch (err) { logSettingsError('get', err); return fallback; } },
+      set: (key: string, value: unknown) => { try { localStorage.setItem(kvKey(key), JSON.stringify(value)); } catch (err) { logSettingsError('set', err); } },
+      delete: (key: string) => { try { localStorage.removeItem(kvKey(key)); } catch (err) { logSettingsError('delete', err); } },
       onChange: () => ({ dispose() {} }),
       registerSection: () => { warnOnce('settings.registerSection'); return { dispose() {} }; },
     },
@@ -162,7 +187,7 @@ export function createPluginContext(pluginId: string, meta: { name: string; vers
       warn: (m: string, ...a: unknown[]) => console.warn(`[${pluginId}]`, m, ...a),
       error: (m: string, ...a: unknown[]) => console.error(`[${pluginId}]`, m, ...a),
     },
-    fetch: (url: string, init?: RequestInit) => fetch(url, init),
+    fetch: (url: string, init?: RequestInit) => pluginFetch(url, init),
     on: () => { warnOnce('event subscriptions'); return { dispose() {} }; },
   };
 
@@ -177,7 +202,17 @@ export function createPluginContext(pluginId: string, meta: { name: string; vers
     }
   };
 
-  const dispose = () => { while (disposers.length) { try { disposers.pop()!(); } catch { /* ignore */ } } };
+  const dispose = () => {
+    fetchControllers.forEach((controller) => controller.abort());
+    fetchControllers.clear();
+    while (disposers.length) {
+      try {
+        disposers.pop()!();
+      } catch (err) {
+        console.error(`[OSIRIS plugin:${pluginId}] dispose failed`, err);
+      }
+    }
+  };
 
   return { ctx, dispose, finalize };
 }

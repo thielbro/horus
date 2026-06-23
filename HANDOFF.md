@@ -190,6 +190,37 @@ refinement, and more real plugin/custom-source dogfooding.**
 
 Next: **saved workspaces / layouts**.
 
+### Next Claude task — saved workspaces / layouts
+Implement saved workspaces as the next Phase 3 step. Keep this scoped to persisted UI/map
+state; do **not** start plugin sandboxing, server-side plugins, or publishing flows.
+
+Recommended implementation:
+- Extend the existing settings workspace model to store a versioned snapshot:
+  active layer ids, map camera/view (`latitude`, `longitude`, `zoom`), projection/style,
+  theme, panel/sidebar visibility, and any selected UI mode worth restoring.
+- Add workspace actions in Settings or a compact workspace control:
+  save current, update existing, load, duplicate, rename, and delete.
+- Restore in this order: settings hydration → `bootstrapExtensions()` → filter workspace layer
+  ids against the live registry → apply active layers/UI state → apply map camera once
+  `OsirisMap` is ready.
+- Treat missing custom/plugin layer ids as non-fatal. Drop them from the applied active set and
+  show a small visible warning only if that workspace references unavailable extension layers.
+- Keep the schema forward-compatible (`version: 1`) and avoid migrations beyond a small
+  normalizer for absent fields.
+
+Regression coverage to add:
+- Workspace snapshots persist/normalize the expected shape.
+- Restore ignores unknown layer ids and keeps known builtin/custom/plugin ids.
+- Restore ordering waits for extension bootstrap before applying layer ids.
+- Map camera restore is gated on map readiness.
+
+Safe verification for Claude:
+- `node --test tests/performance-stability.test.mjs tests/extension-hardening.test.mjs`
+- `npx tsc --noEmit`
+- `npm run lint` (existing warning baseline is expected)
+- `npm run build`
+- `npm run desktop:prepare`
+
 ---
 
 ## Phase 2 — the registry migration recipe (follow this for each remaining group)

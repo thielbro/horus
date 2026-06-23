@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Palette, Globe, KeyRound, RotateCw, Save, Monitor } from 'lucide-react';
 import { useSettings, type ApiKeys, type CustomThemeTokens } from '@/lib/settings';
@@ -56,7 +56,7 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
   );
 }
 
-export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
+function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const { settings, update } = useSettings();
   const [isDesktop, setIsDesktop] = useState(false);
   const [keys, setKeys] = useState<ApiKeys>({});
@@ -236,3 +236,5 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     </AnimatePresence>
   );
 }
+
+export default memo(SettingsPanel);
