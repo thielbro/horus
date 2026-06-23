@@ -11,6 +11,7 @@ import { getSettings, updateSettings, type InstalledPlugin } from '@/lib/setting
 import { clearByPlugin } from '@/lib/registry/store';
 import { clearFeedsByPlugin } from '@/lib/registry/feeds';
 import { createPluginContext, type PluginContextHandle } from './context';
+import { formatValidationErrors, validatePluginDefinition } from './validation';
 
 export interface PluginRecord extends InstalledPlugin {
   /** Last activation error, or null when healthy. */
@@ -21,9 +22,11 @@ export interface PluginRecord extends InstalledPlugin {
 
 type PluginDefinition = {
   id: string;
-  name?: string;
-  version?: string;
+  name: string;
+  version: string;
+  sdk?: number;
   activate: (ctx: unknown) => unknown | Promise<unknown>;
+  deactivate?: (ctx: unknown) => unknown | Promise<unknown>;
 };
 
 let records: PluginRecord[] = [];
@@ -51,12 +54,6 @@ async function importDef(code: string): Promise<any> {
   }
 }
 
-function validate(def: any): asserts def is PluginDefinition {
-  if (!def || typeof def !== 'object') throw new Error('Plugin must `export default` an object.');
-  if (typeof def.id !== 'string' || !def.id.trim()) throw new Error('Plugin is missing a string `id`.');
-  if (typeof def.activate !== 'function') throw new Error('Plugin is missing an `activate(ctx)` function.');
-}
-
 function teardown(id: string) {
   try { handles.get(id)?.dispose(); } catch { /* ignore */ }
   handles.delete(id);
@@ -80,10 +77,12 @@ async function runActivate(def: PluginDefinition, rec: PluginRecord) {
 }
 
 async function activateFromCode(rec: PluginRecord) {
+  teardown(rec.id);
   try {
     const def = await importDef(rec.code);
-    validate(def);
-    await runActivate(def, rec);
+    const validation = validatePluginDefinition(def);
+    if (!validation.ok) throw new Error(formatValidationErrors(validation.errors));
+    await runActivate(validation.value as PluginDefinition, rec);
   } catch (e: any) {
     teardown(rec.id);
     rec.error = String(e?.message ?? e);
@@ -92,22 +91,27 @@ async function activateFromCode(rec: PluginRecord) {
 }
 
 /** Install (or replace) a plugin from source code. Activates immediately and persists. */
-export async function installPlugin(code: string, opts?: { name?: string }): Promise<{ ok: boolean; id?: string; error?: string }> {
+export async function installPlugin(code: string, opts?: { name?: string; enabled?: boolean }): Promise<{ ok: boolean; id?: string; error?: string }> {
   let def: any;
-  try { def = await importDef(code); validate(def); }
+  try {
+    def = await importDef(code);
+    const validation = validatePluginDefinition(def);
+    if (!validation.ok) throw new Error(formatValidationErrors(validation.errors));
+    def = validation.value;
+  }
   catch (e: any) { return { ok: false, error: String(e?.message ?? e) }; }
 
   const id = def.id;
-  const name = def.name ?? opts?.name ?? id;
-  const version = def.version ?? '0.0.0';
+  const name = opts?.name ?? def.name;
+  const version = def.version;
 
   teardown(id); // replacing an existing plugin with the same id
-  const rec: PluginRecord = { id, name, version, code, enabled: true, error: null, loaded: false };
+  const rec: PluginRecord = { id, name, version, code, enabled: opts?.enabled ?? true, error: null, loaded: false };
   records = [...records.filter((r) => r.id !== id), rec];
-  await runActivate(def, rec);
+  if (rec.enabled) await runActivate(def, rec);
   persist();
   notify();
-  return { ok: !rec.error, id, error: rec.error ?? undefined };
+  return { ok: true, id, error: rec.error ?? undefined };
 }
 
 export async function setPluginEnabled(id: string, enabled: boolean): Promise<void> {

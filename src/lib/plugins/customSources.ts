@@ -5,29 +5,69 @@
 
 import { useSyncExternalStore } from 'react';
 import { getSettings, updateSettings } from '@/lib/settings';
-import { registerCustomSource, unregisterCustomSource, type CustomSourceSpec } from '@/lib/registry';
+import { registerCustomSource, unregisterCustomSource, getGroups, type CustomSourceSpec } from '@/lib/registry';
+import { formatValidationErrors, validateCustomSourceSpec } from './validation';
 
-let specs: CustomSourceSpec[] = [];
+export interface CustomSourceRecord extends CustomSourceSpec {
+  error: string | null;
+}
+
+let specs: CustomSourceRecord[] = [];
 let bootstrapped = false;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
 
 function persist() {
-  updateSettings({ customSources: specs });
+  updateSettings({ customSources: specs.filter((s) => !s.error).map(stripRuntimeFields) });
 }
 
-export function getCustomSources(): CustomSourceSpec[] {
+function stripRuntimeFields(spec: CustomSourceRecord): CustomSourceSpec {
+  const persisted: Partial<CustomSourceRecord> = { ...spec };
+  delete persisted.error;
+  return persisted as CustomSourceSpec;
+}
+
+function groupIds(): string[] {
+  return getGroups().map((g) => g.id);
+}
+
+export function getCustomSources(): CustomSourceRecord[] {
   return specs;
 }
 
+export function getCustomSourceSpecs(): CustomSourceSpec[] {
+  return specs.filter((s) => !s.error).map(stripRuntimeFields);
+}
+
 /** Create or replace a custom source (re-registers it live and persists). */
-export function upsertCustomSource(spec: CustomSourceSpec): void {
-  const i = specs.findIndex((s) => s.id === spec.id);
-  if (i >= 0) { unregisterCustomSource(spec.id); specs = specs.map((s) => (s.id === spec.id ? spec : s)); }
-  else specs = [...specs, spec];
-  try { registerCustomSource(spec); } catch (e) { console.error('[OSIRIS] custom source register failed', spec.id, e); }
+export function upsertCustomSource(spec: CustomSourceSpec): { ok: boolean; id?: string; error?: string } {
+  const validation = validateCustomSourceSpec(spec, {
+    groupIds: groupIds(),
+    existingIds: specs.map((s) => s.id),
+    currentId: spec.id,
+  });
+  if (!validation.ok) return { ok: false, error: formatValidationErrors(validation.errors) };
+
+  const clean = validation.value as CustomSourceSpec;
+  const previous = specs.find((s) => s.id === clean.id);
+  if (previous) unregisterCustomSource(clean.id);
+
+  try {
+    registerCustomSource(clean);
+    const record: CustomSourceRecord = { ...clean, error: null };
+    specs = previous ? specs.map((s) => (s.id === clean.id ? record : s)) : [...specs, record];
+  } catch (e: any) {
+    const error = String(e?.message ?? e);
+    console.error('[OSIRIS] custom source register failed', clean.id, e);
+    const record: CustomSourceRecord = { ...clean, error };
+    specs = previous ? specs.map((s) => (s.id === clean.id ? record : s)) : [...specs, record];
+    persist();
+    notify();
+    return { ok: false, id: clean.id, error };
+  }
   persist();
   notify();
+  return { ok: true, id: clean.id };
 }
 
 export function removeCustomSource(id: string): void {
@@ -43,14 +83,31 @@ export function bootstrapCustomSources(): void {
   bootstrapped = true;
   const persisted = (getSettings().customSources ?? []) as CustomSourceSpec[];
   specs = [];
+  const seen = new Set<string>();
   for (const s of persisted) {
-    try { registerCustomSource(s); specs.push(s); }
-    catch (e) { console.error('[OSIRIS] custom source bootstrap failed', (s as any)?.id, e); }
+    const validation = validateCustomSourceSpec(s, {
+      groupIds: groupIds(),
+      existingIds: [...seen],
+    });
+    if (!validation.ok) {
+      console.error('[OSIRIS] custom source validation failed', (s as any)?.id, validation.errors);
+      continue;
+    }
+    const clean = validation.value as CustomSourceSpec;
+    try {
+      registerCustomSource(clean);
+      specs.push({ ...clean, error: null });
+      seen.add(clean.id);
+    } catch (e: any) {
+      console.error('[OSIRIS] custom source bootstrap failed', clean.id, e);
+      specs.push({ ...clean, error: String(e?.message ?? e) });
+      seen.add(clean.id);
+    }
   }
   notify();
 }
 
 const subscribe = (cb: () => void) => { listeners.add(cb); return () => { listeners.delete(cb); }; };
-export function useCustomSources(): CustomSourceSpec[] {
+export function useCustomSources(): CustomSourceRecord[] {
   return useSyncExternalStore(subscribe, getCustomSources, getCustomSources);
 }

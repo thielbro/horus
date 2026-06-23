@@ -5,11 +5,13 @@
 // through the plugin subsystem, which registers into the live registry and persists.
 
 import { useMemo, useRef, useState } from 'react';
-import { Boxes, Puzzle, Plus, Trash2, Upload, Pencil, AlertTriangle, Power } from 'lucide-react';
+import { Boxes, Puzzle, Plus, Trash2, Upload, Pencil, AlertTriangle, Power, Download, FileUp } from 'lucide-react';
 import { getGroups } from '@/lib/registry';
 import {
   useCustomSources, upsertCustomSource, removeCustomSource,
   usePlugins, installPlugin, uninstallPlugin, setPluginEnabled,
+  exportExtensionBundle, importExtensionBundle, serializeExtensionBundle,
+  validateCustomSourceSpec, formatValidationErrors,
   type CustomSourceSpec,
 } from '@/lib/plugins';
 
@@ -27,6 +29,65 @@ const labelCls = 'text-[9px] font-mono tracking-widest text-white/40 mb-1 block 
 const btnCls = 'flex items-center gap-1.5 px-3 py-1.5 rounded border border-white/10 text-[10px] font-mono tracking-wider text-white/70 hover:border-[var(--gold-primary)]/40 hover:text-white transition-colors';
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'source';
+
+function ExtensionBundleSection() {
+  const importRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [itemErrors, setItemErrors] = useState<string[]>([]);
+
+  const exportBundle = () => {
+    setSummary(null);
+    setItemErrors([]);
+    const blob = new Blob([serializeExtensionBundle(exportExtensionBundle())], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `osiris-extensions-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    setSummary(null);
+    setItemErrors([]);
+    try {
+      const result = await importExtensionBundle(await file.text());
+      setSummary(`Imported ${result.imported.customSources} sources and ${result.imported.plugins} plugins.`);
+      setItemErrors(result.skipped.map((issue) => `${issue.kind}${issue.id ? `:${issue.id}` : ''} - ${issue.error}`));
+    } catch (err: any) {
+      setItemErrors([String(err?.message ?? err)]);
+    } finally {
+      setBusy(false);
+      if (importRef.current) importRef.current.value = '';
+    }
+  };
+
+  return (
+    <section>
+      <SectionTitle icon={Download}>EXTENSION BUNDLE</SectionTitle>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={exportBundle} className={btnCls}><Download className="w-3.5 h-3.5" /> EXPORT BUNDLE</button>
+        <button disabled={busy} onClick={() => importRef.current?.click()} className={`${btnCls} disabled:opacity-40`}><FileUp className="w-3.5 h-3.5" /> IMPORT BUNDLE</button>
+        <input ref={importRef} type="file" accept=".json" className="hidden" onChange={onImport} />
+      </div>
+      {summary && <div className="mt-2 text-[10px] font-mono text-[var(--alert-green)]">{summary}</div>}
+      {itemErrors.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {itemErrors.map((item, i) => (
+            <div key={`${item}-${i}`} className="text-[9px] font-mono text-[var(--alert-red)] break-words flex items-start gap-1.5">
+              <AlertTriangle className="w-3 h-3 mt-px shrink-0" />
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
 type Draft = Omit<CustomSourceSpec, 'id'> & { id?: string };
 const EMPTY_DRAFT = (group: string): Draft => ({
@@ -61,7 +122,14 @@ function CustomSourcesSection() {
         if (!spec.labelProp) delete (spec as any).labelProp;
         if (!spec.jsonPath) delete (spec as any).jsonPath;
       }
-      upsertCustomSource(spec);
+      const validation = validateCustomSourceSpec(spec, {
+        groupIds: groups.map((g) => g.id),
+        existingIds: sources.map((s) => s.id),
+        currentId: spec.id,
+      });
+      if (!validation.ok) throw new Error(formatValidationErrors(validation.errors));
+      const result = upsertCustomSource(validation.value as CustomSourceSpec);
+      if (!result.ok) throw new Error(result.error ?? 'Custom source could not be registered.');
       setDraft(EMPTY_DRAFT(groups[0]?.id ?? 'THREAT'));
       setRawText('');
     } catch (e: any) {
@@ -76,16 +144,20 @@ function CustomSourcesSection() {
       {sources.length > 0 && (
         <div className="space-y-1.5 mb-4">
           {sources.map((s) => (
-            <div key={s.id} className="flex items-center justify-between gap-2 bg-black/30 border border-white/5 rounded px-2.5 py-1.5">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.color }} />
-                <span className="text-[11px] font-mono text-white/85 truncate">{s.label}</span>
-                <span className="text-[9px] font-mono text-white/30 truncate">{s.url}</span>
+            <div key={s.id} className="bg-black/30 border border-white/5 rounded px-2.5 py-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.color }} />
+                  <span className="text-[11px] font-mono text-white/85 truncate">{s.label}</span>
+                  <span className="text-[9px] font-mono text-white/30 truncate">{s.url}</span>
+                  {s.error && <span className="text-[9px] font-mono text-[var(--alert-red)]">ERROR</span>}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => edit(s)} className="p-1 text-white/40 hover:text-[var(--cyan-primary)]" title="Edit"><Pencil className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => removeCustomSource(s.id)} className="p-1 text-white/40 hover:text-[var(--alert-red)]" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => edit(s)} className="p-1 text-white/40 hover:text-[var(--cyan-primary)]" title="Edit"><Pencil className="w-3.5 h-3.5" /></button>
-                <button onClick={() => removeCustomSource(s.id)} className="p-1 text-white/40 hover:text-[var(--alert-red)]" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
-              </div>
+              {s.error && <div className="mt-1 text-[9px] font-mono text-[var(--alert-red)] break-words">{s.error}</div>}
             </div>
           ))}
         </div>
@@ -149,29 +221,59 @@ function CustomSourcesSection() {
 
 const SAMPLE_PLUGIN = `// Trusted in-process plugin. Default-export a definition.
 export default {
-  id: 'hello-osiris',
-  name: 'Hello OSIRIS',
+  id: 'dogfood-local-incidents',
+  name: 'Dogfood Local Incidents',
   version: '1.0.0',
+  sdk: 1,
   activate(ctx) {
-    ctx.registerLayer({
-      id: 'hello_points',
-      label: 'Hello Points',
-      group: 'THREAT',
+    const point = window.OsirisSDK?.point ?? ((lng, lat, props = {}) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [lng, lat] },
+      properties: props,
+    }));
+
+    ctx.registerGroup({
+      id: 'DOGFOOD',
+      label: 'DOG',
+      fullLabel: 'DOGFOOD',
       color: '#00E5FF',
-      icon: 'Star',
+      order: 95,
+    });
+
+    ctx.registerFeed({
+      id: 'local-incidents',
+      fetch: {
+        kind: 'endpoint',
+        url: '/examples/extensions/incidents.json',
+        transform: (raw) => ({ dogfood_incidents: Array.isArray(raw?.items) ? raw.items : [] }),
+      },
+      priority: 'lazy',
+    });
+
+    ctx.registerLayer({
+      id: 'local_incidents',
+      label: 'Local Incidents',
+      group: 'DOGFOOD',
+      color: '#00E5FF',
+      icon: 'AlertTriangle',
+      feeds: ['local-incidents'],
+      countBuckets: ['dogfood_incidents'],
       styleLayers: [
-        { id: 'dots', mapSource: 'pts', type: 'circle', paint: {
+        { id: 'dots', mapSource: 'incidents', type: 'circle', paint: {
           'circle-radius': 6, 'circle-color': '#00E5FF', 'circle-opacity': 0.9,
           'circle-stroke-width': 1.5, 'circle-stroke-color': '#000', 'circle-stroke-opacity': 0.6,
         } },
       ],
-      render: [{ mapSource: 'pts', source: { compute: (data, active) => active.hello_points ? [
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: { name: 'Null Island' } },
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [-74, 40.7] }, properties: { name: 'NYC' } },
-      ] : [] } }],
-      interaction: { kind: 'popup', html: (p) => '<b>' + p.name + '</b>' },
+      render: [{
+        mapSource: 'incidents',
+        source: {
+          bucket: 'dogfood_incidents',
+          toFeatures: (items) => items.map((it) => point(it.lng, it.lat, it)),
+        },
+      }],
+      interaction: { kind: 'popup', html: (p) => '<b>' + p.name + '</b><br/>' + p.status },
     });
-    ctx.log.info('hello-osiris activated');
+    ctx.log.info('dogfood-local-incidents activated');
   },
 };`;
 
@@ -186,7 +288,7 @@ function PluginsSection() {
     setBusy(true); setError(null);
     const res = await installPlugin(src);
     setBusy(false);
-    if (!res.ok) setError(res.error ?? 'Install failed.');
+    if (!res.ok || res.error) setError(res.error ?? 'Install failed.');
     else setCode('');
   };
 
@@ -249,6 +351,7 @@ function PluginsSection() {
 export default function ExtensionsSettings() {
   return (
     <>
+      <ExtensionBundleSection />
       <CustomSourcesSection />
       <PluginsSection />
     </>

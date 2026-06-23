@@ -14,6 +14,12 @@ import {
 import { registerFeed, unregisterFeed } from '../registry/feeds';
 import type { FeedDef, RegistryGroup, RegistryLayer, LayerInteraction } from '../registry/types';
 import { getHost } from './host';
+import {
+  formatValidationErrors,
+  validatePluginFeedDefinition,
+  validatePluginGroupDefinition,
+  validatePluginLayerDefinition,
+} from './validation';
 
 interface Disposable { dispose(): void; }
 
@@ -43,7 +49,7 @@ export function createPluginContext(pluginId: string, meta: { name: string; vers
 
   const adaptLayer = (def: any): RegistryLayer => {
     const styleLayers = (def.styleLayers ?? []).map((sl: any) => ({
-      id: ns(sl.id), mapSource: ns(sl.mapSource ?? def.id), type: sl.type,
+      id: ns(sl.id), mapSource: ns(sl.mapSource ?? sl.id), type: sl.type,
       paint: sl.paint, layout: sl.layout, filter: sl.filter, minzoom: sl.minzoom, maxzoom: sl.maxzoom,
     }));
     const render = (def.render ?? []).map((rb: any) => {
@@ -95,21 +101,28 @@ export function createPluginContext(pluginId: string, meta: { name: string; vers
     plugin: Object.freeze({ id: pluginId, name: meta.name, version: meta.version }),
 
     registerLayer: (def: any) => {
-      registerLayer(adaptLayer(def));
+      const validation = validatePluginLayerDefinition(def);
+      if (!validation.ok) throw new Error(formatValidationErrors(validation.errors));
+      registerLayer(adaptLayer(validation.value));
       if (Array.isArray(def.feeds) && def.feeds.length) layerFeedDeps.push({ layerId: def.id, feeds: def.feeds });
       return track(() => unregisterLayer(def.id));
     },
     registerFeed: (def: any) => {
-      const f = adaptFeed(def);
+      const validation = validatePluginFeedDefinition(def);
+      if (!validation.ok) throw new Error(formatValidationErrors(validation.errors));
+      const f = adaptFeed(validation.value);
       if (!f) return { dispose() {} };
       registeredFeeds.set(f.id, f);
       registerFeed(f);
       return track(() => unregisterFeed(f.id));
     },
     registerGroup: (def: any) => {
-      const g: RegistryGroup = { id: def.id, label: def.label, fullLabel: def.fullLabel, color: def.color, order: def.order ?? 100, origin: 'plugin', pluginId };
+      const validation = validatePluginGroupDefinition(def);
+      if (!validation.ok) throw new Error(formatValidationErrors(validation.errors));
+      const clean = validation.value;
+      const g: RegistryGroup = { id: clean.id, label: clean.label, fullLabel: clean.fullLabel, color: clean.color, order: clean.order ?? 100, origin: 'plugin', pluginId };
       registerGroup(g);
-      return track(() => unregisterGroup(def.id));
+      return track(() => unregisterGroup(clean.id));
     },
     registerPanel: () => { warnOnce('registerPanel'); return { dispose() {} }; },
     registerReconTool: () => { warnOnce('registerReconTool'); return { dispose() {} }; },

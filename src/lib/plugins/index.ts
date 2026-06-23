@@ -9,8 +9,15 @@ export {
 } from './loader';
 export {
   upsertCustomSource, removeCustomSource, getCustomSources, useCustomSources,
-  bootstrapCustomSources,
+  bootstrapCustomSources, getCustomSourceSpecs, type CustomSourceRecord,
 } from './customSources';
+export {
+  exportExtensionBundle, importExtensionBundle, serializeExtensionBundle,
+  type ExtensionBundle, type ExtensionImportResult,
+} from './bundles';
+export {
+  validateCustomSourceSpec, validatePluginDefinition, formatValidationErrors,
+} from './validation';
 export { setHostServices, getHost, type HostServices } from './host';
 export type { CustomSourceSpec } from '@/lib/registry';
 

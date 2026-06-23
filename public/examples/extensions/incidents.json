@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "id": "demo-001",
+      "name": "Port sensor outage",
+      "status": "investigating",
+      "severity": "medium",
+      "lat": 37.7749,
+      "lng": -122.4194
+    },
+    {
+      "id": "demo-002",
+      "name": "Border checkpoint queue",
+      "status": "monitoring",
+      "severity": "low",
+      "lat": 32.7157,
+      "lng": -117.1611
+    },
+    {
+      "id": "demo-003",
+      "name": "Airport perimeter alert",
+      "status": "review",
+      "severity": "high",
+      "lat": 40.6413,
+      "lng": -73.7781
+    }
+  ]
+}

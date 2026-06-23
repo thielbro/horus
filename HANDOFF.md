@@ -6,8 +6,8 @@ phase-by-phase history lives in the original osiris repo; here it's **squashed i
 initial commit**, so the commit hashes named below (e.g. `9b23f2f`, `704c366`) refer to
 that original repo. Local commits after the initial snapshot carry the continued registry
 and desktop work. After the latest commit, the tree should be clean; **continue with Phase
-2 Step 5 cleanup plus Phase 3 extension hardening/polish** (see below). Dependencies are
-installed in this workspace. Read this top-to-bottom, then skim `git log`.
+3 saved workspaces / layouts** (see below). Dependencies are installed in this workspace.
+Read this top-to-bottom, then skim `git log`.
 
 > ⚠️ Read `AGENTS.md` first: this is Next.js 16 with breaking changes — consult
 > `node_modules/next/dist/docs/` before touching Next config/conventions.
@@ -166,7 +166,29 @@ done by folding extra style layers + render bindings into existing layers:
 
 **Phase 2 is complete. Phase 3 has a working foundation but still needs hardening, UX
 refinement, and more real plugin/custom-source dogfooding.**
-Next: **extension hardening**.
+
+**Phase 3 extension hardening — DONE:**
+- Shared extension validators now cover no-code custom source specs, trusted plugin metadata
+  (`sdk: 1`), plugin layers/feeds/groups, supported interaction kinds, and extension bundles.
+- Settings shows custom-source item errors, plugin activation errors, and bundle import issues
+  instead of relying on console output. Invalid bundle entries are skipped while valid entries
+  still import.
+- Extension import/export uses one JSON bundle shape:
+  `{ "version": 1, "plugins": [], "customSources": [] }`.
+- Plugin enable/re-enable now tears down before activation, failed activation leaves visible
+  item errors, and partial plugin registrations are cleared.
+- Dogfood examples added:
+  `docs/extensions/example-bundle.json`, `docs/extensions/hello-osiris-plugin.js`, and
+  `public/examples/extensions/incidents.json`.
+- Fresh verification:
+  - `node --test tests/extension-hardening.test.mjs` → 3/3 pass.
+  - `node --test tests/performance-stability.test.mjs` → 41/41 pass.
+  - `npx tsc --noEmit` → pass.
+  - `npm run lint` → pass with the existing 77-warning baseline.
+  - `npm run build` → pass.
+  - `npm run desktop:prepare` → pass, assembled `desktop\.staging\server`.
+
+Next: **saved workspaces / layouts**.
 
 ---
 
@@ -201,11 +223,9 @@ so a bad spec shows in the console.
   SDK-style `mapSource` to reduce plugin adapter friction.
 
 ## After Phase 2 (the original plan)
-Phase 3 — no-code custom sources/layers + JS plugins now has its first working foundation
-(see Current state). Remaining work: harden the plugin/custom-source UX, decide import/export
-shape for plugins and sources, add richer validation/error display, dogfood with real feeds,
-and then continue to saved workspaces. The plugin model is **trusted in-process** (no
-sandbox) — see decisions.
+Phase 3 — no-code custom sources/layers + JS plugins now has a hardened foundation
+(see Current state). Remaining work: saved workspaces / layouts. The plugin model is
+**trusted in-process** (no sandbox) — see decisions.
 
 ---
 

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "plugins": [],
+  "customSources": [
+    {
+      "id": "custom_dogfood_incidents",
+      "label": "Dogfood Incidents",
+      "group": "THREAT",
+      "color": "#00E5FF",
+      "url": "/examples/extensions/incidents.json",
+      "jsonPath": "items",
+      "latProp": "lat",
+      "lngProp": "lng",
+      "labelProp": "name",
+      "markerType": "circle",
+      "radius": 6
+    }
+  ]
+}
