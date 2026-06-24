@@ -50,19 +50,24 @@ export async function GET(request: Request) {
 
   // Resolve same-origin / relative URLs against the request origin so users can test
   // builtin feeds (e.g. /api/cctv?continent=oceania) too.
-  let absoluteUrl: string;
+  const reqUrl = new URL(request.url);
+  let target: URL;
   try {
-    absoluteUrl = new URL(url, request.url).toString();
+    target = new URL(url, request.url);
   } catch {
     return NextResponse.json({ ok: false, error: 'Invalid URL' }, { status: 200 });
   }
+  const sameOrigin = target.origin === reqUrl.origin;
 
   let res: Response;
   try {
-    res = await safeFetch(absoluteUrl, {
+    const init = {
       headers: { 'User-Agent': 'OSIRIS-map/1.0 (source tester)' },
       signal: AbortSignal.timeout(12000),
-    });
+    };
+    // Same-origin builtin endpoints are our own APIs — fetch them directly. Only external
+    // user URLs go through the SSRF guard (which blocks private/loopback/metadata targets).
+    res = sameOrigin ? await fetch(target, init) : await safeFetch(target.toString(), init);
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : 'Request failed' },
