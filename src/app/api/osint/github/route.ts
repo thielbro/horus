@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -15,11 +15,11 @@ export async function GET(req: Request) {
     const [userResult, reposResult] = await Promise.allSettled([
       fetch(`https://api.github.com/users/${encodeURIComponent(username)}`, {
         headers: { 'User-Agent': 'OSIRIS-Recon' },
-        signal: AbortSignal.timeout(8000),
+        signal: safeAbortTimeout(8000),
       }),
       fetch(`https://api.github.com/users/${encodeURIComponent(username)}/repos?sort=updated&per_page=5`, {
         headers: { 'User-Agent': 'OSIRIS-Recon' },
-        signal: AbortSignal.timeout(8000),
+        signal: safeAbortTimeout(8000),
       })
     ]);
 

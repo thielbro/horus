@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — SCM Supplier Risk Overlay
@@ -40,9 +41,9 @@ export async function GET(request: Request) {
 
   try {
     const [eqResult, fireResult, gdeltResult] = await Promise.allSettled([
-      fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson', { signal: AbortSignal.timeout(5000) }),
-      fetch(new URL('/api/fires', request.url), { signal: AbortSignal.timeout(5000) }),
-      fetch(new URL('/api/gdelt', request.url), { signal: AbortSignal.timeout(5000) }),
+      fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson', { signal: safeAbortTimeout(5000) }),
+      fetch(new URL('/api/fires', request.url), { signal: safeAbortTimeout(5000) }),
+      fetch(new URL('/api/gdelt', request.url), { signal: safeAbortTimeout(5000) }),
     ]);
 
     const eqRes = eqResult.status === 'fulfilled' ? eqResult.value : null;

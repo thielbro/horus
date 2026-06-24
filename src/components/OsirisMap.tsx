@@ -148,21 +148,27 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     // Select basemap style
     const styleUrl = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: styleUrl,
-      center: [25.48, 42.70], zoom: 6.5, minZoom: 1.5, maxZoom: 18,
-      attributionControl: false,
-      maxPitch: 85,
-      transformRequest: (url: string) => {
-        // Route all CARTO CDN requests through the internal Next.js proxy API
-        if (url.includes('cartocdn.com')) {
-          const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-          return { url: `${baseUrl}/api/proxy-tiles?url=${encodeURIComponent(url)}` };
-        }
-        return { url };
-      },
-    });
+    let map: maplibregl.Map;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: styleUrl,
+        center: [25.48, 42.70], zoom: 6.5, minZoom: 1.5, maxZoom: 18,
+        attributionControl: false,
+        maxPitch: 85,
+        transformRequest: (url: string) => {
+          // Route all CARTO CDN requests through the internal Next.js proxy API
+          if (url.includes('cartocdn.com')) {
+            const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+            return { url: `${baseUrl}/api/proxy-tiles?url=${encodeURIComponent(url)}` };
+          }
+          return { url };
+        },
+      });
+    } catch (error) {
+      console.error('[OSIRIS] Map init failed:', error);
+      return;
+    }
 
     const resizeObserver = new ResizeObserver(() => {
       map.resize();

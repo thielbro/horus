@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -17,7 +18,7 @@ export async function GET(req: Request) {
         'Accept': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OSIRIS/1.0'
       },
-      signal: AbortSignal.timeout(10000),
+      signal: safeAbortTimeout(10000),
     });
     
     if (res.status === 404) {

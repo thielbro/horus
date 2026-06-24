@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export async function GET(req: Request) {
       if (val) params.set(key, val);
     }
     const res = await fetch(`${INTEL_URL}/resolve?${params}`, {
-      signal: AbortSignal.timeout(15000),
+      signal: safeAbortTimeout(15000),
       headers: { 'X-Forwarded-For': clientIp },
     });
 

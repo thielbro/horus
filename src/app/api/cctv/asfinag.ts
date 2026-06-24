@@ -1,6 +1,6 @@
 import { withFallback } from './resilient';
 import type { CctvCamera } from './types';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 const ASFINAG_WEBCAMS_URL = 'https://odo.asfinag.at/odo/rest/sec/resource/001/json/webcams?language=atDE';
 const ASFINAG_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -60,7 +60,7 @@ function toAsfinagCamera(cam: AsfinagWebcam): CctvCamera | null {
 async function fetchFreshAsfinagCameras(): Promise<CctvCamera[]> {
   try {
     const res = await fetch(ASFINAG_WEBCAMS_URL, {
-      signal: AbortSignal.timeout(12000),
+      signal: safeAbortTimeout(12000),
       headers: ASFINAG_HEADERS,
     });
 

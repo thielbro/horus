@@ -1,7 +1,7 @@
 
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Flight Data API
@@ -60,7 +60,7 @@ async function fetchRegion(region: typeof REGIONS[0]): Promise<any[]> {
   try {
     const url = `https://api.adsb.lol/v2/lat/${region.lat}/lon/${region.lon}/dist/${region.dist}`;
     const res = await stealthFetch(url, {
-      signal: AbortSignal.timeout(12000),
+      signal: safeAbortTimeout(12000),
     });
     if (res.ok) {
       const data = await res.json();

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { clampFinite, clampFiniteInt } from '@/lib/http-utils';
+import { clampFinite, clampFiniteInt, safeAbortTimeout } from '@/lib/http-utils';
 
 // Sentinel-1 SAR Satellite — STAC Catalog via Element84 Earth Search + Copernicus fallback
 export async function GET(req: Request) {
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
       const res = await fetch('https://earth-search.aws.element84.com/v1/search', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(12000),
+        signal: safeAbortTimeout(12000),
         body: JSON.stringify({
           collections: ['sentinel-1-grd'],
           bbox,
@@ -51,7 +51,7 @@ export async function GET(req: Request) {
         const res = await fetch('https://earth-search.aws.element84.com/v1/search', { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(12000),
+          signal: safeAbortTimeout(12000),
           body: JSON.stringify({
             collections: ['sentinel-2-l2a'],
             bbox,
@@ -75,7 +75,7 @@ export async function GET(req: Request) {
         const fallbackRes = await fetch('https://catalogue.dataspace.copernicus.eu/stac/search', { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(12000),
+          signal: safeAbortTimeout(12000),
           body: JSON.stringify({
             collections: ['SENTINEL-1'],
             bbox,

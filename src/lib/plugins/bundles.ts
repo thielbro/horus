@@ -49,7 +49,11 @@ export function serializeExtensionBundle(bundle: ExtensionBundle = exportExtensi
 
 function parseBundle(payload: string | unknown): unknown {
   if (typeof payload !== 'string') return payload;
-  return JSON.parse(payload);
+  try {
+    return JSON.parse(payload);
+  } catch (e: any) {
+    throw new Error(`Invalid JSON: ${String(e?.message ?? e)}`);
+  }
 }
 
 function itemId(value: unknown): string | undefined {
@@ -70,7 +74,7 @@ export async function importExtensionBundle(payload: string | unknown): Promise<
     return {
       ok: false,
       imported: { plugins: 0, customSources: 0 },
-      skipped: [{ kind: 'bundle', error: `Invalid JSON: ${String(e?.message ?? e)}` }],
+      skipped: [{ kind: 'bundle', error: String(e?.message ?? e) }],
     };
   }
 

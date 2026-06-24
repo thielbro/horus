@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Palette, Globe, KeyRound, RotateCw, Save, Monitor } from 'lucide-react';
 import { useSettings, type ApiKeys, type CustomThemeTokens } from '@/lib/settings';
@@ -65,16 +65,18 @@ function SettingsPanel({ open, onClose, getWorkspaceSnapshot, onApplyWorkspace }
   const [isDesktop, setIsDesktop] = useState(false);
   const [keys, setKeys] = useState<ApiKeys>({});
   const [saved, setSaved] = useState(false);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
     setIsDesktop(typeof window !== 'undefined' && !!(window as unknown as { osiris?: { isDesktop?: boolean } }).osiris?.isDesktop);
   }, []);
 
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpenRef.current) {
       setKeys(settings.apiKeys || {});
       setSaved(false);
     }
+    wasOpenRef.current = open;
   }, [open, settings.apiKeys]);
 
   const theme = settings.appearance.theme;

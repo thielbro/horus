@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { safeFetch, isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 import { matchExact, type SanctionEntry } from '@/lib/sanctions';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 // WHOIS + Domain Intelligence via RDAP (free, standardized).
 // Cross-checks any registrant / org names returned by RDAP against the
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
     // RDAP (Registration Data Access Protocol) — successor to WHOIS
     try {
       const res = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, {
-        signal: AbortSignal.timeout(8000),
+        signal: safeAbortTimeout(8000),
         headers: { 'Accept': 'application/json' },
       });
       if (res.ok) {
@@ -64,7 +65,7 @@ export async function GET(req: Request) {
     try {
       const res = await safeFetch(`https://${domain}`, {
         method: 'HEAD',
-        signal: AbortSignal.timeout(5000),
+        signal: safeAbortTimeout(5000),
         maxRedirects: 3,
       });
       const headers: Record<string, string> = {};

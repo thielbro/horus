@@ -1,6 +1,6 @@
 
 import { NextResponse } from 'next/server';
-import { parseKpIndex } from '@/lib/http-utils';
+import { parseKpIndex, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Space Weather API
@@ -10,7 +10,7 @@ import { parseKpIndex } from '@/lib/http-utils';
  */
 
 async function fetchJsonIfOk(url: string): Promise<any> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  const res = await fetch(url, { signal: safeAbortTimeout(8000) });
   if (!res.ok) {
     await res.body?.cancel();
     throw new Error(`NOAA request failed: ${res.status}`);

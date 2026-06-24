@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 // Country Intelligence Index — composite risk from earthquakes, conflicts, instability
 // Inspired by WorldMonitor's 12-signal risk scoring
@@ -82,7 +83,7 @@ export async function GET() {
     const quakeRisks: Record<string, { count: number; maxMagnitude: number }> = {};
     try {
       const res = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson', {
-        signal: AbortSignal.timeout(8000),
+        signal: safeAbortTimeout(8000),
       });
       if (res.ok) {
         const data = await res.json();

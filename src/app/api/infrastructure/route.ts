@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Global Infrastructure API
@@ -98,7 +99,7 @@ export async function GET() {
 
   try {
     // Fetch recent earthquakes (M4.5+ in the past 24 hours) from USGS
-    const res = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson', { signal: AbortSignal.timeout(5000) });
+    const res = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson', { signal: safeAbortTimeout(5000) });
     if (res.ok) {
       const eqData = await res.json();
       const earthquakes = eqData.features || [];

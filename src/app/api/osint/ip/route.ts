@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 import { matchExact, type SanctionEntry } from '@/lib/sanctions';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 // IP Geolocation + Reputation — combines multiple free sources.
 // Cross-checks the ASN owner / ISP / org strings against the OFAC SDN
@@ -28,7 +29,7 @@ export async function GET(req: Request) {
     // 1. ip-api.com — geolocation (free, no key)
     try {
       const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,continent,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,asname,mobile,proxy,hosting,query`, {
-        signal: AbortSignal.timeout(5000),
+        signal: safeAbortTimeout(5000),
       });
       if (res.ok) {
         const geo = await res.json();

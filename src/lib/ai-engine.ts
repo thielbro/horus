@@ -219,6 +219,13 @@ function countBySeverity(threats: ThreatEvent[]): Record<string, number> {
   }, {});
 }
 
+function maxEarthquakeMagnitude(earthquakes: EarthquakeEvent[]): number {
+  return earthquakes.reduce((max, eq) => {
+    const magnitude = Number(eq.magnitude);
+    return Number.isFinite(magnitude) && magnitude > max ? magnitude : max;
+  }, 0);
+}
+
 function formatTopItems(context: IntelligenceContext): string[] {
   const lines: string[] = [];
   for (const threat of context.threats.slice(0, 5)) {
@@ -283,7 +290,7 @@ Gemini briefing generation is unavailable, so this is a bounded local briefing f
 ${topItems.join('\n')}
 
 ### III. Seismic & Natural Hazard Assessment
-${context.earthquakes.length ? `Tracked seismic events are present. Highest submitted magnitude: M${Math.max(...context.earthquakes.map((eq) => eq.magnitude || 0)).toFixed(1)}.` : 'No seismic events were submitted in the current context.'}
+${context.earthquakes.length ? `Tracked seismic events are present. Highest submitted magnitude: M${maxEarthquakeMagnitude(context.earthquakes).toFixed(1)}.` : 'No seismic events were submitted in the current context.'}
 
 ### IV. Geopolitical & Conflict Intelligence
 - CRITICAL: ${severities.CRITICAL || 0}

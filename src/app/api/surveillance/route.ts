@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getClientIp, isRateLimited } from '@/lib/ssrf-guard';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Surveillance Camera Locations (OpenStreetMap)
@@ -92,7 +93,7 @@ export async function GET(request: Request) {
         'User-Agent': 'OSIRIS-map/1.0 (surveillance-location layer; OpenStreetMap data)',
       },
       body: 'data=' + encodeURIComponent(query),
-      signal: AbortSignal.timeout(30000),
+      signal: safeAbortTimeout(30000),
     });
     if (!res.ok) {
       return NextResponse.json({ surveillance: [], error: `Overpass ${res.status}` }, { status: 200 });

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { validateHost, isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Scanner Proxy (Hardened)
@@ -114,7 +115,7 @@ export async function GET(req: Request) {
   try {
     const params = new URLSearchParams({ key: SCANNER_KEY, target });
     const res = await fetch(`${SCANNER_URL}${scanConfig.endpoint}?${params.toString()}`, {
-      signal: AbortSignal.timeout(scanConfig.timeout),
+      signal: safeAbortTimeout(scanConfig.timeout),
     });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });

@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 type NextFetchInit = RequestInit & { next?: { revalidate?: number } };
 
 function fetchWithDeadline(url: string, init: NextFetchInit, timeoutMs = 12_000) {
   return fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: safeAbortTimeout(timeoutMs),
   });
 }
 

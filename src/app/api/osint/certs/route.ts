@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 // Certificate Transparency lookup via crt.sh (free, no key)
 export async function GET(req: Request) {
@@ -18,7 +19,7 @@ export async function GET(req: Request) {
 
   try {
     const res = await fetch(`https://crt.sh/?q=%25.${encodeURIComponent(domain)}&output=json`, {
-      signal: AbortSignal.timeout(10000),
+      signal: safeAbortTimeout(10000),
       headers: { 'User-Agent': 'Osiris-OSINT/3.0' },
     });
 

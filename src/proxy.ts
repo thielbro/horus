@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest, NextFetchEvent } from 'next/server';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 // Next 16 `proxy` convention (replaces the deprecated `middleware` file — keeping the
 // deprecated convention is what sent Turbopack's dev server into a worker-respawn storm).
@@ -33,8 +34,8 @@ export function proxy(request: NextRequest, event: NextFetchEvent) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'User-Agent': userAgent, 'x-forwarded-for': ip },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(3000),
-    }).catch(() => {});
+      signal: safeAbortTimeout(3000),
+    }).then(releaseResponseBody).catch(() => {});
 
   event.waitUntil(
     Promise.all([

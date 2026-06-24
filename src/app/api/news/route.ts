@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Military-Grade Intelligence API
@@ -125,7 +126,7 @@ export async function GET() {
     const feedPromises = TELEGRAM_CHANNELS.map(async (channel) => {
       try {
         const res = await fetch(`https://t.me/s/${channel}`, { 
-          signal: AbortSignal.timeout(8000), 
+          signal: safeAbortTimeout(8000),
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' } 
         });
         if (!res.ok) return [];
@@ -145,7 +146,7 @@ export async function GET() {
     if (allArticles.length === 0) {
       const fallbackPromises = Object.entries(FALLBACK_FEEDS).map(async ([source, url]) => {
         try {
-          const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+          const res = await fetch(url, { signal: safeAbortTimeout(5000) });
           if (!res.ok) return [];
           const xml = await readLimitedText(res);
           return parseRSSItems(xml, source).slice(0, 5);

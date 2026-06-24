@@ -1,4 +1,5 @@
 import type { CctvCamera } from './types';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * Module-level "last known good" cache, keyed by source id. Survives for the
@@ -30,7 +31,7 @@ export async function fetchWithRetry(
     try {
       const res = await fetch(url, {
         ...init,
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: safeAbortTimeout(timeoutMs),
         headers: {
           'User-Agent': 'OSIRIS-map/1.0 (CCTV layer)',
           ...(init.headers || {}),

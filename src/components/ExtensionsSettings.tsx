@@ -107,6 +107,15 @@ function CustomSourcesSection() {
 
   const edit = (s: CustomSourceSpec) => { setDraft({ ...s }); setRaw(false); setError(null); };
 
+  const removeSource = (id: string) => {
+    setError(null);
+    try {
+      removeCustomSource(id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const save = () => {
     setError(null);
     try {
@@ -158,7 +167,7 @@ function CustomSourcesSection() {
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={() => edit(s)} className="p-1 text-white/40 hover:text-[var(--cyan-primary)]" title="Edit"><Pencil className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => removeCustomSource(s.id)} className="p-1 text-white/40 hover:text-[var(--alert-red)]" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => removeSource(s.id)} className="p-1 text-white/40 hover:text-[var(--alert-red)]" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
               {s.error && <div className="mt-1 text-[9px] font-mono text-[var(--alert-red)] break-words">{s.error}</div>}

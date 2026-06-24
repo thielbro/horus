@@ -97,6 +97,7 @@ function getYouTubeWatchUrl(url: string): string {
 }
 
 const DEFAULT_DATA_ARRAY_LIMIT = 1000;
+const FETCH_ENDPOINT_TIMEOUT_MS = 30_000;
 const DATA_ARRAY_LIMITS: Record<string, number> = {
   cameras_europe: 5000,
   cameras_north_america: 5000,
@@ -373,9 +374,12 @@ export default function Dashboard() {
     if (urlTimer.current) clearTimeout(urlTimer.current);
     urlTimer.current = setTimeout(() => {
       const p = new URLSearchParams();
-      p.set('lat', (mapView.latitude ?? 20).toFixed(4));
-      p.set('lon', (mapView.longitude ?? 0).toFixed(4));
-      p.set('zoom', mapView.zoom.toFixed(2));
+      const lat = Number.isFinite(mapView.latitude) ? mapView.latitude : 20;
+      const lon = Number.isFinite(mapView.longitude) ? mapView.longitude : 0;
+      const zoom = Number.isFinite(mapView.zoom) ? mapView.zoom : 2.5;
+      p.set('lat', lat.toFixed(4));
+      p.set('lon', lon.toFixed(4));
+      p.set('zoom', zoom.toFixed(2));
       const active = Object.entries(activeLayers).filter(([,v]) => v).map(([k]) => k).join(',');
       p.set('layers', active);
       const url = `${window.location.pathname}?${p.toString()}`;
@@ -604,21 +608,32 @@ export default function Dashboard() {
   const fetchEndpoint = useCallback(async (url: string, transform?: (d: any) => any, options?: RequestInit) => {
     // NOTE: no document.hidden guard here — one-time initial layer loads must run
     // even if the tab mounts in the background. Polling is throttled via ifVisible() below.
+    const controller = new AbortController();
+    const parentSignal = options?.signal;
+    const timeout = setTimeout(() => controller.abort(new Error(`Fetch timed out: ${url}`)), FETCH_ENDPOINT_TIMEOUT_MS);
+    const abortFromParent = () => controller.abort(parentSignal?.reason);
+    if (parentSignal) {
+      if (parentSignal.aborted) abortFromParent();
+      else parentSignal.addEventListener('abort', abortFromParent, { once: true });
+    }
     try {
       // Force the browser to bypass its local disk cache for real-time data
-      const res = await fetch(url, { ...options, cache: 'no-store' });
-      if (res.ok && !options?.signal?.aborted) {
+      const res = await fetch(url, { ...options, cache: 'no-store', signal: controller.signal });
+      if (res.ok && !controller.signal.aborted) {
         const json = await res.json();
         const d = capDataPayload(transform ? transform(json) : json);
-        if (!options?.signal?.aborted) {
+        if (!controller.signal.aborted) {
           setData(prev => ({ ...prev, ...d }));
           setBackendStatus('connected');
         }
       }
     } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (controller.signal.aborted || (e instanceof DOMException && e.name === 'AbortError')) return;
       console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
       setBackendStatus('error');
+    } finally {
+      clearTimeout(timeout);
+      parentSignal?.removeEventListener('abort', abortFromParent);
     }
   }, []);
 

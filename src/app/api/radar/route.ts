@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +32,7 @@ export async function GET() {
     const url = `https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events?from=${from}&until=${now}&entityType=country&limit=200`;
 
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(12000),
+      signal: safeAbortTimeout(12000),
       cache: 'no-store',
       headers: { 'User-Agent': 'OSIRIS/4.2', 'Accept': 'application/json' },
     });

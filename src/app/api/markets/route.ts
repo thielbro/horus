@@ -1,3 +1,4 @@
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 import { NextResponse } from 'next/server';
 
@@ -23,7 +24,7 @@ async function fetchYahooJson(url: string, headers: HeadersInit): Promise<any | 
     if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
     try {
       const res = await fetch(url, {
-        signal: AbortSignal.timeout(8000),
+        signal: safeAbortTimeout(8000),
         headers,
       });
       if (!res.ok) {
@@ -108,7 +109,7 @@ async function fetchYahooBatch(symbols: string[]): Promise<Record<string, any>> 
 async function fetchCoinGecko(): Promise<Record<string, any>> {
   try {
     const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true', {
-      signal: AbortSignal.timeout(8000),
+      signal: safeAbortTimeout(8000),
     });
     if (!res.ok) return {};
     const data = await res.json();
@@ -184,7 +185,7 @@ async function buildMarketsPayload(request: Request) {
     // --- SCM Integration: Chokepoint-Commodity Correlation ---
     const scm_alerts: string[] = [];
     try {
-      const maritimeRes = await fetch(new URL('/api/maritime', request.url), { signal: AbortSignal.timeout(3000) });
+      const maritimeRes = await fetch(new URL('/api/maritime', request.url), { signal: safeAbortTimeout(3000) });
       if (maritimeRes.ok) {
         const maritimeData = await maritimeRes.json();
         const chokepoints = maritimeData.chokepoints || [];

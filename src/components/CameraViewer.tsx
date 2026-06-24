@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ExternalLink, RefreshCw, MapPin, Camera, Maximize2 } from 'lucide-react';
 import Hls from 'hls.js';
@@ -33,6 +33,13 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
 
+  const destroyHls = useCallback(() => {
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+  }, []);
+
   const streamType = camera?.stream_type || 'jpg';
   const externalFeedUrl = camera?.external_url || camera?.feed_url;
   const externalOnly = Boolean(camera?.external_url && !camera?.feed_url && !camera?.stream_url);
@@ -47,19 +54,13 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
     let onLoadedMetadata: (() => void) | null = null;
 
     // Cleanup previous HLS instance
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
+    destroyHls();
 
     // Tear down whatever this run set up — runs when the camera changes, the panel
     // closes (camera -> null), or the component unmounts. Without this the HLS instance
     // and the native loadedmetadata listener leaked and kept the stream alive.
     const cleanup = () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
+      destroyHls();
       if (video) {
         if (onLoadedMetadata) video.removeEventListener('loadedmetadata', onLoadedMetadata);
         try { video.pause(); video.removeAttribute('src'); video.load(); } catch { /* ignore */ }
@@ -82,7 +83,11 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
           video.play().catch(() => {});
         });
         hls.on(Hls.Events.ERROR, (event, data) => {
-          if (data.fatal) setError(true);
+          if (data.fatal) {
+            destroyHls();
+            setLoading(false);
+            setError(true);
+          }
         });
       } else if (video?.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = camera.stream_url;
@@ -110,7 +115,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
     }
 
     return cleanup;
-  }, [camera, refreshKey, streamType, externalOnly]);
+  }, [camera, refreshKey, streamType, externalOnly, destroyHls]);
 
   // Auto-refresh for JPGs
   useEffect(() => {

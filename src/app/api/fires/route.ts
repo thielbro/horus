@@ -1,6 +1,6 @@
 
 import { NextResponse } from 'next/server';
-import { parseCsvRows, releaseResponseBody } from '@/lib/http-utils';
+import { parseCsvRows, releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +23,7 @@ export async function GET() {
     const firmsResults = await Promise.allSettled(firmsSources.map(async (url) => {
       try {
         const res = await fetch(url, {
-          signal: AbortSignal.timeout(15000),
+          signal: safeAbortTimeout(15000),
           headers: { 'User-Agent': 'OSIRIS-Intelligence-Platform/3.5' },
         });
         if (!res.ok) {
@@ -53,7 +53,7 @@ export async function GET() {
     // Source 2: Pull volcanoes from EONET for richer data
     try {
       const volcRes = await fetch('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&category=volcanoes&limit=50', {
-        signal: AbortSignal.timeout(10000),
+        signal: safeAbortTimeout(10000),
       });
       if (volcRes.ok) {
         const volcData = await volcRes.json();

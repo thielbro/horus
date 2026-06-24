@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getClientIp, isRateLimited } from '@/lib/ssrf-guard';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — shared OpenStreetMap / Overpass layer helper.
@@ -98,9 +99,10 @@ export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Resp
         'User-Agent': userAgent,
       },
       body: 'data=' + encodeURIComponent(query),
-      signal: AbortSignal.timeout(30000),
+      signal: safeAbortTimeout(30000),
     });
     if (!res.ok) {
+      await releaseResponseBody(res);
       return NextResponse.json({ [bucket]: [], error: `Overpass ${res.status}` }, { status: 200 });
     }
 

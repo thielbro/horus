@@ -67,7 +67,8 @@ test('reviewed frontend caches and viewers stay bounded while preserving map vie
   assert.match(page, /DATA_ARRAY_LIMITS/);
   assert.match(page, /capDataPayload/);
   assert.match(page, /longitude:\s*0/);
-  assert.match(page, /p\.set\('lon', \(mapView\.longitude/);
+  assert.match(page, /Number\.isFinite\(mapView\.longitude\)/);
+  assert.match(page, /p\.set\('lon', lon\.toFixed\(4\)\)/);
   assert.match(page, /\{activeCamera && \(\s*<CameraViewer/);
   assert.doesNotMatch(page, /const startTime = useRef\(Date\.now\(\)\)/);
 
@@ -387,7 +388,7 @@ test('CCTV fanout aborts timed-out source work and deduplicates cameras', () => 
   assert.match(route, /fetchCaltransDistrict/);
   assert.match(route, /fetchCanadaSource/);
   assert.match(route, /Promise\.allSettled/);
-  assert.match(route, /seenCameraIds/);
+  assert.match(route, /\bseen(?:CameraIds)?\b\s*=\s*new Set<string>\(\)/);
 });
 
 test('desktop and SDK streams have bounded reconnect and crash behavior', () => {
@@ -548,4 +549,88 @@ test('extension delta review registry engine avoids timer churn and stale interv
   assert.match(events, /console\.error\('\[OSIRIS\] Registry listener failed'/);
   assert.match(builtins, /SOLAR_TERMINATOR_TTL_MS/);
   assert.match(builtins, /s\.name \|\| s\.mmsi\?\.toString\(\) \|\| 'Unknown'/);
+});
+
+test('second-pass stability review crash guards and bounded async paths stay fixed', () => {
+  const httpUtils = file('src/lib/http-utils.ts');
+  assert.match(httpUtils, /export function safeAbortTimeout/);
+  assert.match(httpUtils, /export function safeAbortAny/);
+  assert.match(httpUtils, /seen = new WeakSet<object>/);
+  assert.match(httpUtils, /Circular/);
+
+  const bundles = file('src/lib/plugins/bundles.ts');
+  assert.match(bundles, /try\s*\{[\s\S]*JSON\.parse\(payload\)/);
+  assert.match(bundles, /Invalid JSON/);
+
+  const surveillance = file('src/components/SurveillancePanel.tsx');
+  assert.match(surveillance, /testAbortControllersRef/);
+  assert.match(surveillance, /MAX_TEST_RESULTS/);
+  assert.match(surveillance, /signal:\s*controller\.signal/);
+  assert.match(surveillance, /handleRemoveSource/);
+  assert.match(surveillance, /setTests\(\{\}\)/);
+  assert.doesNotMatch(surveillance, /onClick=\{\(\) => removeCustomSource\(s\.id\)\}/);
+
+  const overpass = file('src/lib/overpass.ts');
+  assert.match(overpass, /releaseResponseBody/);
+  assert.match(overpass, /safeAbortTimeout\(30000\)/);
+  assert.match(overpass, /await releaseResponseBody\(res\)/);
+
+  const proxy = file('src/proxy.ts');
+  assert.match(proxy, /releaseResponseBody/);
+  assert.match(proxy, /safeAbortTimeout\(3000\)/);
+  assert.match(proxy, /then\(releaseResponseBody/);
+
+  const main = file('desktop/main.js');
+  assert.match(main, /state\.restartTimer/);
+  assert.match(main, /serverRestartTimer/);
+  assert.match(main, /MAX_SETTINGS_BYTES/);
+  assert.match(main, /renameSync\(tmpPath, settingsPath\(\)\)/);
+
+  const scanner = file('scanner/server.js');
+  assert.match(scanner, /safeAbortTimeout/);
+  assert.match(scanner, /readTextLimit/);
+  assert.doesNotMatch(scanner, /await res\.text\(\)\)\.slice/);
+
+  const page = file('src/app/page.tsx');
+  assert.match(page, /FETCH_ENDPOINT_TIMEOUT_MS/);
+  assert.match(page, /AbortController/);
+  assert.match(page, /clearTimeout\(timeout\)/);
+
+  const aiPanel = file('src/components/AiAnalyst.tsx');
+  assert.match(aiPanel, /AI_REQUEST_TIMEOUT_MS/);
+  assert.match(aiPanel, /aiRequestAbortRef/);
+  assert.match(aiPanel, /signal:\s*controller\.signal/);
+
+  const share = file('src/components/SharePanel.tsx');
+  assert.match(share, /finiteOr/);
+  assert.doesNotMatch(share, /mapView\.zoom\.toFixed\(2\)/);
+
+  const aiEngine = file('src/lib/ai-engine.ts');
+  assert.match(aiEngine, /maxEarthquakeMagnitude/);
+  assert.doesNotMatch(aiEngine, /Math\.max\(\.\.\.context\.earthquakes\.map/);
+
+  const scm = file('src/components/ScmPanel.tsx');
+  assert.match(scm, /safeThreatList/);
+  assert.match(scm, /try\s*\{[\s\S]*JSON\.parse/);
+
+  const workspaces = file('src/components/WorkspacesSettings.tsx');
+  assert.match(workspaces, /captureSnapshot/);
+  assert.match(workspaces, /try\s*\{[\s\S]*getCurrentSnapshot\(\)/);
+
+  const camera = file('src/components/CameraViewer.tsx');
+  assert.match(camera, /destroyHls/);
+  assert.match(camera, /if \(data\.fatal\) \{[\s\S]*destroyHls/);
+
+  const map = file('src/components/OsirisMap.tsx');
+  assert.match(map, /let map: maplibregl\.Map/);
+  assert.match(map, /try\s*\{[\s\S]*new maplibregl\.Map/);
+
+  const settings = file('src/components/SettingsPanel.tsx');
+  assert.match(settings, /wasOpenRef/);
+
+  const osint = file('src/components/OsintPanel.tsx');
+  const osintInnerIndex = osint.indexOf('function OsintPanelInner');
+  for (const name of ['ResultRow', 'StatusBadge', 'SanctionsBadge', 'SectionHeader', 'PortRow']) {
+    assert.ok(osint.indexOf(`function ${name}`) > -1 && osint.indexOf(`function ${name}`) < osintInnerIndex, `${name} is hoisted`);
+  }
 });

@@ -8,6 +8,18 @@ interface ScmPanelProps {
   data: any;
 }
 
+function safeThreatList(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function ScmPanel({ data }: ScmPanelProps) {
   const [expanded, setExpanded] = useState(true);
   const [maximized, setMaximized] = useState(false);
@@ -82,7 +94,7 @@ export default function ScmPanel({ data }: ScmPanelProps) {
                 ) : (
                   <div className="space-y-1">
                     {criticalSuppliers.map((s: any) => {
-                      const threats = s.active_threats ? JSON.parse(s.active_threats) : [];
+                      const threats = safeThreatList(s.active_threats);
                       return (
                         <div key={s.id || `${s.name}:${s.city}`} className="px-2 py-1.5 rounded border border-[#FF1744]/40 bg-[#FF1744]/10">
                           <div className="flex justify-between items-start mb-1">

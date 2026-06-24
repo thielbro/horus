@@ -1,3 +1,4 @@
+import { safeAbortTimeout } from '@/lib/http-utils';
 /**
  * OFAC SDN sanctioned-entity lookup.
  *
@@ -120,7 +121,7 @@ async function loadList(): Promise<LoadedList> {
   inflight = (async () => {
     try {
       const res = await fetch(SDN_CSV_URL, {
-        signal: AbortSignal.timeout(30_000),
+        signal: safeAbortTimeout(30_000),
         headers: { Accept: 'text/csv' },
       });
       if (!res.ok) throw new Error(`OpenSanctions HTTP ${res.status}`);

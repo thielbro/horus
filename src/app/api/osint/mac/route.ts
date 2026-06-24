@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -17,7 +18,7 @@ export async function GET(req: Request) {
 
   try {
     const res = await fetch(`https://macvendors.co/api/${encodeURIComponent(cleanMac)}`, {
-      signal: AbortSignal.timeout(8000),
+      signal: safeAbortTimeout(8000),
       headers: { 'Accept': 'application/json' }
     });
 

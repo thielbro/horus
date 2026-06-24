@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { safeFetch, getClientIp, isRateLimited } from '@/lib/ssrf-guard';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Source Tester
@@ -63,7 +64,7 @@ export async function GET(request: Request) {
   try {
     const init = {
       headers: { 'User-Agent': 'OSIRIS-map/1.0 (source tester)' },
-      signal: AbortSignal.timeout(12000),
+      signal: safeAbortTimeout(12000),
     };
     // Same-origin builtin endpoints are our own APIs — fetch them directly. Only external
     // user URLs go through the SSRF guard (which blocks private/loopback/metadata targets).

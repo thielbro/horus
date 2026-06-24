@@ -1,6 +1,6 @@
 
 import { NextResponse } from 'next/server';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Earthquake Data API
@@ -12,7 +12,7 @@ export async function GET() {
   try {
     const url = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson';
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(10000),
+      signal: safeAbortTimeout(10000),
     });
 
     if (!res.ok) {

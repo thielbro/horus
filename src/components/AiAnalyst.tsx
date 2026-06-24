@@ -188,6 +188,7 @@ function renderMarkdown(text: string): string {
    ───────────────────────────────────────────────────────────── */
 
 const MAX_MESSAGES = 100;
+const AI_REQUEST_TIMEOUT_MS = 30_000;
 
 function appendMessage(prev: ChatMessage[], msg: ChatMessage): ChatMessage[] {
   return [...prev, msg].slice(-MAX_MESSAGES);
@@ -204,6 +205,7 @@ export default function AiAnalyst({ data }: AiAnalystProps) {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const aiRequestAbortRef = useRef<AbortController | null>(null);
 
   // Load saved key on mount
   useEffect(() => {
@@ -212,6 +214,11 @@ export default function AiAnalyst({ data }: AiAnalystProps) {
       setApiKeyInput(saved);
       setKeySaved(true);
     }
+  }, []);
+
+  useEffect(() => () => {
+    aiRequestAbortRef.current?.abort(new Error('AI panel unmounted'));
+    aiRequestAbortRef.current = null;
   }, []);
 
   // Auto-scroll to bottom
@@ -235,6 +242,20 @@ export default function AiAnalyst({ data }: AiAnalystProps) {
     return headers;
   }, []);
 
+  const startAiRequest = useCallback((label: string) => {
+    aiRequestAbortRef.current?.abort(new Error(`${label} superseded`));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(new Error(`${label} timed out`)), AI_REQUEST_TIMEOUT_MS);
+    aiRequestAbortRef.current = controller;
+    return {
+      controller,
+      cleanup: () => {
+        clearTimeout(timeout);
+        if (aiRequestAbortRef.current === controller) aiRequestAbortRef.current = null;
+      },
+    };
+  }, []);
+
   const handleSend = useCallback(async () => {
     const query = inputText.trim();
     if (!query || isLoading) return;
@@ -249,12 +270,14 @@ export default function AiAnalyst({ data }: AiAnalystProps) {
     setInputText('');
     setIsLoading(true);
 
+    const { controller, cleanup } = startAiRequest('AI analysis request');
     try {
       const context = buildContext(data);
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ query, context }),
+        signal: controller.signal,
       });
 
       const json = await res.json();
@@ -274,6 +297,7 @@ export default function AiAnalyst({ data }: AiAnalystProps) {
       };
       setMessages((prev) => appendMessage(prev, analystMsg));
     } catch (err: unknown) {
+      if (controller.signal.aborted && aiRequestAbortRef.current !== controller) return;
       const message = err instanceof Error ? err.message : 'Analysis failed';
       const errorMsg: ChatMessage = {
         id: generateId(),
@@ -284,9 +308,11 @@ export default function AiAnalyst({ data }: AiAnalystProps) {
       };
       setMessages((prev) => appendMessage(prev, errorMsg));
     } finally {
-      setIsLoading(false);
+      const shouldUpdateLoading = !controller.signal.aborted || aiRequestAbortRef.current === controller;
+      cleanup();
+      if (shouldUpdateLoading) setIsLoading(false);
     }
-  }, [inputText, isLoading, data, getHeaders]);
+  }, [inputText, isLoading, data, getHeaders, startAiRequest]);
 
   const handleBriefing = useCallback(async () => {
     if (isLoading) return;
@@ -300,12 +326,14 @@ export default function AiAnalyst({ data }: AiAnalystProps) {
     setMessages((prev) => appendMessage(prev, userMsg));
     setIsLoading(true);
 
+    const { controller, cleanup } = startAiRequest('AI briefing request');
     try {
       const context = buildContext(data);
       const res = await fetch('/api/ai/briefing', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ context }),
+        signal: controller.signal,
       });
 
       const json = await res.json();
@@ -325,6 +353,7 @@ export default function AiAnalyst({ data }: AiAnalystProps) {
       };
       setMessages((prev) => appendMessage(prev, analystMsg));
     } catch (err: unknown) {
+      if (controller.signal.aborted && aiRequestAbortRef.current !== controller) return;
       const message = err instanceof Error ? err.message : 'Briefing generation failed';
       const errorMsg: ChatMessage = {
         id: generateId(),
@@ -335,9 +364,11 @@ export default function AiAnalyst({ data }: AiAnalystProps) {
       };
       setMessages((prev) => appendMessage(prev, errorMsg));
     } finally {
-      setIsLoading(false);
+      const shouldUpdateLoading = !controller.signal.aborted || aiRequestAbortRef.current === controller;
+      cleanup();
+      if (shouldUpdateLoading) setIsLoading(false);
     }
-  }, [isLoading, data, getHeaders]);
+  }, [isLoading, data, getHeaders, startAiRequest]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

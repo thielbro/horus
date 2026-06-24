@@ -1,5 +1,6 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { safeAbortAny } from '@/lib/http-utils';
 
 /**
  * SSRF guard shared by route handlers that take a user-controlled host / IP
@@ -59,7 +60,7 @@ function withTimeoutSignal(parentSignal: AbortSignal | undefined, timeoutMs: num
     else parentSignal.addEventListener('abort', abortFromParent, { once: true });
   }
 
-  const signal = parentSignal ? AbortSignal.any([parentSignal, timeoutController.signal]) : timeoutController.signal;
+  const signal = parentSignal ? safeAbortAny([parentSignal, timeoutController.signal]) : timeoutController.signal;
   return {
     signal,
     cleanup: () => {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 // Threat Intelligence — AlienVault OTX public pulse feed + Tor exit nodes
 const TOR_EXIT_LIST_TTL_MS = 60 * 60 * 1000;
@@ -12,7 +12,7 @@ async function getTorExitList(): Promise<Set<string> | null> {
     return torExitListCache.ips;
   }
   const torRes = await fetch('https://check.torproject.org/torbulkexitlist', {
-    signal: AbortSignal.timeout(5000),
+    signal: safeAbortTimeout(5000),
   });
   if (!torRes.ok) {
     await releaseResponseBody(torRes);
@@ -39,13 +39,13 @@ export async function GET(req: Request) {
     // 1. AlienVault OTX — public pulse feed (no key needed for public data)
     try {
       const res = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=10&page=1', {
-        signal: AbortSignal.timeout(8000),
+        signal: safeAbortTimeout(8000),
         headers: { 'Accept': 'application/json' },
       });
       // Public endpoint may require auth, fall back to activity feed
       if (!res.ok) {
         const actRes = await fetch('https://otx.alienvault.com/api/v1/pulses/activity?limit=10', {
-          signal: AbortSignal.timeout(8000),
+          signal: safeAbortTimeout(8000),
         });
         if (actRes.ok) {
           const data = await actRes.json();
@@ -79,7 +79,7 @@ export async function GET(req: Request) {
         // AlienVault OTX IP reputation (public)
         try {
           const res = await fetch(`https://otx.alienvault.com/api/v1/indicators/IPv4/${query}/general`, {
-            signal: AbortSignal.timeout(5000),
+            signal: safeAbortTimeout(5000),
           });
           if (res.ok) {
             const data = await res.json();
@@ -95,7 +95,7 @@ export async function GET(req: Request) {
         // Domain check
         try {
           const res = await fetch(`https://otx.alienvault.com/api/v1/indicators/domain/${encodeURIComponent(query)}/general`, {
-            signal: AbortSignal.timeout(5000),
+            signal: safeAbortTimeout(5000),
           });
           if (res.ok) {
             const data = await res.json();

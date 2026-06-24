@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 export async function POST(request: Request) {
     try {
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
                 ...(signature ? { 'x-hub-signature-256': signature } : {})
             },
             body: payloadText,
-            signal: AbortSignal.timeout(8000),
+            signal: safeAbortTimeout(8000),
         });
 
         if (!response.ok) {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Air Quality Monitoring API
@@ -19,7 +19,7 @@ export async function GET() {
     const results = await Promise.allSettled(
       urls.map(url =>
         fetch(url, {
-          signal: AbortSignal.timeout(10000),
+          signal: safeAbortTimeout(10000),
           headers: { 'Accept': 'application/json' },
         }).then(async (r) => {
           if (!r.ok) {

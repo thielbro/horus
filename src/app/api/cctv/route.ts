@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout, safeAbortAny } from '@/lib/http-utils';
 import { fetchAsfinagCameras } from './asfinag';
 import { fetchBulgariaCameras } from './bulgaria';
 import { fetchGreeceCameras } from './greece';
@@ -39,7 +39,7 @@ const MAX_REGION_ALL_CONCURRENCY = 5;
 // ── UK: Transport for London JamCams (~900) ──
 async function fetchTfLCameras(): Promise<any[]> {
   try {
-    const res = await stealthFetch('https://api.tfl.gov.uk/Place/Type/JamCam', { signal: AbortSignal.timeout(12000) });
+    const res = await stealthFetch('https://api.tfl.gov.uk/Place/Type/JamCam', { signal: safeAbortTimeout(12000) });
     if (!res.ok) {
       await releaseResponseBody(res);
       return [];
@@ -61,7 +61,7 @@ async function fetchTfLCameras(): Promise<any[]> {
 // ── US-WEST: WSDOT Washington State (~500) ──
 async function fetchWSDOTCameras(): Promise<any[]> {
   try {
-    const res = await stealthFetch('https://data.wsdot.wa.gov/log/public/cameras.json', { signal: AbortSignal.timeout(10000) });
+    const res = await stealthFetch('https://data.wsdot.wa.gov/log/public/cameras.json', { signal: safeAbortTimeout(10000) });
     if (!res.ok) {
       await releaseResponseBody(res);
       return [];
@@ -79,8 +79,8 @@ async function fetchWSDOTCameras(): Promise<any[]> {
 const CALTRANS_DISTRICTS = ['d03', 'd04', 'd05', 'd06', 'd07', 'd08', 'd10', 'd11', 'd12'];
 
 function signalWithTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const timeout = safeAbortTimeout(timeoutMs);
+  return signal ? safeAbortAny([signal, timeout]) : timeout;
 }
 
 async function fetchCaltransDistrict(dist: string, signal?: AbortSignal): Promise<any[]> {
@@ -290,7 +290,7 @@ async function fetchUSCentralCameras(): Promise<any[]> {
   const cams: any[] = [];
   // Illinois DOT
   try {
-    const res = await stealthFetch('https://www.travelmidwest.com/lmiga/cameraReport.json', { signal: AbortSignal.timeout(8000) });
+    const res = await stealthFetch('https://www.travelmidwest.com/lmiga/cameraReport.json', { signal: safeAbortTimeout(8000) });
     if (!res.ok) {
       await releaseResponseBody(res);
       return cams.filter((c: any) => c.lat && c.lng);
@@ -348,7 +348,7 @@ async function fetchUSEastCameras(): Promise<any[]> {
   );
   // Florida 511
   try {
-    const res = await stealthFetch('https://fl511.com/api/v2/cameras', { signal: AbortSignal.timeout(8000) });
+    const res = await stealthFetch('https://fl511.com/api/v2/cameras', { signal: safeAbortTimeout(8000) });
     if (!res.ok) {
       await releaseResponseBody(res);
       return cams.filter((c: any) => c.lat && c.lng);
@@ -374,7 +374,7 @@ async function fetchEuropeCameras(): Promise<any[]> {
 
   // Netherlands Rijkswaterstaat
   try {
-    const res = await stealthFetch('https://opendata.ndw.nu/cameras.json', { signal: AbortSignal.timeout(8000) });
+    const res = await stealthFetch('https://opendata.ndw.nu/cameras.json', { signal: safeAbortTimeout(8000) });
     if (!res.ok) {
       await releaseResponseBody(res);
     } else {
@@ -401,7 +401,7 @@ async function fetchAsiaCameras(): Promise<any[]> {
 
   // Singapore Live Traffic Images
   try {
-    const res = await stealthFetch('https://api.data.gov.sg/v1/transport/traffic-images', { signal: AbortSignal.timeout(10000) });
+    const res = await stealthFetch('https://api.data.gov.sg/v1/transport/traffic-images', { signal: safeAbortTimeout(10000) });
     if (!res.ok) {
       await releaseResponseBody(res);
       return cams;

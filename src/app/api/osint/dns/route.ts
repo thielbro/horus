@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 500;
@@ -34,7 +35,7 @@ export async function GET(req: Request) {
     const lookups = await Promise.allSettled(
       types.map(async (type) => {
         const res = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${type}`, {
-          signal: AbortSignal.timeout(5000),
+          signal: safeAbortTimeout(5000),
           headers: { 'Accept': 'application/json' },
         });
         if (res.ok) {

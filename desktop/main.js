@@ -26,6 +26,7 @@ let embeddedServerUrl = null;
 let isQuitting = false;
 let serverRestartAttempts = 0;
 let serverStableResetTimer = null;
+let serverRestartTimer = null;
 let rendererReloadAttempts = 0;
 let rendererReloadTimer = null;
 let lastRendererCrashAt = 0;
@@ -38,6 +39,7 @@ const SERVER_STABLE_RESET_MS = 5 * 60 * 1000;
 const MAX_BACKEND_RESTARTS = 3;
 const BACKEND_RESTART_BASE_MS = 1000;
 const BACKEND_RESTART_MAX_MS = 10000;
+const MAX_SETTINGS_BYTES = 256 * 1024;
 
 // Bundled OSINT backends (scanner = RECON, intel = ontology engine). Each is a tiny
 // self-contained Express app forked the same way as the Next server (Electron's node via
@@ -81,11 +83,25 @@ function readSettingsFile() {
   }
 }
 function writeSettingsFile(full) {
+  let tmpPath = null;
   try {
-    fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
-    fs.writeFileSync(settingsPath(), JSON.stringify(full, null, 2));
+    if (!full || typeof full !== 'object' || Array.isArray(full)) {
+      throw new Error('settings payload must be an object');
+    }
+    const payload = JSON.stringify(full, null, 2);
+    if (Buffer.byteLength(payload, 'utf8') > MAX_SETTINGS_BYTES) {
+      throw new Error(`settings payload exceeds ${MAX_SETTINGS_BYTES} bytes`);
+    }
+    const dir = path.dirname(settingsPath());
+    fs.mkdirSync(dir, { recursive: true });
+    tmpPath = path.join(dir, `.settings-${process.pid}-${Date.now()}.tmp`);
+    fs.writeFileSync(tmpPath, payload);
+    fs.renameSync(tmpPath, settingsPath());
     return true;
   } catch (e) {
+    if (tmpPath) {
+      try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+    }
     console.error('[osiris] settings write failed:', e.message);
     return false;
   }
@@ -154,12 +170,15 @@ function scheduleBackendRestart(state) {
   }
   const delay = Math.min(BACKEND_RESTART_BASE_MS * 2 ** state.attempts, BACKEND_RESTART_MAX_MS);
   state.attempts++;
-  setTimeout(() => {
+  if (state.restartTimer) clearTimeout(state.restartTimer);
+  state.restartTimer = setTimeout(() => {
+    state.restartTimer = null;
     forkBackend(state).catch((err) => {
       console.error(`[osiris] backend ${state.id} restart failed:`, err.message);
       scheduleBackendRestart(state);
     });
-  }, delay).unref?.();
+  }, delay);
+  state.restartTimer.unref?.();
 }
 
 // Fork (or re-fork) one backend on its already-assigned port so the URL handed to the Next
@@ -249,7 +268,7 @@ async function startManagedBackends(apiKeys) {
   for (const spec of specs) {
     try {
       const port = await getFreePort();
-      const state = { ...spec, port, child: null, logFd: null, attempts: 0, stableTimer: null };
+      const state = { ...spec, port, child: null, logFd: null, attempts: 0, stableTimer: null, restartTimer: null };
       await forkBackend(state);
       managedBackends.push(state);
       Object.assign(overrides, spec.urls(port));
@@ -270,6 +289,10 @@ function stopManagedBackends() {
       clearTimeout(state.stableTimer);
       state.stableTimer = null;
     }
+    if (state.restartTimer) {
+      clearTimeout(state.restartTimer);
+      state.restartTimer = null;
+    }
     if (state.child) {
       try { state.child.kill(); } catch { /* ignore */ }
       state.child = null;
@@ -287,6 +310,10 @@ function stopEmbeddedServer() {
   if (serverStableResetTimer) {
     clearTimeout(serverStableResetTimer);
     serverStableResetTimer = null;
+  }
+  if (serverRestartTimer) {
+    clearTimeout(serverRestartTimer);
+    serverRestartTimer = null;
   }
   if (serverChild) {
     try {
@@ -327,7 +354,9 @@ function scheduleEmbeddedServerRestart() {
   }
   const delay = Math.min(SERVER_RESTART_BASE_MS * 2 ** serverRestartAttempts, SERVER_RESTART_MAX_MS);
   serverRestartAttempts++;
-  setTimeout(async () => {
+  if (serverRestartTimer) clearTimeout(serverRestartTimer);
+  serverRestartTimer = setTimeout(async () => {
+    serverRestartTimer = null;
     try {
       const url = await startEmbeddedServer();
       if (win && !win.isDestroyed()) await win.loadURL(url);
@@ -335,7 +364,8 @@ function scheduleEmbeddedServerRestart() {
       console.error('[osiris] embedded server restart failed:', err);
       scheduleEmbeddedServerRestart();
     }
-  }, delay).unref?.();
+  }, delay);
+  serverRestartTimer.unref?.();
 }
 
 // Fork the Next standalone server (packaged: resources/server; dev: project .next/standalone).

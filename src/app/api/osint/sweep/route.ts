@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { parseIPv4, isPrivateOrReserved } from '@/lib/osint-utils';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,7 +106,7 @@ export async function GET(req: Request) {
     // --- 3. Geolocation ---
     const geoRes = await fetch(
       `http://ip-api.com/json/${ip}?fields=status,message,country,countryCode,region,regionName,city,lat,lon,isp,org,as,proxy,hosting`,
-      { signal: AbortSignal.timeout(5000) },
+      { signal: safeAbortTimeout(5000) },
     );
 
     if (!geoRes.ok) {

@@ -40,6 +40,14 @@ export default function WorkspacesSettings({ getCurrentSnapshot, onApply }: Work
 
   const fail = (message: string) => setNotice({ kind: 'error', message });
   const flashMsg = (message: string) => setNotice({ kind: 'flash', message });
+  const captureSnapshot = (): WorkspaceSnapshot | null => {
+    try {
+      return getCurrentSnapshot();
+    } catch (e) {
+      fail(e instanceof Error ? e.message : 'Could not capture current workspace.');
+      return null;
+    }
+  };
 
   // Auto-dismiss success flashes; errors stay until cleared by the next action.
   useEffect(() => {
@@ -75,13 +83,17 @@ export default function WorkspacesSettings({ getCurrentSnapshot, onApply }: Work
       fail(`Workspace limit reached (${MAX_WORKSPACES}).`);
       return;
     }
-    persist([...workspaces, { id: newId(), name, state: getCurrentSnapshot() }]);
+    const state = captureSnapshot();
+    if (!state) return;
+    persist([...workspaces, { id: newId(), name, state }]);
     setNewName('');
     flashMsg(`Saved “${name}”.`);
   };
 
   const updateExisting = (ws: Workspace) => {
-    persist(workspaces.map((w) => (w.id === ws.id ? { ...w, state: getCurrentSnapshot() } : w)));
+    const state = captureSnapshot();
+    if (!state) return;
+    persist(workspaces.map((w) => (w.id === ws.id ? { ...w, state } : w)));
     flashMsg(`Updated “${ws.name}”.`);
   };
 

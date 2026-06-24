@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getClientIp, isRateLimited } from '@/lib/ssrf-guard';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Region Dossier API
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const geoRes = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=5&addressdetails=1`,
       {
-        signal: AbortSignal.timeout(8000),
+        signal: safeAbortTimeout(8000),
         headers: { 'User-Agent': 'OsirisIntelPlatform/1.0' },
       }
     );
@@ -57,7 +57,7 @@ export async function GET(request: Request) {
         try {
           const res = await fetch(
             `https://restcountries.com/v3.1/alpha/${countryCode}?fields=name,capital,population,area,region,subregion,languages,currencies,flag,flags,timezones`,
-            { signal: AbortSignal.timeout(5000) }
+            { signal: safeAbortTimeout(5000) }
           );
           if (res.ok) return await res.json();
           await releaseResponseBody(res);
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
         try {
           const res = await fetch(
             `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiQuery)}`,
-            { signal: AbortSignal.timeout(5000) }
+            { signal: safeAbortTimeout(5000) }
           );
           if (res.ok) {
             const wiki = await res.json();
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
           const res = await fetch(
             `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`,
             {
-              signal: AbortSignal.timeout(5000),
+              signal: safeAbortTimeout(5000),
               headers: { 'User-Agent': 'OsirisIntelPlatform/1.0' },
             }
           );

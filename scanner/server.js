@@ -136,13 +136,53 @@ async function validateTarget(raw) {
 const { portScan, buildTopPorts, buildAllPorts } = require('./portscan');
 
 const MAX_WHOIS_BYTES = 64 * 1024;
+const MAX_TECH_BODY_BYTES = 200000;
 
 // ════════════════════════════════════════════════════
 // §3 — OTHER RECON HELPERS
 // ════════════════════════════════════════════════════
 
+function safeAbortTimeout(ms) {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error(`timed out after ${ms}ms`)), ms);
+  timeout.unref?.();
+  return controller.signal;
+}
+
 function withTimeout(ms) {
-  return AbortSignal.timeout(ms);
+  return safeAbortTimeout(ms);
+}
+
+async function readTextLimit(res, limitBytes) {
+  if (!res.body?.getReader) {
+    const text = await res.text();
+    return text.slice(0, limitBytes);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = '';
+  try {
+    while (bytes < limitBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remaining = limitBytes - bytes;
+      const chunk = value.byteLength > remaining ? value.slice(0, remaining) : value;
+      bytes += chunk.byteLength;
+      text += decoder.decode(chunk, { stream: bytes < limitBytes });
+      if (value.byteLength > remaining) {
+        await reader.cancel();
+        break;
+      }
+    }
+  } finally {
+    if (bytes >= limitBytes) {
+      try { await reader.cancel(); } catch { /* ignore */ }
+    }
+  }
+  return text + decoder.decode();
 }
 
 async function tlsInfo(host) {
@@ -180,6 +220,7 @@ async function httpHeaders(host) {
       const res = await fetch(`${scheme}://${host}`, { redirect: 'manual', signal: withTimeout(8000) });
       const headers = {};
       res.headers.forEach((v, k) => { headers[k] = v; });
+      await res.body?.cancel();
       return { target: host, scheme, status: res.status, server: headers.server, headers };
     } catch { /* try next scheme */ }
   }
@@ -196,7 +237,7 @@ async function techFingerprint(host) {
   if (hdr['x-generator']) tech.push(hdr['x-generator']);
   try {
     const res = await fetch(`https://${host}`, { signal: withTimeout(8000) });
-    const html = (await res.text()).slice(0, 200000);
+    const html = await readTextLimit(res, MAX_TECH_BODY_BYTES);
     const gen = html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)/i);
     if (gen) tech.push(gen[1]);
     const sigs = [

@@ -1,6 +1,6 @@
 
 import { NextResponse } from 'next/server';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Ukraine Frontline API
@@ -11,7 +11,7 @@ export async function GET() {
   try {
     const url = 'https://deepstatemap.live/api/history/last';
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(10000), // Cache 30 min
+      signal: safeAbortTimeout(10000), // Cache 30 min
     });
 
     if (!res.ok) {

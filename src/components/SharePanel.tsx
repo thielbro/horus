@@ -10,17 +10,23 @@ interface SharePanelProps {
   mouseCoords?: { lat: number; lng: number } | null;
 }
 
+function finiteOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
 export default function SharePanel({ mapView, activeLayers, mouseCoords }: SharePanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const displayZoom = finiteOr(mapView.zoom, 2.5);
 
   const generateShareUrl = useCallback(() => {
     const params = new URLSearchParams();
-    const lat = mouseCoords?.lat ?? mapView.latitude ?? 20;
-    const lng = mouseCoords?.lng ?? mapView.longitude ?? 0;
+    const lat = finiteOr(mouseCoords?.lat, finiteOr(mapView.latitude, 20));
+    const lng = finiteOr(mouseCoords?.lng, finiteOr(mapView.longitude, 0));
+    const zoom = finiteOr(mapView.zoom, 2.5);
     params.set('lat', lat.toFixed(4));
     params.set('lon', lng.toFixed(4));
-    params.set('zoom', mapView.zoom.toFixed(2));
+    params.set('zoom', zoom.toFixed(2));
 
     // Encode active layers as compact string
     const layerKeys = Object.entries(activeLayers)
@@ -102,7 +108,7 @@ export default function SharePanel({ mapView, activeLayers, mouseCoords }: Share
                 <span className="text-[7px] font-mono text-[var(--text-muted)] tracking-widest">CURRENT VIEW</span>
               </div>
               <div className="text-[8px] font-mono text-[var(--text-secondary)]">
-                {mouseCoords ? `${mouseCoords.lat.toFixed(4)}°, ${mouseCoords.lng.toFixed(4)}°` : '—'} · Zoom {mapView.zoom.toFixed(1)}
+                {mouseCoords ? `${finiteOr(mouseCoords.lat, 0).toFixed(4)}°, ${finiteOr(mouseCoords.lng, 0).toFixed(4)}°` : '—'} · Zoom {displayZoom.toFixed(1)}
               </div>
               <div className="text-[7px] font-mono text-[var(--text-muted)] mt-1">
                 {Object.values(activeLayers).filter(Boolean).length} layers active

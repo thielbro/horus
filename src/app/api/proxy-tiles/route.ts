@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 const MAX_TILE_BYTES = 5 * 1024 * 1024;
 
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         'Accept': '*/*',
         'User-Agent': 'Osiris-Tile-Proxy/1.0',
       },
-      signal: AbortSignal.timeout(10000),
+      signal: safeAbortTimeout(10000),
       // Using Next.js fetch cache options to heavily cache tiles locally
       next: {
         revalidate: 31536000, // Cache for 1 year

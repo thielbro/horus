@@ -6,13 +6,63 @@ export async function releaseResponseBody(response: Response | null | undefined)
   }
 }
 
-function stableStringify(value: unknown): string {
+export function safeAbortTimeout(ms: number): AbortSignal {
+  const timeout = (AbortSignal as typeof AbortSignal & { timeout?: (milliseconds: number) => AbortSignal }).timeout;
+  if (typeof timeout === 'function') return timeout.call(AbortSignal, ms);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new Error(`Operation timed out after ${ms}ms`)), Math.max(0, ms));
+  timeoutId.unref?.();
+  return controller.signal;
+}
+
+export function safeAbortAny(signals: Array<AbortSignal | null | undefined>): AbortSignal {
+  const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
+  if (activeSignals.length === 0) return new AbortController().signal;
+  if (activeSignals.length === 1) return activeSignals[0];
+
+  const any = (AbortSignal as typeof AbortSignal & { any?: (signals: AbortSignal[]) => AbortSignal }).any;
+  if (typeof any === 'function') return any.call(AbortSignal, activeSignals);
+
+  const controller = new AbortController();
+  const listeners = new Map<AbortSignal, () => void>();
+  const cleanup = () => {
+    for (const [signal, listener] of listeners) signal.removeEventListener('abort', listener);
+    listeners.clear();
+  };
+
+  const abortFrom = (signal: AbortSignal) => {
+    if (controller.signal.aborted) return;
+    cleanup();
+    controller.abort(signal.reason);
+  };
+
+  for (const signal of activeSignals) {
+    if (signal.aborted) {
+      abortFrom(signal);
+      break;
+    }
+    const listener = () => abortFrom(signal);
+    listeners.set(signal, listener);
+    signal.addEventListener('abort', listener, { once: true });
+  }
+
+  return controller.signal;
+}
+
+function stableStringify(value: unknown, seen = new WeakSet<object>()): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`);
-  return `{${entries.join(',')}}`;
+  if (seen.has(value)) return JSON.stringify('[Circular]');
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item, seen)).join(',')}]`;
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val, seen)}`);
+    return `{${entries.join(',')}}`;
+  } finally {
+    seen.delete(value);
+  }
 }
 
 export function stableHash(value: unknown): string {

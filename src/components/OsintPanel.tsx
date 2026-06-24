@@ -42,6 +42,70 @@ function capCveCache(cache: Record<string, any>): Record<string, any> {
 
 interface OsintPanelProps { isOpen?: boolean; onClose?: () => void; isMobile?: boolean; onSweepVisualize?: (data: any) => void; onScanGeolocate?: (target: string, data: any) => void; }
 
+function ResultRow({ label, value, color, mono = true }: { label: string; value: any; color?: string; mono?: boolean }) {
+  if (value === undefined || value === null || value === '') return null;
+  return (
+    <div className="flex items-start gap-3 py-1.5 border-b border-[var(--border-secondary)]/20 last:border-0">
+      <span className="text-[9px] font-mono text-[var(--text-muted)] uppercase tracking-wider w-[90px] flex-shrink-0 pt-0.5">{label}</span>
+      <span className={`text-[10px] ${mono ? 'font-mono' : ''} break-all flex-1`} style={{ color: color || 'var(--text-primary)' }}>
+        {String(value)}
+      </span>
+    </div>
+  );
+}
+
+function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono font-bold ${ok ? 'bg-green-500/15 text-green-400 border border-green-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'}`}>
+      {ok ? <CheckCircle className="w-2.5 h-2.5" /> : <XCircle className="w-2.5 h-2.5" />}
+      {label}
+    </span>
+  );
+}
+
+// Surfaces an inline OFAC-SDN hit (used by the WHOIS and IP-intel routes
+// when their cross-check finds a sanctioned registrant / ASN owner).
+function SanctionsBadge({ match }: { match: any }) {
+  if (!match || !Array.isArray(match.hits) || match.hits.length === 0) return null;
+  return (
+    <div className="mb-2 px-2 py-2 rounded border border-red-500/40 bg-red-500/15">
+      <div className="flex items-center gap-2 mb-1.5">
+        <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+        <span className="text-[10px] font-mono font-bold text-red-400 tracking-wider">
+          SANCTIONED — {match.source || 'OFAC SDN'}
+        </span>
+      </div>
+      {match.hits.slice(0, 5).map((h: any, i: number) => (
+        <div key={i} className="text-[9px] font-mono text-red-200 break-all leading-tight">
+          <span className="text-[var(--text-muted)]">↳ {h.matched_value}:</span>{' '}
+          {(h.entries || []).slice(0, 2).map((e: any) => e.name).join('; ')}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SectionHeader({ title, icon: Icon, color }: { title: string; icon: any; color: string }) {
+  return (
+    <div className="flex items-center gap-2 mt-3 mb-1.5 first:mt-0">
+      <Icon className="w-3.5 h-3.5" style={{ color }} />
+      <span className="text-[10px] font-mono font-bold tracking-widest" style={{ color }}>{title}</span>
+      <div className="flex-1 h-px" style={{ background: `${color}30` }} />
+    </div>
+  );
+}
+
+function PortRow({ port, state, service, version }: { port: number; state: string; service?: string; version?: string }) {
+  return (
+    <div className="flex items-center gap-2 py-1 px-2 rounded hover:bg-[var(--hover-accent)] transition-colors">
+      <span className="text-[11px] font-mono font-bold text-[var(--cyan-primary)] w-[60px]">{port}</span>
+      <StatusBadge ok={state === 'open'} label={state.toUpperCase()} />
+      <span className="text-[10px] font-mono text-[var(--text-secondary)] flex-1">{service || 'unknown'}</span>
+      {version && <span className="text-[9px] font-mono text-[var(--text-muted)]">{version}</span>}
+    </div>
+  );
+}
+
 function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintPanelProps) {
   const [activeTab, setActiveTab] = useState('scanner');
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -279,64 +343,6 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
   const currentTab = TABS.find(t => t.id === activeTab);
 
   // ── Shodan-style structured result renderers ──
-
-  const ResultRow = ({ label, value, color, mono = true }: { label: string; value: any; color?: string; mono?: boolean }) => {
-    if (value === undefined || value === null || value === '') return null;
-    return (
-      <div className="flex items-start gap-3 py-1.5 border-b border-[var(--border-secondary)]/20 last:border-0">
-        <span className="text-[9px] font-mono text-[var(--text-muted)] uppercase tracking-wider w-[90px] flex-shrink-0 pt-0.5">{label}</span>
-        <span className={`text-[10px] ${mono ? 'font-mono' : ''} break-all flex-1`} style={{ color: color || 'var(--text-primary)' }}>
-          {String(value)}
-        </span>
-      </div>
-    );
-  };
-
-  const StatusBadge = ({ ok, label }: { ok: boolean; label: string }) => (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono font-bold ${ok ? 'bg-green-500/15 text-green-400 border border-green-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'}`}>
-      {ok ? <CheckCircle className="w-2.5 h-2.5" /> : <XCircle className="w-2.5 h-2.5" />}
-      {label}
-    </span>
-  );
-
-  // Surfaces an inline OFAC-SDN hit (used by the WHOIS and IP-intel routes
-  // when their cross-check finds a sanctioned registrant / ASN owner).
-  const SanctionsBadge = ({ match }: { match: any }) => {
-    if (!match || !Array.isArray(match.hits) || match.hits.length === 0) return null;
-    return (
-      <div className="mb-2 px-2 py-2 rounded border border-red-500/40 bg-red-500/15">
-        <div className="flex items-center gap-2 mb-1.5">
-          <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-          <span className="text-[10px] font-mono font-bold text-red-400 tracking-wider">
-            SANCTIONED — {match.source || 'OFAC SDN'}
-          </span>
-        </div>
-        {match.hits.slice(0, 5).map((h: any, i: number) => (
-          <div key={i} className="text-[9px] font-mono text-red-200 break-all leading-tight">
-            <span className="text-[var(--text-muted)]">↳ {h.matched_value}:</span>{' '}
-            {(h.entries || []).slice(0, 2).map((e: any) => e.name).join('; ')}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const SectionHeader = ({ title, icon: Icon, color }: { title: string; icon: any; color: string }) => (
-    <div className="flex items-center gap-2 mt-3 mb-1.5 first:mt-0">
-      <Icon className="w-3.5 h-3.5" style={{ color }} />
-      <span className="text-[10px] font-mono font-bold tracking-widest" style={{ color }}>{title}</span>
-      <div className="flex-1 h-px" style={{ background: `${color}30` }} />
-    </div>
-  );
-
-  const PortRow = ({ port, state, service, version }: { port: number; state: string; service?: string; version?: string }) => (
-    <div className="flex items-center gap-2 py-1 px-2 rounded hover:bg-[var(--hover-accent)] transition-colors">
-      <span className="text-[11px] font-mono font-bold text-[var(--cyan-primary)] w-[60px]">{port}</span>
-      <StatusBadge ok={state === 'open'} label={state.toUpperCase()} />
-      <span className="text-[10px] font-mono text-[var(--text-secondary)] flex-1">{service || 'unknown'}</span>
-      {version && <span className="text-[9px] font-mono text-[var(--text-muted)]">{version}</span>}
-    </div>
-  );
 
   const renderStructuredResults = () => {
     if (!results) return null;

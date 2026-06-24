@@ -9,7 +9,7 @@
 // The custom-source plumbing (validate → upsert → persist → live registry) is reused verbatim
 // from the extension subsystem.
 
-import { memo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Camera, Eye, Shield, ScanLine, Boxes, Plus, Trash2, Pencil, AlertTriangle, MapPin, Navigation, FlaskConical, Loader2, CheckCircle2 } from 'lucide-react';
 import { getGroups } from '@/lib/registry';
@@ -58,6 +58,8 @@ const BUILTIN_SOURCES: Array<{ label: string; url: string }> = [
 const inputCls = 'w-full bg-black/40 border border-white/10 rounded px-2.5 py-1.5 text-[11px] font-mono text-white/85 focus:border-[var(--gold-primary)]/40 outline-none';
 const labelCls = 'text-[9px] font-mono tracking-widest text-white/40 mb-1 block uppercase';
 const btnCls = 'flex items-center gap-1.5 px-3 py-1.5 rounded border border-white/10 text-[10px] font-mono tracking-wider text-white/70 hover:border-[var(--gold-primary)]/40 hover:text-white transition-colors';
+const SOURCE_TEST_TIMEOUT_MS = 12_000;
+const MAX_TEST_RESULTS = 50;
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'source';
 
@@ -122,6 +124,7 @@ const EMPTY_DRAFT: Draft = {
 function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers, onLocate }: SurveillancePanelProps) {
   const customSources = useCustomSources();
   const formRef = useRef<HTMLDivElement>(null);
+  const testAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [formError, setFormError] = useState<string | null>(null);
@@ -131,17 +134,47 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const count = (bucket: string): number | null => (Array.isArray(data[bucket]) ? data[bucket].length : null);
 
+  const abortAllTests = useCallback(() => {
+    testAbortControllersRef.current.forEach((controller) => controller.abort());
+    testAbortControllersRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    if (open) return;
+    abortAllTests();
+    setTests({});
+  }, [open, abortAllTests]);
+
+  useEffect(() => () => abortAllTests(), [abortAllTests]);
+
+  const setTestResult = (url: string, result: TestState) => {
+    setTests((prev) => {
+      const entries = Object.entries(prev).filter(([key]) => key !== url);
+      entries.push([url, result]);
+      return Object.fromEntries(entries.slice(-MAX_TEST_RESULTS));
+    });
+  };
+
   const runTest = async (url: string, jsonPath?: string) => {
-    if (!url.trim()) return;
-    setTests((p) => ({ ...p, [url]: { loading: true } }));
+    const testUrl = url.trim();
+    if (!testUrl) return;
+    testAbortControllersRef.current.get(testUrl)?.abort();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(new Error('Source test timed out')), SOURCE_TEST_TIMEOUT_MS);
+    testAbortControllersRef.current.set(testUrl, controller);
+    setTestResult(testUrl, { loading: true });
     try {
-      const qs = new URLSearchParams({ url });
+      const qs = new URLSearchParams({ url: testUrl });
       if (jsonPath) qs.set('jsonPath', jsonPath);
-      const res = await fetch(`/api/source-test?${qs.toString()}`);
+      const res = await fetch(`/api/source-test?${qs.toString()}`, { signal: controller.signal });
       const json = await res.json();
-      setTests((p) => ({ ...p, [url]: { loading: false, ...json } }));
+      if (!controller.signal.aborted) setTestResult(testUrl, { loading: false, ...json });
     } catch (e) {
-      setTests((p) => ({ ...p, [url]: { loading: false, ok: false, error: e instanceof Error ? e.message : 'Request failed' } }));
+      if (controller.signal.aborted) return;
+      setTestResult(testUrl, { loading: false, ok: false, error: e instanceof Error ? e.message : 'Request failed' });
+    } finally {
+      clearTimeout(timeout);
+      if (testAbortControllersRef.current.get(testUrl) === controller) testAbortControllersRef.current.delete(testUrl);
     }
   };
 
@@ -171,6 +204,15 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
       const result = upsertCustomSource(validation.value);
       if (!result.ok) throw new Error(result.error ?? 'Custom source could not be registered.');
       setDraft(EMPTY_DRAFT);
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleRemoveSource = (id: string) => {
+    setFormError(null);
+    try {
+      removeCustomSource(id);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     }
@@ -276,7 +318,7 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
                             <div className="flex items-center gap-1 shrink-0">
                               <button onClick={() => runTest(s.url, s.jsonPath)} className="p-1 text-white/40 hover:text-[var(--gold-primary)]" title="Test"><FlaskConical className="w-3.5 h-3.5" /></button>
                               <button onClick={() => edit(s)} className="p-1 text-white/40 hover:text-[var(--cyan-primary)]" title="Edit"><Pencil className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => removeCustomSource(s.id)} className="p-1 text-white/40 hover:text-[var(--alert-red)]" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => handleRemoveSource(s.id)} className="p-1 text-white/40 hover:text-[var(--alert-red)]" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
                             </div>
                           </div>
                           {tests[s.url] && <TestResultLine r={tests[s.url]} />}

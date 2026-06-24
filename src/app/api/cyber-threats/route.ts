@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 // Cyber threat intelligence from public feeds
 // Inspired by WorldMonitor's infrastructure tracking
@@ -10,7 +11,7 @@ export async function GET() {
     // 1. CISA Known Exploited Vulnerabilities (authoritative US govt source)
     try {
       const res = await fetch('https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json', {
-        signal: AbortSignal.timeout(10000),
+        signal: safeAbortTimeout(10000),
       });
       if (res.ok) {
         const data = await res.json();
@@ -40,7 +41,7 @@ export async function GET() {
     try {
       const res = await fetch('https://dashboard.shadowserver.org/statistics/combined/map/', {
         headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(8000),
+        signal: safeAbortTimeout(8000),
       });
       if (res.ok) {
         results.stats.shadowserver = 'active';

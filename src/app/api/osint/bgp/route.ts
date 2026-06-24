@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 // BGP/ASN Lookup via bgpview.io (free, no key)
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -52,7 +53,7 @@ export async function GET(req: Request) {
     if (isIP) {
       // IP → ASN lookup
       const res = await fetch(`https://api.bgpview.io/ip/${query}`, {
-        signal: AbortSignal.timeout(8000),
+        signal: safeAbortTimeout(8000),
         headers: { 'Accept': 'application/json' },
       });
       if (res.ok) {
@@ -65,9 +66,9 @@ export async function GET(req: Request) {
     } else if (asnNum) {
       // ASN details
       const [asnRes, prefixRes, peersRes] = await Promise.allSettled([
-        fetch(`https://api.bgpview.io/asn/${asnNum}`, { signal: AbortSignal.timeout(8000) }),
-        fetch(`https://api.bgpview.io/asn/${asnNum}/prefixes`, { signal: AbortSignal.timeout(8000) }),
-        fetch(`https://api.bgpview.io/asn/${asnNum}/peers`, { signal: AbortSignal.timeout(8000) }),
+        fetch(`https://api.bgpview.io/asn/${asnNum}`, { signal: safeAbortTimeout(8000) }),
+        fetch(`https://api.bgpview.io/asn/${asnNum}/prefixes`, { signal: safeAbortTimeout(8000) }),
+        fetch(`https://api.bgpview.io/asn/${asnNum}/peers`, { signal: safeAbortTimeout(8000) }),
       ]);
 
       if (asnRes.status === 'fulfilled' && asnRes.value.ok) {

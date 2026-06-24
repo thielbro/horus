@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 import { safeFetch } from '@/lib/ssrf-guard';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +16,7 @@ export async function GET(req: Request) {
 
   try {
     const res = await safeFetch(url, {
-      signal: AbortSignal.timeout(8000),
+      signal: safeAbortTimeout(8000),
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; OSIRIS/1.0; +https://github.com/simplifaisoul/osiris)',
         Accept: 'text/html,application/xhtml+xml',

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
-import { releaseResponseBody } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * OSIRIS — Severe Weather & Anomalies API
@@ -84,14 +84,14 @@ export async function GET() {
   try {
     const [eonetRes, nwsRes] = await Promise.allSettled([
       stealthFetch('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=100', {
-        signal: AbortSignal.timeout(10000),
+        signal: safeAbortTimeout(10000),
       }),
       fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert', {
         headers: {
           Accept: 'application/geo+json',
           'User-Agent': 'OSIRIS Severe Weather Layer',
         },
-        signal: AbortSignal.timeout(10000),
+        signal: safeAbortTimeout(10000),
       }),
     ]);
 

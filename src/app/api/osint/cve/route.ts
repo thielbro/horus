@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import { safeAbortTimeout } from '@/lib/http-utils';
 
 // CVE Intelligence — fetches vulnerability details from CIRCL CVE API (free, no key)
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -48,7 +49,7 @@ export async function GET(req: Request) {
 
   try {
     const res = await fetch(`https://cveawg.mitre.org/api/cve/${encodeURIComponent(cacheKey)}`, {
-      signal: AbortSignal.timeout(8000),
+      signal: safeAbortTimeout(8000),
       headers: { 'Accept': 'application/json' },
     });
 
@@ -56,7 +57,7 @@ export async function GET(req: Request) {
       // Fallback to CIRCL
       try {
         const circlRes = await fetch(`https://cve.circl.lu/api/cve/${encodeURIComponent(cacheKey)}`, {
-          signal: AbortSignal.timeout(8000),
+          signal: safeAbortTimeout(8000),
           headers: { 'Accept': 'application/json' },
         });
         if (circlRes.ok) {
