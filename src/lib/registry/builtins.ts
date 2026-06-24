@@ -1,4 +1,4 @@
-import type { RegistryGroup, RegistryLayer, ThemeMode } from './types';
+import type { RegistryGroup, RegistryLayer, StyleLayerSpec, ThemeMode } from './types';
 
 // Theme-dependent flight accents (ghost mode recolors commercial/private/jets).
 const PHANTOM_PURPLE = '#B388FF';
@@ -11,6 +11,31 @@ const flightGov = (t: ThemeMode) => (t === 'ghost' ? GHOST_GOV : '#FF9500');
 // Ghost-mode recolors for surveillance layers (in-place recolor handled live by OsirisMap).
 const cameraColor = (t: ThemeMode) => (t === 'ghost' ? '#B388FF' : '#00E676');
 const surveillanceColor = (t: ThemeMode) => (t === 'ghost' ? '#FF80AB' : '#FFAB00');
+
+// CCTV continents: [activeLayers key, data bucket]. The cameras are loaded one continent at a
+// time (separate feeds/buckets) but plotted through a SINGLE map source ('cctv'), so the
+// existing cctv style layers + click handler are reused unchanged. The render binding below
+// unions whichever continents are toggled on. Continent toggles are virtual keys (driven by
+// the Surveillance panel), like cables/sdk_air.
+const CCTV_CONTINENTS: ReadonlyArray<readonly [string, string]> = [
+  ['cctv_europe', 'cameras_europe'],
+  ['cctv_north_america', 'cameras_north_america'],
+  ['cctv_asia', 'cameras_asia'],
+  ['cctv_oceania', 'cameras_oceania'],
+];
+const cctvFeature = (c: any) => ({
+  type: 'Feature' as const,
+  geometry: { type: 'Point' as const, coordinates: [c.lng, c.lat] },
+  properties: { id: c.id, name: c.name, city: c.city, country: c.country, source: c.source, feed_url: c.feed_url, stream_url: c.stream_url, stream_type: c.stream_type, external_url: c.external_url },
+});
+
+// Generic OSM point-layer style (glow + dot + label) for the police / Flock / mass-surveillance
+// layers. Static color (not theme-recolored) — mirrors the surveillance layer's shape.
+const osmPointStyle = (prefix: string, source: string, color: string): StyleLayerSpec[] => ([
+  { id: `${prefix}-glow`, source, type: 'circle', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 4, 8, 7, 12, 11, 16, 16], 'circle-color': color, 'circle-opacity': 0.18, 'circle-blur': 1 } },
+  { id: `${prefix}-dots`, source, type: 'circle', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 2, 8, 3.5, 12, 6, 16, 9], 'circle-color': color, 'circle-opacity': 0.85, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.8 } },
+  { id: `${prefix}-label`, source, type: 'symbol', minzoom: 12, layout: { 'text-field': ['get', 'name'], 'text-size': 9, 'text-font': ['Open Sans Regular'], 'text-offset': [0, 1.4], 'text-max-width': 12, 'text-allow-overlap': false }, paint: { 'text-color': color, 'text-halo-color': '#000000', 'text-halo-width': 1.5, 'text-opacity': 0.75 } },
+]);
 
 // Cap on malware nodes woven into the botnet mesh (stability — mirrors OsirisMap's constant).
 const MAX_MESH_NODES = 750;
@@ -187,14 +212,46 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   },
   // ── SURVEIL ──
   {
-    id: 'cctv', label: 'CCTV Cameras', group: 'SURVEIL', icon: 'Camera', color: '#7E57C2', countBuckets: ['cameras'],
+    // Headless: cameras are toggled per-continent from the Surveillance panel, not the rail.
+    // The continent feeds fill cameras_<continent> buckets; this single source unions them.
+    id: 'cctv', label: 'CCTV Cameras', group: 'SURVEIL', icon: 'Camera', color: '#7E57C2', headless: true,
+    countBuckets: ['cameras_europe', 'cameras_north_america', 'cameras_asia', 'cameras_oceania'],
     styleLayers: [
       { id: 'cctv-glow', source: 'cctv', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 5,8, 10,14, 14,20], 'circle-color': '#000000', 'circle-opacity': 0.35, 'circle-blur': 1 } },
       { id: 'cctv-dots', source: 'cctv', type: 'circle', paint: (t) => ({ 'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,5, 10,8, 14,12], 'circle-color': cameraColor(t), 'circle-opacity': 0.9, 'circle-stroke-width': 2.5, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.9 }) },
       { id: 'cctv-label', source: 'cctv', type: 'symbol', minzoom: 10, layout: { 'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'], 'text-offset': [0, 1.8], 'text-max-width': 12, 'text-allow-overlap': false }, paint: (t) => ({ 'text-color': cameraColor(t), 'text-halo-color': '#000000', 'text-halo-width': 1.5, 'text-opacity': 0.8 }) },
     ],
     render: [
-      { source: 'cctv', toFeatures: (data, active) => (active.cctv && data.cameras) ? data.cameras.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, city: c.city, country: c.country, source: c.source, feed_url: c.feed_url, stream_url: c.stream_url, stream_type: c.stream_type, external_url: c.external_url } })) : [] },
+      { source: 'cctv', toFeatures: (data, active) => {
+        const out: any[] = [];
+        for (const [key, bucket] of CCTV_CONTINENTS) {
+          if (active[key] && Array.isArray(data[bucket])) {
+            for (const c of data[bucket]) out.push(cctvFeature(c));
+          }
+        }
+        return out;
+      } },
+    ],
+  },
+  {
+    id: 'police', label: 'Police Stations', group: 'SURVEIL', icon: 'Shield', color: '#42A5F5', countBuckets: ['police'], headless: true,
+    styleLayers: osmPointStyle('police', 'police', '#42A5F5'),
+    render: [
+      { source: 'police', toFeatures: (data, active) => (active.police && data.police) ? data.police.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, operator: c.operator, source: c.source, osm_url: c.osm_url } })) : [] },
+    ],
+  },
+  {
+    id: 'flock', label: 'Flock / ALPR', group: 'SURVEIL', icon: 'Camera', color: '#FF7043', countBuckets: ['flock'], headless: true,
+    styleLayers: osmPointStyle('flock', 'flock', '#FF7043'),
+    render: [
+      { source: 'flock', toFeatures: (data, active) => (active.flock && data.flock) ? data.flock.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, operator: c.operator, surveillance_type: c.surveillance_type, direction: c.direction, source: c.source, osm_url: c.osm_url } })) : [] },
+    ],
+  },
+  {
+    id: 'mass_surveil', label: 'Mass Surveillance', group: 'SURVEIL', icon: 'Eye', color: '#EF5350', countBuckets: ['mass_surveil'], headless: true,
+    styleLayers: osmPointStyle('mass', 'mass-surveil', '#EF5350'),
+    render: [
+      { source: 'mass-surveil', toFeatures: (data, active) => (active.mass_surveil && data.mass_surveil) ? data.mass_surveil.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, operator: c.operator, surveillance_type: c.surveillance_type, zone: c.zone, source: c.source, osm_url: c.osm_url } })) : [] },
     ],
   },
   {

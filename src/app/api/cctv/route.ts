@@ -501,6 +501,41 @@ const REGION_FETCHERS: Record<string, () => Promise<any[]>> = {
   'switzerland': fetchSwitzerlandCameras,
 };
 
+// ═══ CONTINENT MAPPING ═══
+// Groups the region fetchers above into continents. The frontend loads cameras one
+// continent at a time (?continent=…) so each request stays well under MAX_CAMERAS — this
+// is what prevents the old "region=all" cap from starving late regions like Oceania.
+// Continents without sources yet (Africa, South America, Antarctica) are intentionally absent.
+const CONTINENTS: Record<string, string[]> = {
+  europe: ['uk', 'europe', 'bulgaria', 'greece', 'serbia', 'macedonia', 'turkey', 'romania', 'italy', 'czechia', 'slovakia', 'germany', 'france', 'spain', 'poland', 'switzerland'],
+  'north-america': ['us-west', 'us-east', 'us-central', 'canada'],
+  asia: ['asia', 'japan', 'middle-east'],
+  oceania: ['australia', 'queensland', 'victoria', 'newzealand'],
+};
+
+// Merge per-region results fairly: round-robin across regions so a shared cap can never
+// drain the first regions and starve later ones (the AU/NZ "region=all" bug). De-dupes by id.
+function mergeCamerasFairly(results: PromiseSettledResult<any[]>[], max: number): { cameras: any[]; sources: Record<string, number> } {
+  const lists = results.filter((r): r is PromiseFulfilledResult<any[]> => r.status === 'fulfilled').map((r) => r.value || []);
+  const cameras: any[] = [];
+  const seen = new Set<string>();
+  const sources: Record<string, number> = {};
+  const maxLen = lists.reduce((m, l) => Math.max(m, l.length), 0);
+  for (let i = 0; i < maxLen && cameras.length < max; i++) {
+    for (const list of lists) {
+      if (i >= list.length) continue;
+      if (cameras.length >= max) break;
+      const cam = list[i];
+      const cameraId = String(cam.id || `${cam.source}:${cam.lat}:${cam.lng}`);
+      if (seen.has(cameraId)) continue;
+      seen.add(cameraId);
+      cameras.push(cam);
+      sources[cam.source] = (sources[cam.source] || 0) + 1;
+    }
+  }
+  return { cameras, sources };
+}
+
 async function runRegionFetchers(regionsToFetch: string[]): Promise<PromiseSettledResult<any[]>[]> {
   const results: PromiseSettledResult<any[]>[] = [];
   for (let i = 0; i < regionsToFetch.length; i += MAX_REGION_ALL_CONCURRENCY) {
@@ -580,6 +615,7 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const continent = searchParams.get('continent');
     const region = searchParams.get('region');
     const lat = parseFloat(searchParams.get('lat') || '0');
     const lng = parseFloat(searchParams.get('lng') || '0');
@@ -587,7 +623,9 @@ export async function GET(request: Request) {
 
     let regionsToFetch: string[];
 
-    if (region === 'all') {
+    if (continent) {
+      regionsToFetch = (CONTINENTS[continent] ?? []).filter(r => r in REGION_FETCHERS);
+    } else if (region === 'all') {
       regionsToFetch = Object.keys(REGION_FETCHERS);
     } else if (region) {
       regionsToFetch = region.split(',').filter(r => r in REGION_FETCHERS);
@@ -599,25 +637,9 @@ export async function GET(request: Request) {
 
     const results = await runRegionFetchers(regionsToFetch);
 
-    const allCameras: any[] = [];
-    const seenCameraIds = new Set<string>();
-    const sources: Record<string, number> = {};
+    const { cameras: allCameras, sources } = mergeCamerasFairly(results, MAX_CAMERAS);
 
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        for (const cam of result.value) {
-          if (allCameras.length >= MAX_CAMERAS) break;
-          const cameraId = String(cam.id || `${cam.source}:${cam.lat}:${cam.lng}`);
-          if (seenCameraIds.has(cameraId)) continue;
-          seenCameraIds.add(cameraId);
-          allCameras.push(cam);
-          sources[cam.source] = (sources[cam.source] || 0) + 1;
-        }
-      }
-      if (allCameras.length >= MAX_CAMERAS) break;
-    }
-
-    const cacheControl = allCameras.length < 50 
+    const cacheControl = allCameras.length < 50
       ? 'no-store, max-age=0' 
       : 'public, s-maxage=300, stale-while-revalidate=600';
 

@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, BarChart3, Newspaper, Search, X, Globe, MapPinned, Radar, Satellite, Moon, ExternalLink, AlertTriangle, Activity, Database, Wifi, Play, Network, Settings } from 'lucide-react';
+import { Layers, BarChart3, Newspaper, Search, X, Globe, MapPinned, Radar, Satellite, Moon, ExternalLink, AlertTriangle, Activity, Database, Wifi, Play, Network, Settings, Eye } from 'lucide-react';
 import IntelFeed from '@/components/IntelFeed';
 import MarketsPanel from '@/components/MarketsPanel';
 import ScmPanel from '@/components/ScmPanel';
@@ -26,6 +26,7 @@ const CameraViewer = dynamic(() => import('@/components/CameraViewer'));
 const OsintPanel = dynamic(() => import('@/components/OsintPanel'));
 const EntityGraphPanel = dynamic(() => import('@/components/EntityGraphPanel'));
 const SettingsPanel = dynamic(() => import('@/components/SettingsPanel'));
+const SurveillancePanel = dynamic(() => import('@/components/SurveillancePanel'));
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -97,7 +98,13 @@ function getYouTubeWatchUrl(url: string): string {
 
 const DEFAULT_DATA_ARRAY_LIMIT = 1000;
 const DATA_ARRAY_LIMITS: Record<string, number> = {
-  cameras: 5000,
+  cameras_europe: 5000,
+  cameras_north_america: 5000,
+  cameras_asia: 3000,
+  cameras_oceania: 2000,
+  police: 12000,
+  flock: 12000,
+  mass_surveil: 12000,
   commercial_flights: 5000,
   private_flights: 2000,
   private_jets: 1000,
@@ -137,8 +144,14 @@ const DEFAULT_ACTIVE_LAYERS = {
   maritime: true,
   satellites: false,
   balloons: false,
-  cctv: false,
+  cctv_europe: false,
+  cctv_north_america: false,
+  cctv_asia: false,
+  cctv_oceania: false,
   surveillance: false,
+  police: false,
+  flock: false,
+  mass_surveil: false,
   live_news: true,
   news_intel: true,
   earthquakes: true,
@@ -195,6 +208,7 @@ export default function Dashboard() {
   const osirisTheme: 'core' | 'ghost' = settings.appearance.theme === 'ghost' ? 'ghost' : 'core';
   const setTheme = useCallback((t: 'core' | 'ghost') => updateSettings({ appearance: { theme: t } }), [updateSettings]);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSurveillance, setShowSurveillance] = useState(false);
 
   // Base theme class (core/ghost)
   useEffect(() => {
@@ -1060,6 +1074,9 @@ export default function Dashboard() {
       {/* ── MOBILE: Compact top status ── */}
       {isMobile && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.5 }} className="absolute top-3 right-3 z-[200] pointer-events-auto flex items-center gap-2">
+          <button onClick={() => setShowSurveillance(true)} className="glass-panel p-1.5 flex items-center justify-center hover:opacity-80 transition-opacity" title="Surveillance">
+            <Eye className="w-3.5 h-3.5 text-white/70" />
+          </button>
           <button onClick={() => setShowSettings(true)} className="glass-panel p-1.5 flex items-center justify-center hover:opacity-80 transition-opacity" title="Settings">
             <Settings className="w-3.5 h-3.5 text-white/70" />
           </button>
@@ -1124,6 +1141,12 @@ export default function Dashboard() {
         <div className="relative group">
           <button onClick={() => { setShowEntityGraph(!showEntityGraph); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); }} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showEntityGraph ? 'bg-[#D4AF37]/20' : 'hover:bg-white/10'}`}>
             <Network className={`w-4 h-4 ${showEntityGraph ? 'text-[#D4AF37]' : 'text-white/60'}`} />
+          </button>
+        </div>
+
+        <div className="relative group">
+          <button onClick={() => setShowSurveillance(true)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showSurveillance ? 'bg-[#00E676]/20' : 'hover:bg-white/10'}`} title="Surveillance">
+            <Eye className={`w-4 h-4 ${showSurveillance ? 'text-[#00E676]' : 'text-white/60'}`} />
           </button>
         </div>
 
@@ -1269,7 +1292,7 @@ export default function Dashboard() {
                         <div className="grid grid-cols-5 gap-1 text-center">
                           <div><div className="hud-label" style={{fontSize:'6px'}}>AIR</div><div className="hud-value text-[9px]">{totalFlights.toLocaleString()}</div></div>
                           <div><div className="hud-label" style={{fontSize:'6px'}}>SAT</div><div className="hud-value text-[9px]">{(data.satellites?.length||0)}</div></div>
-                          <div><div className="hud-label" style={{fontSize:'6px'}}>CAM</div><div className="hud-value text-[9px]">{(data.cameras?.length||0)}</div></div>
+                          <div><div className="hud-label" style={{fontSize:'6px'}}>CAM</div><div className="hud-value text-[9px]">{((data.cameras_europe?.length||0)+(data.cameras_north_america?.length||0)+(data.cameras_asia?.length||0)+(data.cameras_oceania?.length||0))}</div></div>
                           <div><div className="hud-label" style={{fontSize:'6px'}}>WX</div><div className="hud-value text-[9px]" style={{color:'var(--accent-weather)'}}>{(data.weather_events?.length||0)}</div></div>
                           <div><div className="hud-label" style={{fontSize:'6px'}}>NUC</div><div className="hud-value text-[9px]" style={{color:'var(--accent-nuclear)'}}>{(data.infrastructure?.length||0)}</div></div>
                         </div>
@@ -1370,6 +1393,8 @@ export default function Dashboard() {
 
       {/* ── Settings ── */}
       <SettingsPanel open={showSettings} onClose={closeSettings} getWorkspaceSnapshot={getWorkspaceSnapshot} onApplyWorkspace={applyWorkspace} />
+
+      <SurveillancePanel open={showSurveillance} onClose={() => setShowSurveillance(false)} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />
 
       {/* ── Workspace restore notice (missing extension layers) ── */}
       <AnimatePresence>

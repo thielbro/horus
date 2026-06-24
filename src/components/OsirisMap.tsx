@@ -243,6 +243,11 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       // SURVEILLANCE (OSM camera locations — no live feed) — registry-driven, ghost-recolored
       addRegistryLayer(map, 'surveillance', themeMode);
 
+      // Counter-surveillance point layers (OSM/Overpass; positions only) — registry-driven
+      addRegistryLayer(map, 'police');
+      addRegistryLayer(map, 'flock');
+      addRegistryLayer(map, 'mass_surveil');
+
       // GDELT
 
 
@@ -444,6 +449,42 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       </div>`);
     });
 
+    // ── Police stations (OSM location only) ──
+    map.on('click', 'police-dots', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      popup(coords, `<div style="${pStyle}border:1px solid rgba(66,165,245,0.35);">
+        <div style="color:#42A5F5;font-size:13px;font-weight:700;margin-bottom:2px;">🚔 ${p.name || 'Police Station'}</div>
+        <div style="font-size:9px;color:#8A8780;margin-bottom:8px;">${p.operator || 'Police'} · location only</div>
+        <a href="${p.osm_url || '#'}" target="_blank" rel="noopener" style="${linkStyle}color:#42A5F5;border:1px solid rgba(66,165,245,0.4);background:rgba(66,165,245,0.1);">🗺 VIEW ON OSM</a>
+      </div>`);
+    });
+
+    // ── Flock / ALPR cameras (OSM location only) ──
+    map.on('click', 'flock-dots', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      popup(coords, `<div style="${pStyle}border:1px solid rgba(255,112,67,0.35);">
+        <div style="color:#FF7043;font-size:13px;font-weight:700;margin-bottom:2px;">🎥 ${p.name || 'ALPR Camera'}</div>
+        <div style="font-size:9px;color:#8A8780;margin-bottom:8px;">${p.surveillance_type || 'ALPR'}${p.operator ? ' · ' + p.operator : ''} · location only</div>
+        <a href="${p.osm_url || '#'}" target="_blank" rel="noopener" style="${linkStyle}color:#FF7043;border:1px solid rgba(255,112,67,0.4);background:rgba(255,112,67,0.1);">🗺 VIEW ON OSM</a>
+      </div>`);
+    });
+
+    // ── Mass surveillance (OSM location only) ──
+    map.on('click', 'mass-dots', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      popup(coords, `<div style="${pStyle}border:1px solid rgba(239,83,80,0.35);">
+        <div style="color:#EF5350;font-size:13px;font-weight:700;margin-bottom:2px;">👁 ${p.name || 'Surveillance'}</div>
+        <div style="font-size:9px;color:#8A8780;margin-bottom:8px;">${p.zone || p.surveillance_type || 'public area'}${p.operator ? ' · ' + p.operator : ''} · location only</div>
+        <a href="${p.osm_url || '#'}" target="_blank" rel="noopener" style="${linkStyle}color:#EF5350;border:1px solid rgba(239,83,80,0.4);background:rgba(239,83,80,0.1);">🗺 VIEW ON OSM</a>
+      </div>`);
+    });
+
     // ── Earthquakes (with USGS link) ──
     map.on('click', 'eq-circles', e => {
       if (!e.features?.length) return;
@@ -596,7 +637,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
 
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','surv-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','sigint-news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots'].forEach(layer => {
+    ['conflict-icons','cctv-dots','surv-dots','police-dots','flock-dots','mass-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','sigint-news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -1079,12 +1120,28 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   useEffect(() => {
     if (!mapReady) return;
     renderRegistryLayer(setGeo, 'cctv', data, activeLayers);
-  }, [mapReady, data.cameras, activeLayers.cctv, setGeo]);
+  }, [mapReady, data.cameras_europe, data.cameras_north_america, data.cameras_asia, data.cameras_oceania,
+      activeLayers.cctv_europe, activeLayers.cctv_north_america, activeLayers.cctv_asia, activeLayers.cctv_oceania, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;
     renderRegistryLayer(setGeo, 'surveillance', data, activeLayers);
   }, [mapReady, data.surveillance, activeLayers.surveillance, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    renderRegistryLayer(setGeo, 'police', data, activeLayers);
+  }, [mapReady, data.police, activeLayers.police, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    renderRegistryLayer(setGeo, 'flock', data, activeLayers);
+  }, [mapReady, data.flock, activeLayers.flock, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    renderRegistryLayer(setGeo, 'mass_surveil', data, activeLayers);
+  }, [mapReady, data.mass_surveil, activeLayers.mass_surveil, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;
@@ -1154,8 +1211,11 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setVis(['fl-private'], activeLayers.private);
     setVis(['fl-jets'], activeLayers.jets);
     setVis(['fl-military'], activeLayers.military);
-    setVis(['cctv-glow','cctv-dots','cctv-label'], activeLayers.cctv);
+    setVis(['cctv-glow','cctv-dots','cctv-label'], activeLayers.cctv_europe || activeLayers.cctv_north_america || activeLayers.cctv_asia || activeLayers.cctv_oceania);
     setVis(['surv-glow','surv-dots','surv-label'], activeLayers.surveillance);
+    setVis(['police-glow','police-dots','police-label'], activeLayers.police);
+    setVis(['flock-glow','flock-dots','flock-label'], activeLayers.flock);
+    setVis(['mass-glow','mass-dots','mass-label'], activeLayers.mass_surveil);
     setVis(['fires-heat'], activeLayers.fires);
     setVis(['weather-glow','weather-dots','weather-label'], activeLayers.weather);
     setVis(['infra-glow','infra-dots','infra-label'], activeLayers.infrastructure);
