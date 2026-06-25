@@ -76,6 +76,20 @@ export interface Privacy {
   notice: string;
 }
 
+/** Imagery / media attached to a dossier (e.g. nearest Mapillary street-level shots). */
+export interface MediaItem {
+  type: 'image';
+  url: string;
+  thumbUrl?: string;
+  lat?: number;
+  lng?: number;
+  capturedAt?: string;
+  /** Camera heading in degrees, if known. */
+  heading?: number;
+  source: string;
+  sourceUrl?: string;
+}
+
 export interface Provenance {
   generatedAt: string;
   model: string;
@@ -94,6 +108,7 @@ export interface Dossier {
   related: EntityRef[];
   actions: DossierAction[];
   citations: Citation[];
+  media?: MediaItem[];
   geometry?: unknown;
   privacy?: Privacy;
   provenance: Provenance;
@@ -116,6 +131,7 @@ export interface GatherResult {
   geometry?: unknown;
   facts?: Fact[];
   actions?: DossierAction[];
+  media?: MediaItem[];
   privacy?: Privacy;
 }
 

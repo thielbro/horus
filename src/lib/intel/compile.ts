@@ -266,6 +266,7 @@ async function compileUncached(
     related: synth.related ?? [],
     actions: gathered.actions ?? [],
     citations: gathered.citations,
+    media: gathered.media,
     geometry: gathered.geometry,
     privacy: synth.privacy ?? gathered.privacy,
     provenance: {
