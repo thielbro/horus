@@ -37,6 +37,27 @@ interface OsirisMapProps {
 }
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
+const DOSSIER_KIND_COLOR: Record<string, string> = {
+  alpr: '#FF7043',
+  police: '#42A5F5',
+  speed: '#FFD54F',
+  camera: '#00E676',
+};
+const DOSSIER_KIND_RGB: Record<string, string> = {
+  alpr: '255,112,67',
+  police: '66,165,245',
+  speed: '255,213,79',
+  camera: '0,230,118',
+};
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function safeJsonArray<T = unknown>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];
@@ -55,6 +76,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const onEntityClickRef = useRef(onEntityClick);
   const themeRef = useRef(theme);
+  const dossierOverlayFrameRef = useRef<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const prevStyleRef = useRef(mapStyle);
 
@@ -505,12 +527,17 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       if (!e.features?.length) return;
       const p = e.features[0].properties as any;
       const coords = (e.features[0].geometry as any).coordinates;
-      const c = p.kind === 'alpr' ? '#FF7043' : p.kind === 'police' ? '#42A5F5' : p.kind === 'speed' ? '#FFD54F' : '#00E676';
-      const rgb = p.kind === 'alpr' ? '255,112,67' : p.kind === 'police' ? '66,165,245' : p.kind === 'speed' ? '255,213,79' : '0,230,118';
+      const kind = String(p.kind || 'camera').toLowerCase();
+      const c = DOSSIER_KIND_COLOR[kind] || DOSSIER_KIND_COLOR.camera;
+      const rgb = DOSSIER_KIND_RGB[kind] || DOSSIER_KIND_RGB.camera;
+      const name = escapeHtml(String(p.name || 'Surveillance'));
+      const distanceM = escapeHtml(String(p.distanceM ?? ''));
+      const label = escapeHtml(kind.toUpperCase());
+      const href = escapeHtml(String(p.osmUrl || '#'));
       popup(coords, `<div style="${pStyle}border:1px solid rgba(${rgb},0.35);">
-        <div style="color:${c};font-size:13px;font-weight:700;margin-bottom:2px;">${p.name || 'Surveillance'}</div>
-        <div style="font-size:9px;color:#8A8780;margin-bottom:8px;">${(p.kind || 'camera').toUpperCase()} · ${p.distanceM}m away · can observe this location</div>
-        <a href="${p.osmUrl || '#'}" target="_blank" rel="noopener" style="${linkStyle}color:${c};border:1px solid rgba(${rgb},0.4);background:rgba(${rgb},0.1);">🗺 VIEW ON OSM</a>
+        <div style="color:${c};font-size:13px;font-weight:700;margin-bottom:2px;">${name}</div>
+        <div style="font-size:9px;color:#8A8780;margin-bottom:8px;">${label} · ${distanceM}m away · can observe this location</div>
+        <a href="${href}" target="_blank" rel="noopener" style="${linkStyle}color:${c};border:1px solid rgba(${rgb},0.4);background:rgba(${rgb},0.1);">🗺 VIEW ON OSM</a>
       </div>`);
     });
 
@@ -918,6 +945,20 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     if (src) src.setData({ type: 'FeatureCollection', features });
   }, []);
 
+  const setDossierGeoBatch = useCallback((updates: Record<string, any[]>) => {
+    if (dossierOverlayFrameRef.current != null) cancelAnimationFrame(dossierOverlayFrameRef.current);
+    dossierOverlayFrameRef.current = requestAnimationFrame(() => {
+      dossierOverlayFrameRef.current = null;
+      for (const [source, features] of Object.entries(updates)) {
+        setGeo(source, features);
+      }
+    });
+  }, [setGeo]);
+
+  useEffect(() => () => {
+    if (dossierOverlayFrameRef.current != null) cancelAnimationFrame(dossierOverlayFrameRef.current);
+  }, []);
+
   // Day/Night — registry-driven; the binding recomputes the terminator polygon, re-run here
   // on a 5-min interval (shadow barely moves) so the registry needs no timed-source concept.
   useEffect(() => {
@@ -1260,9 +1301,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setVis(['sdk-sea','sdk-sea-glow','sdk-sea-atmo'], activeLayers.sdk_sea !== false);
     setVis(['sdk-air','sdk-air-glow','sdk-air-atmo'], activeLayers.sdk_air !== false);
     setVis(['sdk-intel','sdk-intel-glow','sdk-intel-atmo'], activeLayers.sdk_naval !== false);
+    setVis(['dossier-radius-fill','dossier-radius-line','dossier-sightlines','dossier-nearby-glow','dossier-nearby-dots','dossier-pin-glow','dossier-pin-dot'], Boolean(dossierOverlay?.center));
     // Sweep layers always visible when data is present (controlled by useEffect)
     setVis(['sweep-connections','sweep-pulse-ring','sweep-device-glow','sweep-device-dots','sweep-device-labels'], true);
-  }, [mapReady, activeLayers, setVis]);
+  }, [mapReady, activeLayers, dossierOverlay?.center, setVis]);
 
   // IP Sweep visualization
   useEffect(() => {
@@ -1361,22 +1403,25 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     const o = dossierOverlay;
     const center = o?.center;
     if (!center) {
-      setGeo('dossier-pin', []); setGeo('dossier-radius', []); setGeo('dossier-nearby', []); setGeo('dossier-sightlines', []);
+      setDossierGeoBatch({ 'dossier-pin': [], 'dossier-radius': [], 'dossier-nearby': [], 'dossier-sightlines': [] });
       return;
     }
     const { lat, lng } = center;
-    setGeo('dossier-pin', [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { role: 'pin' } }]);
-    setGeo('dossier-radius', o!.radiusM > 0
-      ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [circlePolygon(lat, lng, o!.radiusM)] }, properties: {} }]
-      : []);
-    setGeo('dossier-nearby', (o!.nearby || []).map((nbr) => ({
-      type: 'Feature', geometry: { type: 'Point', coordinates: [nbr.lng, nbr.lat] },
-      properties: { kind: nbr.kind, name: nbr.name, distanceM: nbr.distanceM, osmUrl: nbr.osmUrl },
-    })));
-    setGeo('dossier-sightlines', (o!.nearby || []).filter((nbr) => nbr.kind !== 'police').map((nbr) => ({
-      type: 'Feature', geometry: { type: 'LineString', coordinates: [[nbr.lng, nbr.lat], [lng, lat]] }, properties: { kind: nbr.kind },
-    })));
-  }, [mapReady, dossierOverlay, setGeo]);
+    const nearby = o?.nearby ?? [];
+    setDossierGeoBatch({
+      'dossier-pin': [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { role: 'pin' } }],
+      'dossier-radius': o.radiusM > 0
+        ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [circlePolygon(lat, lng, o.radiusM)] }, properties: {} }]
+        : [],
+      'dossier-nearby': nearby.map((nbr) => ({
+        type: 'Feature', geometry: { type: 'Point', coordinates: [nbr.lng, nbr.lat] },
+        properties: { kind: nbr.kind, name: nbr.name, distanceM: nbr.distanceM, osmUrl: nbr.osmUrl },
+      })),
+      'dossier-sightlines': nearby.filter((nbr) => nbr.kind !== 'police').map((nbr) => ({
+        type: 'Feature', geometry: { type: 'LineString', coordinates: [[nbr.lng, nbr.lat], [lng, lat]] }, properties: { kind: nbr.kind },
+      })),
+    });
+  }, [mapReady, dossierOverlay, setDossierGeoBatch]);
 
   // Fly-to. `zoom` is honored when provided (workspace restore / view presets); otherwise
   // we default to 8 for a generic "fly here" nudge. Gated on mapReady so workspace restore

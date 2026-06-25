@@ -29,6 +29,16 @@ const SettingsPanel = dynamic(() => import('@/components/SettingsPanel'));
 const SurveillancePanel = dynamic(() => import('@/components/SurveillancePanel'));
 const DossierPanel = dynamic(() => import('@/components/DossierPanel'));
 
+const MAX_DOSSIER_NEARBY = 30;
+
+function safeDossierPoint(lat: unknown, lng: unknown): { lat: number; lng: number } | null {
+  const nextLat = Number(lat);
+  const nextLng = Number(lng);
+  return Number.isFinite(nextLat) && Number.isFinite(nextLng) && nextLat >= -90 && nextLat <= 90 && nextLng >= -180 && nextLng <= 180
+    ? { lat: nextLat, lng: nextLng }
+    : null;
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -213,6 +223,7 @@ export default function Dashboard() {
   const [showSurveillance, setShowSurveillance] = useState(false);
   const [showDossier, setShowDossier] = useState(false);
   const [dossierTarget, setDossierTarget] = useState<{ kind: string; id: string; label?: string; lat?: number; lng?: number } | null>(null);
+  const [currentDossierRequestId, setCurrentDossierRequestId] = useState(0);
   const [dossierOverlay, setDossierOverlay] = useState<{ center: { lat: number; lng: number } | null; radiusM: number; nearby: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }> } | null>(null);
 
   // Base theme class (core/ghost)
@@ -240,7 +251,8 @@ export default function Dashboard() {
   const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const geocodeAbort = useRef<AbortController | null>(null);
   const statsAbort = useRef<AbortController | null>(null);
-  const dossierAbort = useRef<AbortController | null>(null);
+  const regionDossierAbort = useRef<AbortController | null>(null);
+  const dossierRequestIdRef = useRef(0);
   const spaceWeatherAbort = useRef<AbortController | null>(null);
   const cablesAbort = useRef<AbortController | null>(null);
   const lastGeocodedPos = useRef<{ lat: number; lng: number } | null>(null);
@@ -481,9 +493,9 @@ export default function Dashboard() {
 
   // Region dossier (right-click)
   const handleRightClick = useCallback(async (coords: { lat: number; lng: number }) => {
-    dossierAbort.current?.abort();
+    regionDossierAbort.current?.abort();
     const controller = new AbortController();
-    dossierAbort.current = controller;
+    regionDossierAbort.current = controller;
     setDossierLoading(true); setRegionDossier(null);
     try {
       const res = await fetch(`/api/region-dossier?lat=${coords.lat}&lng=${coords.lng}`, { signal: controller.signal });
@@ -491,7 +503,7 @@ export default function Dashboard() {
     } catch (e) {
       if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
     } finally {
-      if (dossierAbort.current === controller) dossierAbort.current = null;
+      if (regionDossierAbort.current === controller) regionDossierAbort.current = null;
       if (!controller.signal.aborted) setDossierLoading(false);
     }
   }, []);
@@ -606,27 +618,46 @@ export default function Dashboard() {
       }
     };
     // On-the-go dossier compiler (address intel, …). ref = { kind, id, label?, lat?, lng? }.
-    (window as any).openOsirisDossier = (ref: any) => {
+    const openDossierRequest = (ref: any) => {
       if (!ref?.id && (ref?.lat == null || ref?.lng == null)) return;
+      const nextRequestId = dossierRequestIdRef.current + 1;
+      dossierRequestIdRef.current = nextRequestId;
+      setCurrentDossierRequestId(nextRequestId);
       setDossierOverlay(null);
       setDossierTarget({ kind: ref.kind || 'address', id: ref.id || `${ref.lat},${ref.lng}`, label: ref.label, lat: ref.lat, lng: ref.lng });
       setShowDossier(true);
     };
+    (window as any).openOsirisDossier = openDossierRequest;
     return () => { delete (window as any).openOsirisIntel; delete (window as any).openOsirisDossier; };
   }, []);
 
   // When a dossier finishes compiling, drive the map: fly to the location and draw the
   // pin / radius / nearby-surveillance / sightlines overlay.
-  const onDossierLoaded = useCallback((d: any) => {
+  const onDossierLoaded = useCallback((d: any, requestId?: number) => {
+    if (typeof requestId === 'number' && requestId !== dossierRequestIdRef.current) return;
     const radiusAction = d?.actions?.find((a: any) => a.type === 'drawRadius');
     const center = radiusAction
-      ? { lat: radiusAction.lat, lng: radiusAction.lng }
-      : (d?.ref?.lat != null && d?.ref?.lng != null ? { lat: d.ref.lat, lng: d.ref.lng } : null);
+      ? safeDossierPoint(radiusAction.lat, radiusAction.lng)
+      : safeDossierPoint(d?.ref?.lat, d?.ref?.lng);
     if (!center) return;
     const nearby = (d?.geometry?.features ?? [])
-      .filter((f: any) => f.properties?.role === 'nearby')
-      .map((f: any) => ({ lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], kind: f.properties.kind, name: f.properties.name, distanceM: f.properties.distanceM, osmUrl: f.properties.osmUrl }));
-    setDossierOverlay({ center, radiusM: radiusAction?.radiusM ?? 0, nearby });
+      .filter((f: any) => f?.properties?.role === 'nearby' && Array.isArray(f?.geometry?.coordinates))
+      .map((f: any) => {
+        const point = safeDossierPoint(f.geometry.coordinates[1], f.geometry.coordinates[0]);
+        if (!point) return null;
+        const distanceM = Number(f.properties?.distanceM ?? 0);
+        return {
+          ...point,
+          kind: String(f.properties?.kind || 'camera'),
+          name: String(f.properties?.name || 'Surveillance'),
+          distanceM: Number.isFinite(distanceM) ? distanceM : 0,
+          osmUrl: typeof f.properties?.osmUrl === 'string' ? f.properties.osmUrl : undefined,
+        };
+      })
+      .filter(Boolean)
+      .slice(0, MAX_DOSSIER_NEARBY) as Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }>;
+    const radiusM = Number(radiusAction?.radiusM ?? 0);
+    setDossierOverlay({ center, radiusM: Number.isFinite(radiusM) ? radiusM : 0, nearby });
     setFlyToLocation({ lat: center.lat, lng: center.lng, ts: Date.now(), zoom: 16 });
   }, []);
 
@@ -1440,7 +1471,7 @@ export default function Dashboard() {
 
       <SurveillancePanel open={showSurveillance} onClose={() => setShowSurveillance(false)} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />
 
-      <DossierPanel open={showDossier} target={dossierTarget} onClose={closeDossier} onLoaded={onDossierLoaded} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now(), zoom: 17 })} />
+      <DossierPanel open={showDossier} target={dossierTarget} requestId={currentDossierRequestId} onClose={closeDossier} onLoaded={onDossierLoaded} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now(), zoom: 17 })} />
 
       {/* ── Workspace restore notice (missing extension layers) ── */}
       <AnimatePresence>

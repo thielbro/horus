@@ -5,7 +5,7 @@
 // citations, privacy notice, provenance. The map overlay (pin/radius/sightlines) is driven by
 // the parent via onLoaded(dossier). Address is the first kind; the panel is kind-agnostic.
 
-import { memo, useEffect, useRef, useState, useCallback } from 'react';
+import { memo, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Loader2, AlertTriangle, MapPin, Camera, ScanLine, Shield, Gauge, Crosshair, ShieldCheck, ExternalLink, Network,
@@ -19,16 +19,37 @@ export interface DossierTarget {
   lng?: number;
 }
 
+interface DossierSection {
+  id: string;
+  title: string;
+  body: string;
+}
+
+interface DossierPointFeature {
+  geometry?: {
+    type?: string;
+    coordinates?: [number, number] | number[];
+  };
+  properties?: {
+    role?: string;
+    kind?: string;
+    name?: string;
+    distanceM?: number;
+    osmUrl?: string;
+    [key: string]: unknown;
+  };
+}
+
 interface Dossier {
   kind: string;
   ref: { kind: string; id: string; label?: string; lat?: number; lng?: number };
   summary: string;
-  sections: Array<{ id: string; title: string; body: string }>;
+  sections: DossierSection[];
   facts: Array<{ label: string; value: string; confidence?: string; source?: string }>;
-  graph?: { nodes: any[]; links: any[] };
+  graph?: { nodes: Array<Record<string, unknown>>; links: Array<Record<string, unknown>> };
   citations: Array<{ id: string; title: string; url: string; source: string }>;
   media?: Array<{ url: string; thumbUrl?: string; capturedAt?: string; sourceUrl?: string; source: string }>;
-  geometry?: { features?: Array<{ geometry: any; properties: any }> };
+  geometry?: { features?: DossierPointFeature[] };
   privacy?: { tier: string; notice: string };
   provenance?: { model: string; durationMs: number; signalSources: string[]; cacheHit: boolean };
 }
@@ -36,8 +57,9 @@ interface Dossier {
 interface Props {
   open: boolean;
   target: DossierTarget | null;
+  requestId?: number;
   onClose: () => void;
-  onLoaded?: (d: Dossier) => void;
+  onLoaded?: (d: Dossier, requestId?: number) => void;
   onLocate?: (lat: number, lng: number) => void;
 }
 
@@ -47,6 +69,8 @@ const KIND_ICON: Record<string, React.ComponentType<{ className?: string; style?
 const KIND_COLOR: Record<string, string> = {
   camera: '#00E676', alpr: '#FF7043', speed: '#FFD54F', police: '#42A5F5',
 };
+const MAX_BUF_LEN = 2 * 1024 * 1024;
+const MAX_NEARBY = 30;
 
 // Minimal, safe markdown-lite → React (bold, links, bullets, line breaks). No raw HTML.
 function renderMarkdown(text: string): React.ReactNode {
@@ -73,18 +97,43 @@ function renderMarkdown(text: string): React.ReactNode {
   });
 }
 
-function DossierPanel({ open, target, onClose, onLoaded, onLocate }: Props) {
+const MarkdownBlock = memo(function MarkdownBlock({ text }: { text: string }) {
+  const nodes = useMemo(() => renderMarkdown(text), [text]);
+  return <>{nodes}</>;
+});
+
+function pointCoordinates(feature: DossierPointFeature): [number, number] | null {
+  const coords = feature.geometry?.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  const lng = Number(coords[0]);
+  const lat = Number(coords[1]);
+  return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 ? [lng, lat] : null;
+}
+
+function isNearbyFeature(feature: DossierPointFeature): boolean {
+  return feature.properties?.role === 'nearby' && pointCoordinates(feature) !== null;
+}
+
+function DossierPanel({ open, target, requestId, onClose, onLoaded, onLocate }: Props) {
   const [stage, setStage] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dossier, setDossier] = useState<Dossier | null>(null);
-  const [streamSections, setStreamSections] = useState<Array<{ id: string; title: string; body: string }>>([]);
+  const [streamSections, setStreamSections] = useState<DossierSection[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const latestOnLoadedRef = useRef(onLoaded);
+  const requestIdRef = useRef(requestId);
+  const sectionIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => { latestOnLoadedRef.current = onLoaded; }, [onLoaded]);
+  useEffect(() => { requestIdRef.current = requestId; }, [requestId]);
 
   const run = useCallback(async (t: DossierTarget) => {
     abortRef.current?.abort();
     const controller = new AbortController();
+    const runRequestId = requestIdRef.current;
     abortRef.current = controller;
+    sectionIdsRef.current = new Set();
     setLoading(true); setError(null); setDossier(null); setStreamSections([]); setStage('starting');
 
     const qs = new URLSearchParams({ kind: t.kind, id: t.id });
@@ -100,30 +149,51 @@ function DossierPanel({ open, target, onClose, onLoaded, onLocate }: Props) {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buf.indexOf('\n\n')) >= 0) {
-          const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
-          const evMatch = /^event:\s*(.+)$/m.exec(raw);
-          const dataMatch = /^data:\s*([\s\S]*)$/m.exec(raw);
-          if (!evMatch || !dataMatch) continue;
-          let payload: any; try { payload = JSON.parse(dataMatch[1]); } catch { continue; }
-          if (controller.signal.aborted) return;
-          switch (evMatch[1].trim()) {
-            case 'status': setStage(String(payload.stage || '')); break;
-            case 'section': setStreamSections((prev) => prev.some((s) => s.id === payload.id) ? prev : [...prev, payload]); break;
-            case 'done':
-              setDossier(payload.dossier);
-              setLoading(false);
-              setStage('');
-              onLoaded?.(payload.dossier);
-              break;
-            case 'error': setError(String(payload.message || 'compile failed')); setLoading(false); break;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf = (buf + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
+          if (buf.length > MAX_BUF_LEN) throw new Error('Dossier stream exceeded buffer limit');
+          let idx: number;
+          while ((idx = buf.indexOf('\n\n')) >= 0) {
+            const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+            const evMatch = /^event:\s*(.+)$/m.exec(raw);
+            const dataMatch = /^data:\s*([\s\S]*)$/m.exec(raw);
+            if (!evMatch || !dataMatch) continue;
+            let payload: unknown; try { payload = JSON.parse(dataMatch[1]); } catch { continue; }
+            if (controller.signal.aborted) return;
+            switch (evMatch[1].trim()) {
+              case 'status':
+                setStage(String((payload as { stage?: unknown }).stage || ''));
+                break;
+              case 'section': {
+                const section = payload as Partial<DossierSection>;
+                if (typeof section.id !== 'string' || typeof section.title !== 'string' || typeof section.body !== 'string') break;
+                if (sectionIdsRef.current.has(section.id)) break;
+                sectionIdsRef.current.add(section.id);
+                setStreamSections((prev) => [...prev, section as DossierSection]);
+                break;
+              }
+              case 'done': {
+                if (controller.signal.aborted) return;
+                const nextDossier = (payload as { dossier?: Dossier }).dossier;
+                if (!nextDossier) break;
+                setDossier(nextDossier);
+                setLoading(false);
+                setStage('');
+                latestOnLoadedRef.current?.(nextDossier, runRequestId);
+                break;
+              }
+              case 'error':
+                setError(String((payload as { message?: unknown }).message || 'compile failed'));
+                setLoading(false);
+                break;
+            }
           }
         }
+      } finally {
+        reader.releaseLock();
       }
     } catch (e) {
       if (!(e instanceof DOMException && e.name === 'AbortError')) {
@@ -132,20 +202,29 @@ function DossierPanel({ open, target, onClose, onLoaded, onLocate }: Props) {
     } finally {
       if (abortRef.current === controller) { abortRef.current = null; setLoading(false); }
     }
-  }, [onLoaded]);
+  }, []);
 
   useEffect(() => {
     if (open && target) run(target);
     return () => { abortRef.current?.abort(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, target?.kind, target?.id, target?.lat, target?.lng]);
+  }, [open, target, requestId, run]);
 
   const sections = dossier?.sections ?? streamSections;
   const summary = dossier?.summary;
-  const nearby = (dossier?.geometry?.features ?? [])
-    .filter((f) => f.properties?.role === 'nearby')
-    .map((f) => ({ kind: f.properties.kind as string, name: f.properties.name as string, distanceM: f.properties.distanceM as number, lat: f.geometry.coordinates[1] as number, lng: f.geometry.coordinates[0] as number }))
-    .slice(0, 30);
+  const nearby = useMemo(() => (dossier?.geometry?.features ?? [])
+    .filter(isNearbyFeature)
+    .map((f) => {
+      const [lng, lat] = pointCoordinates(f)!;
+      const distanceM = Number(f.properties?.distanceM ?? 0);
+      return {
+        kind: String(f.properties?.kind || 'camera'),
+        name: String(f.properties?.name || 'Surveillance'),
+        distanceM: Number.isFinite(distanceM) ? distanceM : 0,
+        lat,
+        lng,
+      };
+    })
+    .slice(0, MAX_NEARBY), [dossier?.geometry?.features]);
 
   return (
     <AnimatePresence>
@@ -187,7 +266,7 @@ function DossierPanel({ open, target, onClose, onLoaded, onLocate }: Props) {
             {summary && (
               <section>
                 <div className="text-[10px] font-mono font-bold tracking-widest text-[var(--gold-primary)] border-b border-[var(--border-primary)] pb-1.5 mb-2">SUMMARY</div>
-                <div className="text-[11px] font-mono text-white/80 leading-relaxed space-y-0.5">{renderMarkdown(summary)}</div>
+                <div className="text-[11px] font-mono text-white/80 leading-relaxed space-y-0.5"><MarkdownBlock text={summary} /></div>
               </section>
             )}
 
@@ -199,7 +278,13 @@ function DossierPanel({ open, target, onClose, onLoaded, onLocate }: Props) {
                   {dossier.media.slice(0, 9).map((m, i) => (
                     <a key={i} href={m.sourceUrl || m.url} target="_blank" rel="noopener noreferrer" className="block aspect-square overflow-hidden rounded border border-white/10 hover:border-[var(--gold-primary)]/50">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={m.thumbUrl || m.url} alt="street-level" loading="lazy" className="w-full h-full object-cover" />
+                      <img
+                        src={m.thumbUrl || m.url}
+                        alt={`Street view from ${m.source} — ${i + 1}`}
+                        loading="lazy"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        className="w-full h-full object-cover"
+                      />
                     </a>
                   ))}
                 </div>
@@ -211,7 +296,7 @@ function DossierPanel({ open, target, onClose, onLoaded, onLocate }: Props) {
             {sections.filter((s) => s.body && s.body !== summary).map((s) => (
               <section key={s.id}>
                 <div className="text-[10px] font-mono font-bold tracking-widest text-[var(--gold-primary)] border-b border-[var(--border-primary)] pb-1.5 mb-2">{s.title.toUpperCase()}</div>
-                <div className="text-[11px] font-mono text-white/75 leading-relaxed space-y-0.5">{renderMarkdown(s.body)}</div>
+                <div className="text-[11px] font-mono text-white/75 leading-relaxed space-y-0.5"><MarkdownBlock text={s.body} /></div>
               </section>
             ))}
 
@@ -224,7 +309,7 @@ function DossierPanel({ open, target, onClose, onLoaded, onLocate }: Props) {
                     const Icon = KIND_ICON[n.kind] || Camera;
                     const color = KIND_COLOR[n.kind] || '#00E676';
                     return (
-                      <button key={i} onClick={() => onLocate?.(n.lat, n.lng)} className="w-full flex items-center gap-2 px-2 py-1.5 rounded border border-white/5 hover:border-white/15 hover:bg-white/5 transition-colors text-left">
+                      <button key={i} onClick={() => { if (Number.isFinite(n.lat) && Number.isFinite(n.lng)) onLocate?.(n.lat, n.lng); }} className="w-full flex items-center gap-2 px-2 py-1.5 rounded border border-white/5 hover:border-white/15 hover:bg-white/5 transition-colors text-left">
                         <Icon className="w-3.5 h-3.5 shrink-0" style={{ color }} />
                         <span className="text-[10px] font-mono text-white/80 flex-1 truncate">{n.name}</span>
                         <span className="text-[9px] font-mono tabular-nums" style={{ color }}>{n.distanceM}m</span>
@@ -290,4 +375,4 @@ function DossierPanel({ open, target, onClose, onLoaded, onLocate }: Props) {
   );
 }
 
-export default memo(DossierPanel);
+export default DossierPanel;

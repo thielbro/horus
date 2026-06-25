@@ -1,4 +1,5 @@
 // Small geo primitives for the intel framework (address radius, route corridor).
+// Scalar arguments use (lat, lng); coordinate tuples use GeoJSON order [lng, lat].
 // Hand-rolled to avoid a Turf dependency — only a few operations are needed.
 
 import type { BBox } from '@/lib/overpass';
@@ -8,8 +9,14 @@ const D2R = Math.PI / 180;
 const M_PER_DEG_LAT = 111_320;
 
 function normalizeLng(lng: number): number {
+  if (!Number.isFinite(lng)) return NaN;
   const normalized = ((((lng + 180) % 360) + 360) % 360) - 180;
   return normalized === -180 ? 180 : normalized;
+}
+
+function clampLat(lat: number): number {
+  if (!Number.isFinite(lat)) return NaN;
+  return Math.max(-90, Math.min(90, lat));
 }
 
 /** Great-circle distance in metres between two lat/lng points. */
@@ -24,9 +31,14 @@ export function haversineMeters(aLat: number, aLng: number, bLat: number, bLng: 
 
 /** Axis-aligned bbox [south, west, north, east] covering a circle of radius `radiusM`. */
 export function pointBbox(lat: number, lng: number, radiusM: number): BBox {
+  const centerLat = clampLat(lat);
+  const centerLng = normalizeLng(lng);
   const dLat = radiusM / M_PER_DEG_LAT;
-  const dLng = radiusM / (M_PER_DEG_LAT * Math.max(0.01, Math.cos(lat * D2R)));
-  return [lat - dLat, lng - dLng, lat + dLat, lng + dLng];
+  const dLng = radiusM / (M_PER_DEG_LAT * Math.max(0.01, Math.cos(centerLat * D2R)));
+  const s = clampLat(centerLat - dLat);
+  const n = clampLat(centerLat + dLat);
+  if (dLng >= 180) return [s, -180, n, 180];
+  return [s, normalizeLng(centerLng - dLng), n, normalizeLng(centerLng + dLng)];
 }
 
 /** bbox [s,w,n,e] of a set of [lng,lat] points, padded by `padM` metres. */
@@ -36,14 +48,18 @@ export function bboxOfPoints(points: Array<[number, number]>, padM = 0): BBox | 
   let s = 90, n = -90;
   const lngs: number[] = [];
   for (const [lng, lat] of points) {
-    if (lat < s) s = lat;
-    if (lat > n) n = lat;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+    const safeLat = clampLat(lat);
+    if (safeLat < s) s = safeLat;
+    if (safeLat > n) n = safeLat;
     lngs.push(normalizeLng(lng));
   }
+  if (lngs.length === 0) return null;
 
   const sortedLngs = lngs.sort((a, b) => a - b);
   let w = sortedLngs[0];
   let e = sortedLngs[sortedLngs.length - 1];
+  let crossesAntimeridian = false;
   if (sortedLngs.length > 1 && e - w > 180) {
     let largestGap = -1;
     let gapStartIndex = 0;
@@ -58,33 +74,53 @@ export function bboxOfPoints(points: Array<[number, number]>, padM = 0): BBox | 
     }
     w = sortedLngs[(gapStartIndex + 1) % sortedLngs.length];
     e = sortedLngs[gapStartIndex];
+    crossesAntimeridian = true;
   }
 
   if (padM > 0) {
     const midLat = (s + n) / 2;
     const dLat = padM / M_PER_DEG_LAT;
     const dLng = padM / (M_PER_DEG_LAT * Math.max(0.01, Math.cos(midLat * D2R)));
-    s -= dLat; n += dLat; w = normalizeLng(w - dLng); e = normalizeLng(e + dLng);
+    s = clampLat(s - dLat);
+    n = clampLat(n + dLat);
+
+    const span = crossesAntimeridian ? (e + 360 - w) : (e - w);
+    if (span + 2 * dLng >= 360) {
+      w = -180;
+      e = 180;
+      crossesAntimeridian = false;
+    } else if (crossesAntimeridian) {
+      w = normalizeLng(w - dLng);
+      e = normalizeLng(e + dLng);
+    } else {
+      w = Math.max(-180, w - dLng);
+      e = Math.min(180, e + dLng);
+    }
   }
   return [s, w, n, e];
 }
 
-/** Closed ring of [lng,lat] approximating a circle of `radiusM` around a point (for map fills). */
+/**
+ * Closed ring of [lng,lat] approximating a circle of `radiusM` around a point.
+ * Uses a local equirectangular approximation; accurate for small radii and low/mid latitudes.
+ */
 export function circlePolygon(lat: number, lng: number, radiusM: number, steps = 64): Array<[number, number]> {
+  const centerLat = clampLat(lat);
+  const centerLng = normalizeLng(lng);
   const dLat = radiusM / M_PER_DEG_LAT;
-  const dLng = radiusM / (M_PER_DEG_LAT * Math.max(0.01, Math.cos(lat * D2R)));
+  const dLng = radiusM / (M_PER_DEG_LAT * Math.max(0.01, Math.cos(centerLat * D2R)));
   const ring: Array<[number, number]> = [];
   for (let i = 0; i <= steps; i++) {
     const a = (i / steps) * 2 * Math.PI;
-    ring.push([lng + dLng * Math.cos(a), lat + dLat * Math.sin(a)]);
+    ring.push([normalizeLng(centerLng + dLng * Math.cos(a)), clampLat(centerLat + dLat * Math.sin(a))]);
   }
   return ring;
 }
 
 // Local equirectangular projection (metres) around an origin latitude — good enough for the
 // short distances involved in "near this point / along this segment" filtering.
-function toLocal(lat: number, lng: number, lat0: number): [number, number] {
-  const x = lng * D2R * EARTH_R * Math.cos(lat0 * D2R);
+function toLocal(lat: number, lng: number, lat0: number, refLng: number): [number, number] {
+  const x = normalizeLng(lng - refLng) * D2R * EARTH_R * Math.cos(lat0 * D2R);
   const y = lat * D2R * EARTH_R;
   return [x, y];
 }
@@ -96,9 +132,9 @@ export function pointToSegmentMeters(
   bLat: number, bLng: number,
 ): number {
   const lat0 = (aLat + bLat) / 2;
-  const [px, py] = toLocal(pLat, pLng, lat0);
-  const [ax, ay] = toLocal(aLat, aLng, lat0);
-  const [bx, by] = toLocal(bLat, bLng, lat0);
+  const [px, py] = toLocal(pLat, pLng, lat0, aLng);
+  const [ax, ay] = toLocal(aLat, aLng, lat0, aLng);
+  const [bx, by] = toLocal(bLat, bLng, lat0, aLng);
   const dx = bx - ax, dy = by - ay;
   const len2 = dx * dx + dy * dy;
   if (len2 === 0) return Math.hypot(px - ax, py - ay);

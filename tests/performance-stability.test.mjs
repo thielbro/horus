@@ -414,7 +414,7 @@ test('desktop and SDK streams have bounded reconnect and crash behavior', () => 
 test('frontend user-driven fetches abort stale requests', () => {
   const page = file('src/app/page.tsx');
   assert.match(page, /statsAbort/);
-  assert.match(page, /dossierAbort/);
+  assert.match(page, /regionDossierAbort/);
   assert.match(page, /spaceWeatherAbort/);
   assert.match(page, /cablesAbort/);
 
