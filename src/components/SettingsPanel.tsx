@@ -24,6 +24,11 @@ const KEY_FIELDS: Array<{ key: keyof ApiKeys; label: string; type: 'text' | 'pas
   { key: 'OPENSKY_CLIENT_SECRET', label: 'OpenSky Secret', type: 'password' },
   { key: 'N2YO_API_KEY', label: 'N2YO Key', type: 'password' },
   { key: 'AIS_API_KEY', label: 'AISStream Key', type: 'password' },
+  { key: 'LLM_URL', label: 'Local LLM URL', type: 'text', hint: 'OpenAI-compatible (Ollama: http://127.0.0.1:11434/v1)' },
+  { key: 'LLM_MODEL', label: 'Local LLM Model', type: 'text', hint: 'e.g. llama3.1' },
+  { key: 'FIRECRAWL_URL', label: 'Firecrawl URL', type: 'text', hint: 'self-hosted search/scrape (http://127.0.0.1:3002)' },
+  { key: 'FIRECRAWL_KEY', label: 'Firecrawl Key', type: 'password', hint: 'optional' },
+  { key: 'MAPILLARY_TOKEN', label: 'Mapillary Token', type: 'password', hint: 'street-level imagery' },
 ];
 
 const COLOR_ROWS: Array<{ token: keyof CustomThemeTokens; label: string }> = [

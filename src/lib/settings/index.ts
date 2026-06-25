@@ -24,6 +24,17 @@ export interface ApiKeys {
   OPENSKY_CLIENT_SECRET?: string;
   N2YO_API_KEY?: string;
   AIS_API_KEY?: string;
+  // ── On-the-go intel framework (search engine + local LLM, compiled on demand) ──
+  /** OpenAI-compatible local LLM base URL (Ollama/LM Studio/llama.cpp). */
+  LLM_URL?: string;
+  /** Local LLM model name (e.g. llama3.1). */
+  LLM_MODEL?: string;
+  /** Self-hosted Firecrawl base URL (web search + page scraping). */
+  FIRECRAWL_URL?: string;
+  /** Optional Firecrawl API key (cloud or secured self-host). */
+  FIRECRAWL_KEY?: string;
+  /** Mapillary token for street-level imagery near an address. */
+  MAPILLARY_TOKEN?: string;
 }
 
 export interface CustomThemeTokens {
