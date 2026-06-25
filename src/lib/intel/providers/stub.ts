@@ -38,7 +38,11 @@ export const stubProvider: IntelProvider = {
     return {
       summary: result.text,
       sections: [{ id: 'overview', title: 'Overview', body: result.text }],
-      facts: gathered.signals.map((s) => ({ label: s.label, value: String(s.value), source: s.source })),
+      facts: gathered.signals.map((s) => ({
+        label: s.label,
+        value: typeof s.value === 'string' ? s.value : JSON.stringify(s.value),
+        source: s.source,
+      })),
     };
   },
 };

@@ -10,19 +10,23 @@ function isNonBlankString(value) {
   return typeof value === 'string' && value.trim() !== '';
 }
 
+// Blank strings are intentionally ignored so an empty settings field falls back to the
+// next lower layer instead of clearing to an unusable endpoint/key.
 function cleanSettingsEnv(settings = {}) {
   return Object.fromEntries(
     Object.entries(settings).filter(([, value]) => isNonBlankString(value)),
   );
 }
 
-// Precedence (lowest → highest): processEnv, DESKTOP_ENGINE_DEFAULTS, overrides, settings.
-// `overrides` carries values resolved at launch — e.g. the bundled scanner/intel URLs and
-// the auto-provisioned scanner key — so they replace the static localhost defaults. Saved
-// user settings still win over everything, so an explicitly configured remote backend is
-// never clobbered by a bundled one.
-function buildEngineEnv(processEnv = process.env, settings = {}, overrides = {}) {
-  const env = { ...processEnv };
+function readProcessEnv() {
+  return typeof process !== 'undefined' && process.env ? process.env : {};
+}
+
+// Precedence (lowest -> highest): processEnv, DESKTOP_ENGINE_DEFAULTS, settings, overrides.
+// `overrides` carries values resolved at launch or passed by the current session, so it is
+// the highest-priority layer.
+function buildEngineEnv(processEnv, settings = {}, overrides = {}) {
+  const env = { ...(processEnv ?? readProcessEnv()) };
 
   for (const [key, value] of Object.entries(DESKTOP_ENGINE_DEFAULTS)) {
     if (!isNonBlankString(env[key])) env[key] = value;
@@ -30,8 +34,8 @@ function buildEngineEnv(processEnv = process.env, settings = {}, overrides = {})
 
   return {
     ...env,
-    ...cleanSettingsEnv(overrides),
     ...cleanSettingsEnv(settings),
+    ...cleanSettingsEnv(overrides),
   };
 }
 

@@ -7,6 +7,11 @@ const EARTH_R = 6_371_000; // metres
 const D2R = Math.PI / 180;
 const M_PER_DEG_LAT = 111_320;
 
+function normalizeLng(lng: number): number {
+  const normalized = ((((lng + 180) % 360) + 360) % 360) - 180;
+  return normalized === -180 ? 180 : normalized;
+}
+
 /** Great-circle distance in metres between two lat/lng points. */
 export function haversineMeters(aLat: number, aLng: number, bLat: number, bLng: number): number {
   const dLat = (bLat - aLat) * D2R;
@@ -25,19 +30,41 @@ export function pointBbox(lat: number, lng: number, radiusM: number): BBox {
 }
 
 /** bbox [s,w,n,e] of a set of [lng,lat] points, padded by `padM` metres. */
-export function bboxOfPoints(points: Array<[number, number]>, padM = 0): BBox {
-  let s = 90, w = 180, n = -90, e = -180;
+export function bboxOfPoints(points: Array<[number, number]>, padM = 0): BBox | null {
+  if (points.length === 0) return null;
+
+  let s = 90, n = -90;
+  const lngs: number[] = [];
   for (const [lng, lat] of points) {
     if (lat < s) s = lat;
     if (lat > n) n = lat;
-    if (lng < w) w = lng;
-    if (lng > e) e = lng;
+    lngs.push(normalizeLng(lng));
   }
+
+  const sortedLngs = lngs.sort((a, b) => a - b);
+  let w = sortedLngs[0];
+  let e = sortedLngs[sortedLngs.length - 1];
+  if (sortedLngs.length > 1 && e - w > 180) {
+    let largestGap = -1;
+    let gapStartIndex = 0;
+    for (let i = 0; i < sortedLngs.length; i++) {
+      const current = sortedLngs[i];
+      const next = i === sortedLngs.length - 1 ? sortedLngs[0] + 360 : sortedLngs[i + 1];
+      const gap = next - current;
+      if (gap > largestGap) {
+        largestGap = gap;
+        gapStartIndex = i;
+      }
+    }
+    w = sortedLngs[(gapStartIndex + 1) % sortedLngs.length];
+    e = sortedLngs[gapStartIndex];
+  }
+
   if (padM > 0) {
     const midLat = (s + n) / 2;
     const dLat = padM / M_PER_DEG_LAT;
     const dLng = padM / (M_PER_DEG_LAT * Math.max(0.01, Math.cos(midLat * D2R)));
-    s -= dLat; n += dLat; w -= dLng; e += dLng;
+    s -= dLat; n += dLat; w = normalizeLng(w - dLng); e = normalizeLng(e + dLng);
   }
   return [s, w, n, e];
 }

@@ -626,7 +626,7 @@ test('second-pass stability review crash guards and bounded async paths stay fix
   assert.match(map, /try\s*\{[\s\S]*new maplibregl\.Map/);
 
   const settings = file('src/components/SettingsPanel.tsx');
-  assert.match(settings, /wasOpenRef/);
+  assert.match(settings, /usePrevious/);
 
   const osint = file('src/components/OsintPanel.tsx');
   const osintInnerIndex = osint.indexOf('function OsintPanelInner');

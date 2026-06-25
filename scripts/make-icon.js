@@ -1,8 +1,9 @@
-// Generates the Windows app icon (desktop/build/icon.ico) from the OSIRIS brand mark.
+// Generates desktop app icons from the OSIRIS brand mark.
 //
 // electron-builder picks up `${buildResources}/icon.ico` (buildResources = desktop/build)
-// for the NSIS installer + the packaged OSIRIS.exe. We assemble a multi-resolution
-// PNG-in-ICO (Vista+) from public/osiris-icon.png using sharp — no extra dependency.
+// for the NSIS installer + the packaged OSIRIS.exe, and `icon.png` for Linux packages.
+// We assemble a multi-resolution PNG-in-ICO (Vista+) and a 512px PNG from
+// public/osiris-icon.png using sharp — no extra dependency.
 //
 // Run:  node scripts/make-icon.js   (re-run if the source art changes)
 
@@ -13,10 +14,12 @@ const sharp = require('sharp');
 const root = path.join(__dirname, '..');
 const src = path.join(root, 'public', 'osiris-icon.png');
 const outDir = path.join(root, 'desktop', 'build');
-const out = path.join(outDir, 'icon.ico');
+const icoOut = path.join(outDir, 'icon.ico');
+const pngOut = path.join(outDir, 'icon.png');
 
 // Standard Windows icon sizes (256 first so it leads the directory).
 const SIZES = [256, 128, 64, 48, 32, 24, 16];
+const LINUX_SIZE = 512;
 
 async function main() {
   if (!fs.existsSync(src)) throw new Error(`source art missing: ${src}`);
@@ -32,6 +35,11 @@ async function main() {
         .toBuffer(),
     ),
   );
+  const linuxPng = await sharp(src)
+    .resize(LINUX_SIZE, LINUX_SIZE, { fit: 'cover' })
+    .ensureAlpha()
+    .png({ compressionLevel: 9 })
+    .toBuffer();
 
   const count = pngs.length;
   const header = Buffer.alloc(6);
@@ -55,8 +63,10 @@ async function main() {
     offset += png.length;
   });
 
-  fs.writeFileSync(out, Buffer.concat([header, entries, ...pngs]));
-  console.log(`[make-icon] wrote ${path.relative(root, out)} (${count} sizes: ${SIZES.join(', ')})`);
+  fs.writeFileSync(icoOut, Buffer.concat([header, entries, ...pngs]));
+  fs.writeFileSync(pngOut, linuxPng);
+  console.log(`[make-icon] wrote ${path.relative(root, icoOut)} (${count} sizes: ${SIZES.join(', ')})`);
+  console.log(`[make-icon] wrote ${path.relative(root, pngOut)} (${LINUX_SIZE}x${LINUX_SIZE})`);
 }
 
 main().catch((err) => {

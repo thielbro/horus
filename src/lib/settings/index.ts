@@ -108,7 +108,9 @@ export type DeepPartial<T> = {
 
 type Plain = Record<string, unknown>;
 function isPlain(v: unknown): v is Plain {
-  return !!v && typeof v === 'object' && !Array.isArray(v);
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
 }
 function deepMerge<T>(base: T, patch: unknown): T {
   if (!isPlain(base) || !isPlain(patch)) return (patch === undefined || patch === null ? base : (patch as T));
@@ -126,7 +128,7 @@ function deepMerge<T>(base: T, patch: unknown): T {
 interface DesktopBridge {
   settings?: {
     getAll(): Promise<Partial<OsirisSettings>>;
-    set(full: OsirisSettings): Promise<void>;
+    set(full: OsirisSettings): Promise<boolean | void>;
   };
 }
 
@@ -148,11 +150,12 @@ function backend() {
         return {};
       }
     },
-    set: async (full: OsirisSettings) => {
+    set: async (full: OsirisSettings): Promise<boolean> => {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(full));
+        return true;
       } catch {
-        /* ignore quota / private mode */
+        return false;
       }
     },
   };
@@ -163,19 +166,29 @@ function backend() {
 let current: OsirisSettings = DEFAULT_SETTINGS;
 let loaded = false;
 let inflight: Promise<void> | null = null;
+let mutationRevision = 0;
 const listeners = new Set<() => void>();
 const MAX_LISTENERS = 500;
-const notify = () => listeners.forEach((l) => l());
+const notify = () => {
+  listeners.forEach((l) => {
+    try {
+      l();
+    } catch (e) {
+      console.error('[OSIRIS] Settings listener failed', e);
+    }
+  });
+};
 
 async function hydrate() {
   if (loaded) return;
   if (!inflight) {
+    const hydrateRevision = mutationRevision;
     inflight = (async () => {
       try {
         const persisted = await backend().getAll();
-        current = deepMerge(DEFAULT_SETTINGS, persisted || {});
+        if (mutationRevision === hydrateRevision) current = deepMerge(DEFAULT_SETTINGS, persisted || {});
       } catch {
-        current = DEFAULT_SETTINGS;
+        if (mutationRevision === hydrateRevision) current = DEFAULT_SETTINGS;
       }
       loaded = true;
       notify();
@@ -190,10 +203,17 @@ export function getSettings(): OsirisSettings {
   return cloneJson(current);
 }
 
-export function updateSettings(patch: DeepPartial<OsirisSettings>) {
+export async function updateSettings(patch: DeepPartial<OsirisSettings>): Promise<boolean> {
   current = deepMerge(current, patch);
+  mutationRevision++;
   notify();
-  backend().set(current).catch(() => { /* best effort */ });
+  try {
+    const persisted = await backend().set(current);
+    return persisted !== false;
+  } catch (e) {
+    console.warn('[OSIRIS] Settings persistence failed', e);
+    return false;
+  }
 }
 
 export function useSettings() {
@@ -222,6 +242,11 @@ export function useSettings() {
 const CUSTOM_VARS = ['--bg-void', '--gold-primary', '--gold-rgb', '--cyan-primary', '--cyan-rgb', '--text-primary'];
 
 function hexToRgb(hex: string): string | null {
+  const short = /^#?([0-9a-f]{3})$/i.exec(hex.trim());
+  if (short) {
+    const [r, g, b] = short[1].split('').map((ch) => parseInt(`${ch}${ch}`, 16));
+    return `${r}, ${g}, ${b}`;
+  }
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
   if (!m) return null;
   return `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`;

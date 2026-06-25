@@ -3,12 +3,13 @@
 // Server-side only. FIRECRAWL_URL/FIRECRAWL_KEY come from process.env.
 
 import { safeAbortTimeout, safeAbortAny, releaseResponseBody } from '@/lib/http-utils';
-import { validateHost } from '@/lib/ssrf-guard';
+import { validateHost, type ValidationResult } from '@/lib/ssrf-guard';
 import type { SearchProvider, SearchHit } from '@/lib/intel/types';
 
 const DEFAULT_FIRECRAWL_URL = 'http://127.0.0.1:3002';
 const SEARCH_TIMEOUT_MS = 20_000;
 const SCRAPE_TIMEOUT_MS = 25_000;
+const VALIDATE_HOST_TIMEOUT_MS = 5_000;
 const MAX_RESULTS = 10;
 
 function fcUrl(): string {
@@ -24,20 +25,41 @@ function timeoutSignal(signal: AbortSignal | undefined, ms: number): AbortSignal
   return signal ? safeAbortAny([signal, safeAbortTimeout(ms)]) : safeAbortTimeout(ms);
 }
 
+async function validateHostWithTimeout(host: string): Promise<ValidationResult> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<ValidationResult>((resolve) => {
+    timeoutId = setTimeout(() => resolve({ ok: false, reason: 'host validation timed out' }), VALIDATE_HOST_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([validateHost(host), timeout]);
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : 'host validation failed' };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 export const firecrawlProvider: SearchProvider = {
   name: 'firecrawl',
 
-  // Always "configured" (there's a localhost default); reachability is checked per call.
   available() {
-    return true;
+    try {
+      new URL(fcUrl());
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   async search(query, opts) {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return [];
+
     const res = await fetch(`${fcUrl()}/v1/search`, {
       method: 'POST',
       headers: fcHeaders(),
       body: JSON.stringify({
-        query,
+        query: trimmedQuery,
         limit: Math.min(opts?.count ?? 5, MAX_RESULTS),
         scrapeOptions: { formats: ['markdown'] },
       }),
@@ -51,7 +73,7 @@ export const firecrawlProvider: SearchProvider = {
     const items: unknown[] = Array.isArray(data?.data) ? data.data : [];
     return items
       .map((raw): SearchHit => {
-        const it = raw as Record<string, any>;
+        const it = (raw && typeof raw === 'object') ? raw as Record<string, any> : {};
         return {
           title: it.title || it.metadata?.title || it.url || 'Result',
           url: it.url || it.metadata?.sourceURL || '',
@@ -72,7 +94,7 @@ export const firecrawlProvider: SearchProvider = {
     } catch {
       return null;
     }
-    const check = await validateHost(host);
+    const check = await validateHostWithTimeout(host);
     if (!check.ok) return null;
 
     const res = await fetch(`${fcUrl()}/v1/scrape`, {

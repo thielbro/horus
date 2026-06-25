@@ -27,6 +27,19 @@ win:
   target: nsis
   icon: desktop/build/icon.ico
 
+linux:
+  target:
+    - target: deb
+      arch:
+        - x64
+    - target: AppImage
+      arch:
+        - x64
+  icon: desktop/build/icon.png
+  category: Utility
+  maintainer: OSIRIS
+  syncDesktopName: true
+
 nsis:
   oneClick: false
   perMachine: false

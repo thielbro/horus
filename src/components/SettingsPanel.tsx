@@ -1,9 +1,9 @@
 'use client';
 
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Palette, Globe, KeyRound, RotateCw, Save, Monitor } from 'lucide-react';
-import { useSettings, type ApiKeys, type CustomThemeTokens } from '@/lib/settings';
+import { DEFAULT_SETTINGS, getSettings, useSettings, type ApiKeys, type CustomThemeTokens } from '@/lib/settings';
 import type { WorkspaceSnapshot } from '@/lib/workspaces';
 import ExtensionsSettings from '@/components/ExtensionsSettings';
 import WorkspacesSettings from '@/components/WorkspacesSettings';
@@ -38,6 +38,22 @@ const COLOR_ROWS: Array<{ token: keyof CustomThemeTokens; label: string }> = [
   { token: 'text-primary', label: 'Text' },
 ];
 
+const APPEARANCE_OPTIONS: Array<{ value: 'core' | 'ghost' | 'custom'; label: string }> = [
+  { value: 'core', label: 'CORE' },
+  { value: 'ghost', label: 'GHOST' },
+  { value: 'custom', label: 'CUSTOM' },
+];
+
+const PROJECTION_OPTIONS: Array<{ value: 'globe' | 'mercator'; label: string }> = [
+  { value: 'globe', label: '3D GLOBE' },
+  { value: 'mercator', label: '2D MAP' },
+];
+
+const STYLE_OPTIONS: Array<{ value: 'dark' | 'satellite'; label: string }> = [
+  { value: 'dark', label: 'DARK' },
+  { value: 'satellite', label: 'SATELLITE' },
+];
+
 function SectionTitle({ icon: Icon, children }: { icon: React.ComponentType<{ className?: string }>; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 mb-3 text-[11px] font-mono font-bold tracking-widest text-[var(--gold-primary)] border-b border-[var(--border-primary)] pb-2">
@@ -65,38 +81,57 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
   );
 }
 
+function usePrevious<T>(value: T, initial: T): T {
+  const ref = useRef(initial);
+  useEffect(() => {
+    ref.current = value;
+  }, [value]);
+  return ref.current;
+}
+
 function SettingsPanel({ open, onClose, getWorkspaceSnapshot, onApplyWorkspace }: SettingsPanelProps) {
   const { settings, update } = useSettings();
   const [isDesktop, setIsDesktop] = useState(false);
   const [keys, setKeys] = useState<ApiKeys>({});
   const [saved, setSaved] = useState(false);
-  const wasOpenRef = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const previousOpen = usePrevious(open, false);
 
   useEffect(() => {
     setIsDesktop(typeof window !== 'undefined' && !!(window as unknown as { osiris?: { isDesktop?: boolean } }).osiris?.isDesktop);
   }, []);
 
   useEffect(() => {
-    if (open && !wasOpenRef.current) {
-      setKeys(settings.apiKeys || {});
+    if (open && !previousOpen) {
+      setKeys(getSettings().apiKeys || {});
       setSaved(false);
+      setSaveError(null);
     }
-    wasOpenRef.current = open;
-  }, [open, settings.apiKeys]);
+  }, [open, previousOpen]);
 
   const theme = settings.appearance.theme;
-  const custom = settings.appearance.custom;
+  const custom = useMemo(
+    () => ({ ...DEFAULT_SETTINGS.appearance.custom, ...(settings.appearance.custom ?? {}) }),
+    [settings.appearance.custom],
+  );
 
-  const setColor = (token: keyof CustomThemeTokens, value: string) =>
-    update({ appearance: { theme: 'custom', custom: { [token]: value } as Partial<CustomThemeTokens> } });
+  const setColor = useCallback((token: keyof CustomThemeTokens, value: string) => {
+    void update({ appearance: { theme: 'custom', custom: { ...custom, [token]: value } } });
+  }, [custom, update]);
 
-  const saveKeys = (restart: boolean) => {
-    update({ apiKeys: keys });
+  const saveKeys = useCallback(async (restart: boolean) => {
+    setSaveError(null);
+    const persisted = await update({ apiKeys: keys });
+    if (!persisted) {
+      setSaved(false);
+      setSaveError('SAVE FAILED');
+      return;
+    }
     setSaved(true);
     if (restart) {
       (window as unknown as { osiris?: { relaunch?: () => void } }).osiris?.relaunch?.();
     }
-  };
+  }, [keys, update]);
 
   return (
     <AnimatePresence>
@@ -129,12 +164,8 @@ function SettingsPanel({ open, onClose, getWorkspaceSnapshot, onApplyWorkspace }
                 <SectionTitle icon={Palette}>APPEARANCE</SectionTitle>
                 <Segmented
                   value={theme}
-                  onChange={(t) => update({ appearance: { theme: t } })}
-                  options={[
-                    { value: 'core', label: 'CORE' },
-                    { value: 'ghost', label: 'GHOST' },
-                    { value: 'custom', label: 'CUSTOM' },
-                  ]}
+                  onChange={(t) => { void update({ appearance: { theme: t } }); }}
+                  options={APPEARANCE_OPTIONS}
                 />
                 {theme === 'custom' && (
                   <div className="mt-3 space-y-2">
@@ -169,22 +200,16 @@ function SettingsPanel({ open, onClose, getWorkspaceSnapshot, onApplyWorkspace }
                     <div className="text-[9px] font-mono tracking-widest text-white/40 mb-1.5">PROJECTION</div>
                     <Segmented
                       value={settings.map.defaultProjection}
-                      onChange={(v) => update({ map: { defaultProjection: v } })}
-                      options={[
-                        { value: 'globe', label: '3D GLOBE' },
-                        { value: 'mercator', label: '2D MAP' },
-                      ]}
+                      onChange={(v) => { void update({ map: { defaultProjection: v } }); }}
+                      options={PROJECTION_OPTIONS}
                     />
                   </div>
                   <div>
                     <div className="text-[9px] font-mono tracking-widest text-white/40 mb-1.5">BASE STYLE</div>
                     <Segmented
                       value={settings.map.defaultStyle}
-                      onChange={(v) => update({ map: { defaultStyle: v } })}
-                      options={[
-                        { value: 'dark', label: 'DARK' },
-                        { value: 'satellite', label: 'SATELLITE' },
-                      ]}
+                      onChange={(v) => { void update({ map: { defaultStyle: v } }); }}
+                      options={STYLE_OPTIONS}
                     />
                   </div>
                   <p className="text-[9px] font-mono text-white/30 leading-relaxed">Applied on next launch / reload.</p>
@@ -213,18 +238,19 @@ function SettingsPanel({ open, onClose, getWorkspaceSnapshot, onApplyWorkspace }
                     ))}
                     <div className="flex items-center gap-2 pt-1">
                       <button
-                        onClick={() => saveKeys(false)}
+                        onClick={() => { void saveKeys(false); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-white/10 text-[10px] font-mono tracking-wider text-white/70 hover:border-[var(--gold-primary)]/40 hover:text-white transition-colors"
                       >
                         <Save className="w-3.5 h-3.5" /> SAVE
                       </button>
                       <button
-                        onClick={() => saveKeys(true)}
+                        onClick={() => { void saveKeys(true); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--cyan-primary)]/30 text-[10px] font-mono tracking-wider text-[var(--cyan-primary)] hover:bg-[var(--cyan-primary)]/10 transition-colors"
                       >
                         <RotateCw className="w-3.5 h-3.5" /> SAVE &amp; RESTART ENGINE
                       </button>
                       {saved && <span className="text-[9px] font-mono text-[var(--alert-green)]">SAVED</span>}
+                      {saveError && <span className="text-[9px] font-mono text-[var(--alert-red)]">{saveError}</span>}
                     </div>
                     <p className="text-[9px] font-mono text-white/30 leading-relaxed">
                       Keys are injected into the embedded engine on launch. Stored locally in plain text.

@@ -4,6 +4,8 @@
   "private": true,
   "description": "OSIRIS — Open Source Intelligence & Reconnaissance Integrated System",
   "author": "OSIRIS",
+  "homepage": "https://osirisai.live",
+  "desktopName": "osiris",
   "main": "desktop/main.js",
   "engines": {
     "node": ">=20.9.0"
@@ -18,7 +20,10 @@
     "desktop:smoke": "cross-env OSIRIS_SMOKE=1 electron .",
     "desktop:dev": "concurrently -k -n NEXT,ELECTRON -c green,cyan \"npm run dev\" \"wait-on http://localhost:3000 && cross-env OSIRIS_DEV=1 electron .\"",
     "desktop:prepare": "node desktop/prepare-standalone.js",
-    "desktop:build": "next build && npm run desktop:prepare && electron-builder --win"
+    "desktop:build": "npm run desktop:build:win",
+    "desktop:build:win": "next build && npm run desktop:prepare && electron-builder --win",
+    "desktop:build:linux": "next build && npm run desktop:prepare && electron-builder --linux",
+    "desktop:build:all": "next build && npm run desktop:prepare && electron-builder --win --linux"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

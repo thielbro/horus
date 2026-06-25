@@ -15,7 +15,7 @@ export function llmUrl(): string {
   return (process.env.LLM_URL || DEFAULT_LLM_URL).replace(/\/+$/, '');
 }
 export function llmModel(): string {
-  return (process.env.LLM_MODEL || DEFAULT_MODEL).trim();
+  return process.env.LLM_MODEL?.trim() || DEFAULT_MODEL;
 }
 
 function timeoutSignal(signal: AbortSignal | undefined, ms: number): AbortSignal {

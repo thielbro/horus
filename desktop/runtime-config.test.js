@@ -51,17 +51,16 @@ test('buildEngineEnv applies launch overrides above defaults', () => {
   assert.equal(env.INTEL_URL, 'http://127.0.0.1:51235');
 });
 
-test('buildEngineEnv lets saved settings win over launch overrides', () => {
-  // A user-configured remote backend must never be clobbered by a bundled one.
+test('buildEngineEnv lets launch overrides win over saved settings', () => {
+  // Launch/session overrides are the highest-priority layer.
   const env = buildEngineEnv(
     {},
     { SCANNER_URL: 'https://remote.scanner', SCANNER_KEY: 'user-key' },
     { SCANNER_URL: 'http://127.0.0.1:51234', SCANNER_KEY: 'auto-secret', INTEL_URL: 'http://127.0.0.1:51235' },
   );
 
-  assert.equal(env.SCANNER_URL, 'https://remote.scanner');
-  assert.equal(env.SCANNER_KEY, 'user-key');
-  // Intel had no user override, so the bundled one still applies.
+  assert.equal(env.SCANNER_URL, 'http://127.0.0.1:51234');
+  assert.equal(env.SCANNER_KEY, 'auto-secret');
   assert.equal(env.INTEL_URL, 'http://127.0.0.1:51235');
 });
 

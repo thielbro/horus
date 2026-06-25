@@ -15,7 +15,7 @@ export async function GET() {
   } catch (e) {
     return NextResponse.json(
       { backend: 'deterministic', ok: false, geminiConfigured: false, error: e instanceof Error ? e.message : 'health check failed' },
-      { headers: { 'Cache-Control': 'no-store' } },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 }
