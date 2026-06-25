@@ -1,5 +1,6 @@
 import type { CctvCamera } from './types';
 import { fetchWithRetry, withFallback } from './resilient';
+import { fetchSurveillanceMapFoundationCameras } from './surveillance-map-foundation';
 
 const NZTA_HOST = 'https://trafficnz.info';
 
@@ -18,7 +19,7 @@ export async function fetchNewZealandCameras(): Promise<CctvCamera[]> {
   // Retries on cold/slow loads; falls back to last-good data so NZ never blanks.
   // NB: plain fetch via fetchWithRetry — NOT stealthFetch (its 10s hard-abort
   // killed the slow cold-start request and dropped NZ from the map).
-  return withFallback('nz-nzta', async () => {
+  const cameras = await withFallback('nz-nzta', async () => {
     const res = await fetchWithRetry(`${NZTA_HOST}/service/traffic/rest/4/cameras/all`);
     const xml = await res.text();
 
@@ -59,4 +60,8 @@ export async function fetchNewZealandCameras(): Promise<CctvCamera[]> {
     }
     return cameras;
   });
+  return [
+    ...cameras,
+    ...fetchSurveillanceMapFoundationCameras('newzealand'),
+  ];
 }

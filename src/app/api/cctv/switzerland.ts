@@ -1,4 +1,5 @@
 import type { CctvCamera } from './types';
+import { fetchSurveillanceMapFoundationCameras } from './surveillance-map-foundation';
 
 export async function fetchSwitzerlandCameras(): Promise<CctvCamera[]> {
   return [
@@ -13,6 +14,7 @@ export async function fetchSwitzerlandCameras(): Promise<CctvCamera[]> {
       feed_url: 'https://wc-heli.chuv.ch/axis-cgi/jpg/image.cgi?resolution=640x480',
       external_url: 'https://wc-heli.chuv.ch/view/view.shtml',
       source: 'chuv.ch'
-    }
+    },
+    ...fetchSurveillanceMapFoundationCameras('switzerland'),
   ];
 }

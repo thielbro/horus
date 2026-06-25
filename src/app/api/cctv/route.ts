@@ -21,6 +21,7 @@ import { fetchSwitzerlandCameras } from './switzerland';
 import { fetchNewZealandCameras } from './newzealand';
 import { fetchQueenslandCameras } from './queensland';
 import { fetchVictoriaCameras } from './victoria';
+import { fetchSurveillanceMapFoundationCameras } from './surveillance-map-foundation';
 import { settleCameraFetchers } from './fanout';
 
 /**
@@ -346,6 +347,9 @@ async function fetchUSEastCameras(): Promise<any[]> {
       source: 'Cincinnati, OH',
     },
   );
+
+  cams.push(...fetchSurveillanceMapFoundationCameras('us-east'));
+
   // Florida 511
   try {
     const res = await stealthFetch('https://fl511.com/api/v2/cameras', { signal: safeAbortTimeout(8000) });
@@ -391,6 +395,7 @@ async function fetchEuropeCameras(): Promise<any[]> {
   } catch { /* silent */ }
 
   cams.push(...await fetchAsfinagCameras());
+  cams.push(...fetchSurveillanceMapFoundationCameras('europe'));
 
   return cams.filter((c: any) => c.lat && c.lng);
 }
@@ -473,8 +478,8 @@ async function fetchMiddleEastCameras(): Promise<any[]> {
 // ═══ REGION MAPPING ═══
 const REGION_FETCHERS: Record<string, () => Promise<any[]>> = {
   'middle-east': fetchMiddleEastCameras,
-  'uk': fetchTfLCameras,
-  'us-west': async () => [...await fetchWSDOTCameras(), ...await fetchCaltransCameras()],
+  'uk': async () => [...await fetchTfLCameras(), ...fetchSurveillanceMapFoundationCameras('uk')],
+  'us-west': async () => [...await fetchWSDOTCameras(), ...await fetchCaltransCameras(), ...fetchSurveillanceMapFoundationCameras('us-west')],
   'us-east': fetchUSEastCameras,
   'us-central': fetchUSCentralCameras,
   'canada': fetchCanadaCameras,
@@ -568,19 +573,22 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
   const inMacedonia = lat > 40.8 && lat < 42.8 && lng > 20.4 && lng < 23.2;
   const inRomania = lat > 43.5 && lat < 48.5 && lng > 20 && lng < 29.8;
   const inTurkey = lat > 35.5 && lat < 42.5 && lng > 25.5 && lng < 45;
-  const inItaly = lat > 36 && lat < 47.5 && lng > 6.5 && lng < 18.5;
+  const inSwitzerland = lat > 45.7 && lat < 47.9 && lng > 5.8 && lng < 10.7;
+  const inItaly = lat > 36 && lat < 47.5 && lng > 6.5 && lng < 18.5 && !inSwitzerland;
   const inCzechia = lat > 48.5 && lat < 51.1 && lng > 12 && lng < 18.9;
   const inSlovakia = lat > 47.7 && lat < 49.6 && lng > 16.8 && lng < 22.6;
-  const inGermany = lat > 47 && lat < 55.1 && lng > 5.8 && lng < 15.1;
-  const inFrance = lat > 42.3 && lat < 51.1 && lng > -5 && lng < 8.3;
+  const inGermany = lat > 47 && lat < 55.1 && lng > 5.8 && lng < 15.1 && !inSwitzerland;
+  const inFrance = lat > 42.3 && lat < 51.1 && lng > -5 && lng < 8.3 && !inSwitzerland;
   const inSpain = lat > 27 && lat < 43.8 && lng > -18.2 && lng < 4.4;
   const inPoland = lat > 49.0 && lat < 54.8 && lng > 14.1 && lng < 24.1;
+  const inIceland = lat > 63 && lat < 67.5 && lng > -25 && lng < -13;
   const inBalkans = inBulgaria || inGreece || inSerbia || inMacedonia || inRomania || inTurkey;
-  const inWesternEurope = inItaly || inCzechia || inSlovakia || inGermany || inFrance || inSpain || inPoland;
+  const inWesternEurope = inItaly || inCzechia || inSlovakia || inGermany || inFrance || inSpain || inPoland || inSwitzerland;
 
   if (lat > 35 && lat < 72 && lng > -11 && lng < 40 && !inBalkans && !inWesternEurope) {
     regions.push('europe');
   }
+  if (inIceland) regions.push('europe');
   if (inBulgaria) regions.push('bulgaria');
   if (inGreece) regions.push('greece');
   if (inSerbia) regions.push('serbia');
@@ -594,6 +602,7 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
   if (inFrance) regions.push('france');
   if (inSpain) regions.push('spain');
   if (inPoland) regions.push('poland');
+  if (inSwitzerland) regions.push('switzerland');
 
   // Middle East
   const inMiddleEast = lat > 29 && lat < 34.5 && lng > 34 && lng < 36.5;

@@ -1,5 +1,6 @@
 import type { CctvCamera } from './types';
 import { fetchWithRetry, withFallback } from './resilient';
+import { fetchSurveillanceMapFoundationCameras } from './surveillance-map-foundation';
 
 interface NswFeature {
   id?: string;
@@ -23,7 +24,7 @@ function prettyRegion(region?: string): string {
  */
 export async function fetchAustraliaCameras(): Promise<CctvCamera[]> {
   // Retries on cold/slow loads; falls back to last-good data so NSW never blanks.
-  return withFallback('au-nsw', async () => {
+  const cameras = await withFallback('au-nsw', async () => {
     const res = await fetchWithRetry('https://www.livetraffic.com/datajson/all-feeds-web.json');
     const data: NswFeature[] = await res.json();
 
@@ -44,4 +45,8 @@ export async function fetchAustraliaCameras(): Promise<CctvCamera[]> {
       })
       .filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lng) && Boolean(c.feed_url));
   });
+  return [
+    ...cameras,
+    ...fetchSurveillanceMapFoundationCameras('australia'),
+  ];
 }

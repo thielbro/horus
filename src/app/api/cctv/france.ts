@@ -1,4 +1,5 @@
 import type { CctvCamera } from './types';
+import { fetchSurveillanceMapFoundationCameras } from './surveillance-map-foundation';
 
 const FRANCE_CAMERAS: CctvCamera[] = [
   {
@@ -36,5 +37,8 @@ const FRANCE_CAMERAS: CctvCamera[] = [
 ];
 
 export async function fetchFranceCameras(): Promise<CctvCamera[]> {
-  return FRANCE_CAMERAS;
+  return [
+    ...FRANCE_CAMERAS,
+    ...fetchSurveillanceMapFoundationCameras('france'),
+  ];
 }
