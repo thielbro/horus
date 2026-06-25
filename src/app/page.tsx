@@ -28,6 +28,7 @@ const EntityGraphPanel = dynamic(() => import('@/components/EntityGraphPanel'));
 const SettingsPanel = dynamic(() => import('@/components/SettingsPanel'));
 const SurveillancePanel = dynamic(() => import('@/components/SurveillancePanel'));
 const DossierPanel = dynamic(() => import('@/components/DossierPanel'));
+const LocationTracker = dynamic(() => import('@/components/LocationTracker'));
 
 const MAX_DOSSIER_NEARBY = 30;
 
@@ -225,6 +226,7 @@ export default function Dashboard() {
   const [dossierTarget, setDossierTarget] = useState<{ kind: string; id: string; label?: string; lat?: number; lng?: number } | null>(null);
   const [currentDossierRequestId, setCurrentDossierRequestId] = useState(0);
   const [dossierOverlay, setDossierOverlay] = useState<{ center: { lat: number; lng: number } | null; radiusM: number; nearby: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }> } | null>(null);
+  const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
 
   // Base theme class (core/ghost)
   useEffect(() => {
@@ -1068,6 +1070,7 @@ export default function Dashboard() {
           sweepData={sweepData}
           scanTargets={scanTargets}
           dossierOverlay={dossierOverlay}
+          userPosition={userPosition}
           demoMode={demoMode}
           theme={osirisTheme}
         />
@@ -1472,6 +1475,13 @@ export default function Dashboard() {
       <SurveillancePanel open={showSurveillance} onClose={() => setShowSurveillance(false)} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />
 
       <DossierPanel open={showDossier} target={dossierTarget} requestId={currentDossierRequestId} onClose={closeDossier} onLoaded={onDossierLoaded} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now(), zoom: 17 })} />
+
+      <LocationTracker
+        onUpdate={setUserPosition}
+        onClear={() => setUserPosition(null)}
+        onIntel={(lat, lng) => { setDossierOverlay(null); setDossierTarget({ kind: 'address', id: `${lat.toFixed(6)},${lng.toFixed(6)}`, label: 'My location', lat, lng }); setShowDossier(true); }}
+        onFollow={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now(), zoom: mapView.zoom < 14 ? 16 : mapView.zoom })}
+      />
 
       {/* ── Workspace restore notice (missing extension layers) ── */}
       <AnimatePresence>

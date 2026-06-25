@@ -32,6 +32,7 @@ interface OsirisMapProps {
     radiusM: number;
     nearby: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }>;
   } | null;
+  userPosition?: { lat: number; lng: number; accuracy?: number } | null;
   demoMode?: boolean;
   theme?: 'core' | 'ghost';
 }
@@ -70,7 +71,7 @@ function safeJsonArray<T = unknown>(value: unknown): T[] {
   }
 }
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], dossierOverlay = null, demoMode = false, theme = 'core' }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], dossierOverlay = null, userPosition = null, demoMode = false, theme = 'core' }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -322,6 +323,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
       // Address-intel overlay (pin / radius / nearby surveillance / sightlines) — top of z-order
       addRegistryLayer(map, 'dossier');
+
+      // Live user position (GPS) — above everything
+      addRegistryLayer(map, 'user_position');
 
       // Flight layers (WebGL symbol — GPU rendered, handles 50K+ smooth) — registry-driven.
       // Icons (plane-cyan/green/pink/red) are created above and recolored live by the theme effect.
@@ -1422,6 +1426,20 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       })),
     });
   }, [mapReady, dossierOverlay, setDossierGeoBatch]);
+
+  // Live user position (GPS) — dot + accuracy ring. Empty sources when tracking is off.
+  useEffect(() => {
+    if (!mapReady) return;
+    if (!userPosition) {
+      setGeo('user-position', []); setGeo('user-accuracy', []);
+      return;
+    }
+    const { lat, lng, accuracy } = userPosition;
+    setGeo('user-position', [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} }]);
+    setGeo('user-accuracy', accuracy && accuracy > 0
+      ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [circlePolygon(lat, lng, Math.min(accuracy, 5000))] }, properties: {} }]
+      : []);
+  }, [mapReady, userPosition, setGeo]);
 
   // Fly-to. `zoom` is honored when provided (workspace restore / view presets); otherwise
   // we default to 8 for a generic "fly here" nudge. Gated on mapReady so workspace restore

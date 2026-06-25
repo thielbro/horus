@@ -472,4 +472,15 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
       { id: 'dossier-pin-dot', source: 'dossier-pin', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 10,5, 16,9], 'circle-color': '#D4AF37', 'circle-opacity': 1, 'circle-stroke-width': 2, 'circle-stroke-color': '#000', 'circle-stroke-opacity': 0.8 } },
     ],
   },
+  {
+    // Live user position (GPS). Style only; features pushed imperatively by OsirisMap from
+    // LocationTracker. Cyan to distinguish from the gold dossier pin.
+    id: 'user_position', label: 'My Location', group: 'SURVEIL', icon: 'Navigation', color: '#00E5FF', headless: true,
+    styleLayers: [
+      { id: 'user-accuracy-fill', source: 'user-accuracy', type: 'fill', paint: { 'fill-color': '#00E5FF', 'fill-opacity': 0.08 } },
+      { id: 'user-accuracy-line', source: 'user-accuracy', type: 'line', paint: { 'line-color': '#00E5FF', 'line-width': 1, 'line-opacity': 0.4 } },
+      { id: 'user-pos-glow', source: 'user-position', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 3,8, 16,18], 'circle-color': '#00E5FF', 'circle-opacity': 0.25, 'circle-blur': 1 } },
+      { id: 'user-pos-dot', source: 'user-position', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 3,4, 16,8], 'circle-color': '#00E5FF', 'circle-opacity': 1, 'circle-stroke-width': 2, 'circle-stroke-color': '#FFFFFF', 'circle-stroke-opacity': 0.9 } },
+    ],
+  },
 ];
