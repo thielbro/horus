@@ -1,345 +1,200 @@
 # OSIRIS — Session Handoff
 
-**This is `osiris-native-desktop`** — a standalone repo (branch `main`), forked from the
-original `osiris` repo as a clean snapshot to escape worktree/branch trouble. The full
-phase-by-phase history lives in the original osiris repo; here it's **squashed into the
-initial commit**, so the commit hashes named below (e.g. `9b23f2f`, `704c366`) refer to
-that original repo. Local commits after the initial snapshot carry the continued registry
-and desktop work. After the latest commit, the tree should be clean; **continue with Phase
-3 saved workspaces / layouts** (see below). Dependencies are installed in this workspace.
-Read this top-to-bottom, then skim `git log`.
+`osiris-native-desktop` — Next.js 16 + Electron OSINT/counter-surveillance map app (MapLibre GL),
+branch `main`. Read this top-to-bottom, then skim `git log`.
 
-> ⚠️ Read `AGENTS.md` first: this is Next.js 16 with breaking changes — consult
+> ⚠️ Read `AGENTS.md` first: this is **Next.js 16 with breaking changes** — consult
 > `node_modules/next/dist/docs/` before touching Next config/conventions.
 
----
-
-## The goal
-Turn the OSIRIS OSINT dashboard (Next.js 16 web app) into a **Windows Electron desktop
-app** with deep customization: no-code custom sources/layers, **trusted single-author JS
-plugins** (no sandbox — see decisions), custom themes, saved layouts. The keystone is a
-**declarative source/layer registry** (`src/lib/registry/`) that replaces the old
-3-place-hardcoded layer model, so plugins + builtins target one surface.
-
-## ⛔ How to run/verify SAFELY (this has crashed the machine twice — do not repeat)
-- **NEVER run raw `next dev`.** Turbopack's dev server fork-bombs `node.exe` to 3000+ on
-  Windows (handle exhaustion, `os error 1450`). Root cause was the deprecated `middleware.ts`
-  (now migrated to `proxy.ts`), but treat dev as dangerous.
-- `npm run dev` is now the **guarded watchdog** (`scripts/dev-watchdog.ps1`); `npm run dev:raw`
-  is the unguarded server. The agent's sandboxed PowerShell **cannot `Start-Process`**
-  (`EPERM uv_spawn`), so it can't run the watchdog — the **user** runs `npm run dev` themselves.
-- **Agent verification path = the standalone production build** (never fork-bombed, runs in
-  ~1 node process):
-  ```
-  npm run build && npm run desktop:prepare
-  # then preview_start "osiris-standalone"  (config already in .claude/launch.json)
-  ```
-  Verify via preview_eval / preview_console_logs / preview_network. The preview renders at
-  ~417px (mobile) by default — `preview_resize` to width 1440 to see the desktop layer rail.
-- `tsc --noEmit` is safe and the fastest correctness gate. `next build` is safe (0 leaked procs).
-- **Never mass-kill `node`** — the harness + MCP servers run on node. Ask the user to restart.
+The full roadmap for the current work stream lives at
+`~/.claude/plans/alright-so-one-big-hazy-frog.md` (the "On-the-go Intel Framework" plan).
 
 ---
 
-## What's done (committed)
-- **Plugin SDK** `@osiris/plugin-sdk` (`plugins-sdk/`) — the locked contract (`36a2a1d`).
-- **Phase 0 — Electron shell** (`desktop/`): forks the Next standalone server, secure
-  preload bridge, NSIS build (`189190d`, `0770ab0`). Packaged `.exe` proven to serve.
-- **Phase 1 — Settings** (`src/lib/settings/`, `SettingsPanel.tsx`): web localStorage +
-  desktop userData store, themes, map defaults, desktop API keys (`aca4e18`).
-- **Stability / the fork-bomb fix**: `middleware.ts → proxy.ts`, lazy AIS socket, globalThis
-  rate-limit maps, EventSource/HLS/timer leak fixes, dev watchdog (`4841b11`, `69e3354`,
-  `ff2db9d`, `373032e`, `20bdec1`). Plus user+Codex stability/optimization passes (`4d711f6`,
-  `337845f`, `e74c79c`, `da5abdd`, `31b85eb`).
-- **Phase 2 — registry refactor (the active work):**
-  - `c7f0785` — Step 1+2: registry module (`src/lib/registry/`) + LayerPanel reads from it.
-  - `c423073` — Step 3: feed loading → `useFeedEngine` (page.tsx fetch wiring removed).
-  - `9b23f2f` — Step 4a: map render engine (`mapEngine.ts`) + **earthquakes** migrated.
+## Current work stream: the on-the-go intel framework
 
-## Current state (latest local `main`)
-Everything below is in the tree. The last work done was:
-- **Phase 2 through Step 4b**: registry module, LayerPanel + feed engine, map render engine,
-  and the **earthquakes, fires, global_incidents (gdelt), gps_jamming** layers migrated to
-  the registry. Verified tsc + next build + standalone (no console errors).
-- A Codex stability/optimization review batch (api routes, ai-engine, ssrf-guard, sdk, the
-  hardened `registry/engine.ts` with abort-on-unmount + per-feed intervals, tests).
+**Goal (user's words):** address search with intel, location tracking, and route planning —
+but the real deliverable is a **broad, reusable "compile intel on the go" framework**: at
+request time a **web search engine + a local LLM** gather & synthesize a dossier for an
+entity. **No static database.** Address is the first provider; the same seam later wraps
+person/company/vehicle/route across the whole intel side.
 
-**Step 4c — DONE & committed (`d394a13`):** weather, infrastructure, malware (dots/glow/label
-only — network-mesh stays raw for 4z), satellites, live_news, maritime (maritime + chokepoint
-style layers + all 3 render bindings; **ship-dots/ship-label stay raw** in OsirisMap init
-because they sit after the SDK mesh lines in z-order).
+**Confirmed decisions:** local LLM = configurable **OpenAI-compatible endpoint, default
+Ollama** (`127.0.0.1:11434`), fallback chain local→Gemini→deterministic. Search/scrape =
+**self-hosted Firecrawl** (`/v1/search` + `/v1/scrape`). Photos = **Mapillary**. All three are
+**user-run external services**, configured by URL in Settings — never bundled. The app
+degrades gracefully when any is absent.
 
-**Step 4d — DONE (theme-aware groups):** cctv, surveillance (ghost-recolored), and flights
-(commercial/private/jets/military — 4 layers + plane icons + per-layer decimation).
-- **Engine extension:** `StyleLayerSpec.paint`/`layout` may now be a `Themed<T>` =
-  `T | ((theme) => T)`; `addRegistryLayer(map, id, theme)` resolves them at add time so the
-  *initial* paint matches the theme. Runtime theme changes are still handled in-place by
-  OsirisMap's `setPaint('cctv-dots', …)` effect (which works unchanged because the registry
-  keeps the same style-layer ids). cctv/surv pass `themeMode`; static layers default to `core`.
-- **Flights:** plane icons (plane-cyan/green/pink/red) are still created + recolored in
-  OsirisMap (`createIcon`/`updateMapIcon`); the registry layer just references the icon name.
-  Decimation lives in a `flightFeatures(arr, n)` helper in builtins (commercial=10, priv/jets=2,
-  military=1). The 4 flight layers each = 1 styleLayer + 1 render binding.
-- Verified: tsc 0, next build 0, standalone preview — CCTV dots render green (core) and recolor
-  to purple on ghost toggle with no errors; AVIATION/SURVEIL groups active, no registry errors.
+### Phase status
+- ✅ **P1 — framework** (`03c0485`): Dossier schema + IntelProvider contract, `getLLM()` fallback
+  chain, Firecrawl search, compile orchestrator (SSE), `/api/intel/compile`, `/api/llm/health`,
+  geo primitives, settings keys. Stub provider proves the pipeline.
+- ✅ **P2a — address provider** (`0ddb9dd`): geocode → nearby CCTV/ALPR/speed/police within a
+  radius (one Overpass call, distance-filtered) → Firecrawl occupant → Mapillary photos → LLM
+  exposure synth. `src/lib/geocode.ts` (Nominatim fwd/reverse).
+- ✅ **P2b — Dossier UI + map overlay** (`c98ab97`): `DossierPanel` (SSE-streamed), headless
+  `dossier` map layer (pin / radius ring / nearby markers / sightlines), `openOsirisDossier`
+  global, entry points (SearchBar "INTEL" action + Surveillance panel "ADDRESS INTEL" box).
+- ✅ **P3 — location tracking** (`02dbe12`): `LocationTracker` (opt-in GPS `watchPosition`,
+  follow-me, throttled reverse-geocode, "INTEL ON MY LOCATION"), headless `user_position` layer
+  (cyan dot + accuracy ring).
+- ⏭️ **P4 — route planning + exposure** (NEXT — see below).
+- ⏭️ **P5 — generalize** the intel side (person/company/vehicle providers; "Compile dossier" on
+  graph nodes; optionally route `/api/ai/*` + AiAnalyst through `getLLM()`).
 
-**Step 4z — PARTIAL (computed bindings):** the two that fit the declarative model cleanly are
-done by folding extra style layers + render bindings into existing layers:
-- **network-mesh** → folded into the `malware` layer (3 `network-mesh-*` line layers appended
-  *after* the malware-* dots so z-order is preserved; a 2nd render binding computes the
-  nearest-neighbour botnet lattice, capped at `MAX_MESH_NODES=750` — the cap const moved into
-  builtins, removed from OsirisMap).
-- **sdk-links** → folded into the `sdk_sea` layer (7 `sdk-*` line layers w/ domain filters +
-  a render binding reading `active.sdk_sea/sdk_air/sdk_naval` and `data.submarine_cables`,
-  plus the `sdk-entities` no-op binding). The raw SDK init block + effect are gone.
-- Verified: tsc 0, next build 0, standalone — malware mesh web renders when malware active and
-  vanishes in an SDK-only view; SDK SEA cable lines paint; no registry errors.
-
-**Step 4z — DONE (the deferred items, via two small engine additions):**
-- **Headless flag** — `RegistryLayer.headless?: boolean`. The map engine still registers +
-  renders headless layers; only LayerPanel skips them (`getLayersForGroup(...).filter(l => !l.headless)`).
-- **conflict-zones** → new headless layer `conflict_zones` (always-on: binding ignores `active`,
-  returns the 13 `CONFLICT_ZONES`; `CONFLICT_ZONES` + `computeSolarTerminator` moved into builtins).
-  Uses the `warn-icon*` images still created raw in OsirisMap init.
-- **sigint-news** → new headless layer `news_intel` (3 gold style layers + binding over
-  `data.news` filtered by `coords`, gated on `active.news_intel`).
-- **day_night terminator** → folded into the existing `day_night` layer: theme-static
-  `day-night-fill` (Themed paint, recolored live by the theme effect) + a render binding that
-  recomputes the terminator polygon. OsirisMap's existing 5-min `setInterval` just re-invokes
-  `renderRegistryLayer` — **no new "timed source" engine concept needed**.
-- **ip-sweep / scan-targets** → new headless layers `ip_sweep` / `scan_targets` carry the
-  **style layers only** (consolidated into the registry); their *render* stays imperative in
-  OsirisMap (the setTimeout batched-reveal animation), which keeps calling `setGeo` directly.
-- Verified on the live map (read via React-fiber → maplibre source `serialize()`):
-  conflict-zones=13 features, day-night=1 polygon, sigint-news=12, sdk-links=127, network-mesh=0
-  (malware off). All migrated style layers exist; **no headless labels leak to the sidebar**;
-  tsc 0, next build 0, no console errors/warnings.
-- Left raw on purpose: **war-alerts** (no active render code); the imperative ip-sweep/scan render.
-- Tooling note: `.claude/launch.json` `osiris-standalone` now has `"autoPort": true` (port 3000
-  intermittently lands in a Windows excluded range).
-
-**Phase 3 extension foundation — DONE (custom sources + trusted plugins):**
-- `src/lib/plugins/` adds the trusted in-process plugin runtime: host service bridge,
-  plugin loader from persisted ES-module source, plugin context adapter, teardown tracking,
-  and an in-app `window.OsirisSDK` helper for editor-authored plugins.
-- `src/lib/registry/` is now reactive: `events.ts` / `reactive.ts` expose a versioned
-  registry change bus; groups/layers/feeds can be registered, unregistered, and cleared by
-  plugin id; `RegistryLayer`/`FeedDef` carry `origin` + `pluginId`; custom sources are
-  converted into a lazy feed plus a registry layer by `customSource.ts`.
-- `LayerPanel`, `useFeedEngine`, and `OsirisMap` subscribe to registry changes so persisted
-  custom sources/plugins appear without reload. `OsirisMap` dynamically adds/removes
-  custom/plugin style layers, wires declarative interactions (`popup`, `custom`,
-  `entityGraph`, `camera`, `liveFeed`), renders dynamic layer data, and cleans handlers +
-  sources when a dynamic layer is removed.
-- Settings now includes `ExtensionsSettings`: a no-code Custom Sources form / raw JSON editor
-  and a trusted Plugins manager with paste/editor install, file load, enable/disable, remove,
-  and an insertable sample plugin. Settings persist `plugins[]` and `customSources[]`.
-- Stability delta polish from `STABILITY_REVIEW_DELTA_4Z.md` was folded in: stale
-  `MAX_MESH_NODES` test fixed, `ALL_LAYERS` dead code removed, map popups are explicitly
-  removed on unmount, dynamic `onEntityClick` handlers read from a ref, dynamic layer theme
-  switches repaint in place via `updateRegistryLayerTheme`, and SIGINT news coordinates now
-  require finite numeric `[lat, lng]` before converting to GeoJSON `[lng, lat]`.
-- Fresh verification:
-  - `node --test tests/performance-stability.test.mjs` → 40/40 pass.
-  - `npx tsc --noEmit` → pass.
-  - `npm run lint` → pass with existing warnings only.
-  - `npm run build` → pass.
-  - `npm run desktop:prepare` → pass, assembled `desktop\.staging\server`.
-
-**Phase 2 Step 5 cleanup — DONE:**
-- `OsirisMap`'s static `sources = [...]` list is now raw-only:
-  `war-alerts-targets`, `war-alerts-lines`, `balloons`, and `radiation`.
-- The registry render engine now creates GeoJSON sources for both `styleLayers` and
-  `render` bindings, so render-only registry sources such as `maritime-ships` are owned
-  by the registry instead of the map's legacy source list.
-- Internal registry specs now accept SDK-style `mapSource` alongside the older internal
-  `source` field. The plugin adapter preserves `mapSource` when adapting plugin layer
-  definitions, and the map engine resolves both through `getStyleLayerSource()` /
-  `getRenderBindingSource()`.
-- Regression coverage was added for static-source ownership and SDK `mapSource` alignment.
-- Fresh Step 5 verification:
-  - `node --test tests/performance-stability.test.mjs` → 41/41 pass.
-  - `npx tsc --noEmit` → pass.
-  - `npm run lint` → pass with existing warnings only.
-  - `npm run build` → pass.
-  - `npm run desktop:prepare` → pass, assembled `desktop\.staging\server`.
-
-**Phase 2 is complete. Phase 3 has a working foundation but still needs hardening, UX
-refinement, and more real plugin/custom-source dogfooding.**
-
-**Phase 3 extension hardening — DONE:**
-- Shared extension validators now cover no-code custom source specs, trusted plugin metadata
-  (`sdk: 1`), plugin layers/feeds/groups, supported interaction kinds, and extension bundles.
-- Settings shows custom-source item errors, plugin activation errors, and bundle import issues
-  instead of relying on console output. Invalid bundle entries are skipped while valid entries
-  still import.
-- Extension import/export uses one JSON bundle shape:
-  `{ "version": 1, "plugins": [], "customSources": [] }`.
-- Plugin enable/re-enable now tears down before activation, failed activation leaves visible
-  item errors, and partial plugin registrations are cleared.
-- Dogfood examples added:
-  `docs/extensions/example-bundle.json`, `docs/extensions/hello-osiris-plugin.js`, and
-  `public/examples/extensions/incidents.json`.
-- Fresh verification:
-  - `node --test tests/extension-hardening.test.mjs` → 3/3 pass.
-  - `node --test tests/performance-stability.test.mjs` → 41/41 pass.
-  - `npx tsc --noEmit` → pass.
-  - `npm run lint` → pass with the existing 77-warning baseline.
-  - `npm run build` → pass.
-  - `npm run desktop:prepare` → pass, assembled `desktop\.staging\server`.
-
-**Phase 3 saved workspaces / layouts — DONE:**
-- `src/lib/workspaces.ts` is the pure, dependency-free snapshot model (`version: 1`):
-  `normalizeWorkspaceSnapshot` (the only migration surface — fills absent/malformed fields,
-  never throws) and `restoreActiveLayers` (filters a snapshot's layer ids against a known-id
-  set; unknown ids that were ON are reported as `dropped`, unknown-OFF ids ignored). It has
-  **no `@/` aliases / React imports** so the `.test.mjs` suite can `import()` it directly.
-- A snapshot captures: `activeLayers` (full toggle record), map `view`
-  (`latitude/longitude/zoom`), `projection`, `mapStyle`, `theme`, and panel visibility
-  (`showLayers/showMarkets/showAlerts/showScmPanel/showIntel/showEntityGraph`).
-- `settings.workspaces[]` now stores `{ id, name, state: WorkspaceSnapshot }`.
-- New `WorkspacesSettings` panel section (in `SettingsPanel`, above the extensions block):
-  save-current (named), and per-row load / update-to-current / duplicate / rename / delete,
-  with a `MAX_WORKSPACES = 50` cap and inline error/flash messages.
-- `page.tsx` owns `getWorkspaceSnapshot()` and `applyWorkspace()`. Restore filters against
-  `new Set([...Object.keys(DEFAULT_ACTIVE_LAYERS), ...getLayers().map(l => l.id)])` — i.e.
-  builtin toggle keys **∪** the *live* (post-`bootstrapExtensions`) registry. This union
-  matters: `cables`, `sdk_air`, `sdk_naval` are **virtual toggles** (consumed by render
-  bindings, not registered as their own `RegistryLayer`), so registry-only filtering wrongly
-  dropped them — the builtin roster (hoisted to a module-level `DEFAULT_ACTIVE_LAYERS`) fixes it.
-- Missing extension layers are non-fatal: dropped from the applied set, with an auto-dismissing
-  bottom-center notice listing them.
-- Camera restore reuses the `flyToLocation` path — extended to carry an optional exact `zoom`
-  (`OsirisMap` flyTo now uses `flyToLocation.zoom ?? 8`, which also fixes view-presets landing
-  at a fixed zoom). The flyTo effect is gated on `mapReady`, so restore mid-load still lands.
-- Regression coverage in `tests/workspaces.test.mjs` (4 tests): normalize shape, restore
-  keep/drop semantics, restore filters the live registry (post-bootstrap union), camera gated
-  on `mapReady` + honors saved zoom.
-- Verified in the standalone preview (1440w): WORKSPACES section renders in order; save→flip
-  projection→load round-trips projection back to globe; a workspace referencing a removed layer
-  loads with the notice listing **only** the genuinely-missing id (builtin virtual toggles kept).
-- Fresh verification:
-  - `node --test tests/performance-stability.test.mjs tests/extension-hardening.test.mjs tests/workspaces.test.mjs` → 54/54 pass.
-  - `npx tsc --noEmit` → pass.
-  - `npm run lint` → pass (76-warning baseline; no new warnings).
-  - `npm run build` → pass.
-  - `npm run desktop:prepare` → pass, assembled `desktop\.staging\server`.
-
-Next: more Phase 3 UX refinement / dogfooding. Saved workspaces currently load **on demand**
-from Settings; a natural follow-up is an optional "restore last workspace on launch" pointer
-(persist a `lastWorkspaceId`, apply it after the same hydration → bootstrap → filter → camera
-ordering). Still explicitly **out of scope**: plugin sandboxing, server-side plugins, publishing.
-
-Safe verification for Claude:
-- `node --test tests/performance-stability.test.mjs tests/extension-hardening.test.mjs tests/workspaces.test.mjs`
-- `npx tsc --noEmit`
-- `npm run lint` (existing warning baseline is expected)
-- `npm run build`
-- `npm run desktop:prepare`
-
-**Desktop — bundled scanner + intel backends — DONE:**
-The two OSINT backends (`scanner/` = RECON port-scan, `intel/` = OpenSanctions/Wikidata
-ontology engine) are now packaged into the installer and run as child processes of the
-Electron app — no Docker needed for the desktop build. They were already *referenced* by
-`runtime-config.js` (`SCANNER_URL`/`INTEL_URL` default to localhost) but nothing launched them.
-- **Packaging:** `desktop/prepare-standalone.js` now also stages `desktop/.staging/{scanner,intel}`
-  with production deps installed (`express`, pure-JS → cross-platform portable). `after-pack.js`
-  copies all three trees (`server`, `scanner`, `intel`) into `resources/*`, each verified to
-  carry its `node_modules` (`next` / `express` / `express`). `npm` install is resilient: it
-  falls back to an isolated user config **and strips `npm_config_allow_scripts`** as a last
-  resort, because a global `~/.npmrc` here sets `allow-scripts=…` which npm 11 rejects for
-  project-scoped installs (would otherwise break the packaged build).
-- **Launch/kill:** `desktop/main.js` forks each backend (Electron's node via
-  `ELECTRON_RUN_AS_NODE`, same as the Next server) on a stored free port during the packaged
-  embedded-server start, waits for its `/health`, and injects the resolved URLs into the engine
-  env via `buildEngineEnv(env, apiKeys, overrides)`. Backends are killed in `stopManagedBackends`
-  (called from `stopEmbeddedServer`, so they die on quit/relaunch but **survive a Next-server
-  auto-restart**), with bounded same-port restart on crash.
-- **Zero-config RECON:** the `/api/scanner` proxy 503s without a key, so when the user hasn't set
-  `SCANNER_KEY` the app auto-provisions an ephemeral `crypto.randomUUID()` shared secret to both
-  the scanner (`OSIRIS_KEY`) and the proxy (`SCANNER_KEY`). A user-set `SCANNER_URL`/`INTEL_URL`
-  opts that backend out (we don't launch a bundled copy; the saved URL wins in `buildEngineEnv`).
-  Dynamic ports mean a packaged app and a Docker stack on 7700/4000 can coexist.
-- **Scope notes:** backends only start in the **packaged** path (`app.isPackaged`); `desktop:dev`
-  and unpackaged `desktop:smoke` don't launch them (dev runs its own / via Docker). intel
-  degrades gracefully with cache + Yente disabled (it still loads ~20k OpenSanctions entries
-  directly). Per-backend logs land in `userData/{scanner,intel}.log`.
-- **Verification:** staged trees boot standalone and answer `/health` (scanner
-  `configured:true`; intel `status:ok` with 19,805 sanctions entries, cache/yente disabled);
-  `node --test desktop/runtime-config.test.js tests/desktop-backends.test.mjs` → 14/14;
-  full suite 64/64; tsc 0; lint 76-warning baseline; `npm run build` + `npm run desktop:prepare`
-  (installs both backends' deps) pass. **Not yet run here:** the full `electron-builder --win`
-  packaging + an end-to-end launch of the installed `.exe` (needs a non-sandboxed Windows build).
+Also note: the user has done several **stability/optimization passes** on this work
+(`f989488` "Harden dossier streaming and overlay handling", and inline hardening of the P1/P2
+files). Build on those — see "Conventions" below.
 
 ---
 
-## Phase 2 — the registry migration recipe (follow this for each remaining group)
-The strangler pattern: **zero visible change** per group; verify after each.
+## Intel framework — file map & contracts (`src/lib/intel`, `src/lib/llm`, `src/lib/search`)
 
-For a layer group, in `src/lib/registry/builtins.ts` add to its `RegistryLayer`:
-- `styleLayers: [...]` — verbatim copy of the group's `map.addLayer({...})` paint/layout/filter
-  (shape: `{ id, source, type, paint?, layout?, filter?, minzoom?, maxzoom? }`).
-- `render: [{ source, toFeatures: (data, active) => active.<key> && data.<bucket> ? data.<bucket>.map(...) : [] }]`
-  — verbatim copy of the group's `setGeo('<source>', ...)` body.
+- **`src/lib/intel/types.ts`** — the contract hub (pure types). `Dossier` is a *superset* of the
+  intel sidecar's `/resolve` payload (its `graph` drops into `EntityGraphPanel`). `IntelProvider`
+  splits **`gather`** (deterministic, parallel, cited — NO LLM) from **`synthesize`** (one LLM
+  call). `ProviderCtx` gives a provider `search`, `llm`, `resolve(type,id)`, `fetchPage(url)`,
+  `emit(ev)`, `signal`. `MediaItem` carries photos. `CompileEvent` is the SSE union.
+- **`src/lib/intel/compile.ts`** — orchestrator. Byte-bounded LRU dossier cache + **single-flight
+  `INFLIGHT`** dedup (user-hardened), per-stage 30s abort (`runProviderStage`/`abortable`),
+  `/resolve` graph enrichment, provenance. Streams `status → graph → section → done`.
+- **`src/lib/intel/providers/{index,stub,address}.ts`** — `registerProvider` registry keyed by
+  `kind`. Add new kinds here (mirrors `RESOLVERS` in the sidecar).
+- **`src/lib/llm/{index,ollama,gemini-adapter}.ts`** — `getLLM()` returns one `chat()` with the
+  fallback chain. `llmHealth()` reports the live rung. Gemini keys are read once at module load.
+- **`src/lib/search/{index,firecrawl}.ts`** — `getSearch()` → Firecrawl. `search()` + `fetchPage()`
+  (scrape → markdown). **LLM-proposed scrape URLs are SSRF-validated** (`validateHostWithTimeout`).
+- **`src/lib/geocode.ts`** — `geocode` / `reverseGeocode` / `formatAddress` (Nominatim, server-side).
+- **`src/lib/geo.ts`** — `haversineMeters`, `pointBbox`, `bboxOfPoints` (antimeridian-aware,
+  returns `null` if empty), `pointToSegmentMeters`/`pointToLineMeters`, `circlePolygon`. Pure
+  math, safe to import client-side.
+- **Routes:** `src/app/api/intel/compile/route.ts` (SSE; `?stream=0` → JSON; backpressure-aware),
+  `src/app/api/llm/health/route.ts`.
+- **UI:** `src/components/DossierPanel.tsx` (SSE reader + render), `src/components/LocationTracker.tsx`.
+- **Map overlays:** headless `dossier` + `user_position` layers in `src/lib/registry/builtins.ts`;
+  `OsirisMap` takes `dossierOverlay` + `userPosition` props and `setGeo`s the sources in effects
+  (mirrors the `scanTargets` pattern). `geo.circlePolygon` builds the radius/accuracy rings.
+- **`page.tsx` wiring:** `window.openOsirisDossier(ref)` global + `onDossierLoaded` (flyTo +
+  overlay), state `dossierTarget/showDossier/dossierOverlay/userPosition`, `<DossierPanel>` +
+  `<LocationTracker>` renders, `SearchBar onIntel`, Surveillance panel ADDRESS INTEL box.
 
-Then in `src/components/OsirisMap.tsx`:
-- Replace the group's `map.addLayer({...})` block(s) — **at the same init position** — with
-  `addRegistryLayer(map, '<layerId>');` (same ids ⇒ z-order, click handlers, cursor list all keep working).
-- Replace the group's `setGeo(...)` effect **body** with `renderRegistryLayer(setGeo, '<layerId>', data, activeLayers);`
-  (keep the effect's existing fine-grained deps → no perf regression).
-
-`mapEngine.ts` already try/catches and logs `[OSIRIS] Registry … failed` instead of crashing,
-so a bad spec shows in the console.
-
-## Phase 2 status
-- **Step 4c — DONE** (see Current state above).
-- **Step 4d — DONE** (see Current state above): cctv, surveillance, flights migrated; the
-  `Themed<T>` paint/layout extension landed in `addRegistryLayer`. `news_intel` was completed
-  later in Step 4z after the headless flag landed.
-- **Step 4z — DONE** (see Current state above): network-mesh, sdk-links, day/night terminator,
-  conflict-zones, sigint-news, ip-sweep/scan-targets (style) all migrated; added the `headless`
-  flag. Only war-alerts (no render) + the imperative ip-sweep/scan render are intentionally raw.
-- **Step 5 — DONE** (see Current state above): migrated source names pruned from
-  `OsirisMap`, registry render sources are engine-owned, and the internal registry accepts
-  SDK-style `mapSource` to reduce plugin adapter friction.
-
-## After Phase 2 (the original plan)
-Phase 3 — no-code custom sources/layers + JS plugins now has a hardened foundation
-(see Current state). Remaining work: saved workspaces / layouts. The plugin model is
-**trusted in-process** (no sandbox) — see decisions.
+### Settings keys (flow `ApiKeys` → `buildEngineEnv` → `process.env` on desktop; `.env` on web)
+`LLM_URL` (default `http://127.0.0.1:11434/v1`), `LLM_MODEL` (default `llama3.1`),
+`FIRECRAWL_URL` (default `http://127.0.0.1:3002`), `FIRECRAWL_KEY?`, `MAPILLARY_TOKEN?`.
+(`ROUTING_URL` lands in P4.) Desktop defaults live in `desktop/runtime-config.js`.
 
 ---
 
-## Key decisions (don't re-litigate)
-- **Electron** (not Tauri) — keeps the ~60 Next API routes working via the embedded server.
-- **Windows-only**, **one shared codebase** with the web app.
-- **Plugins are trusted single-author** (user + their AI agents, never published) → **no
-  sandbox / permissions / IPC marshaling**; plugins are in-process ES modules registering into
-  the registry. The sandboxed-process design exists only as a documented upgrade path if they
-  ever publish.
-- **Umami analytics is opt-in** behind `UMAMI_ENDPOINT` (set in docker-compose for prod; unset
-  in dev/desktop so the Docker-only host is never contacted).
+## ⏭️ Phase 4 — route planning + surveillance exposure (start here)
 
-## Registry file map (`src/lib/registry/`)
-- `types.ts` — RegistryGroup/RegistryLayer/FeedDef/StyleLayerSpec/RenderBinding + `resolveColor`.
-- `builtins.ts` — the builtin groups + layers (metadata + styleLayers/render as migrated).
-- `feeds.ts` — builtin feeds (core/lazy, transforms, intervals, activatedBy).
-- `store.ts` — group/layer registry (register/get); seeded on import.
-- `events.ts` / `reactive.ts` — registry version bus + React subscription hook for runtime
-  custom source/plugin changes.
-- `customSource.ts` — turns persisted no-code CustomSourceSpecs into feed + layer registrations.
-- `engine.ts` — `useFeedEngine` (data loading; user-hardened with abort + interval lifecycle).
-- `mapEngine.ts` — `addRegistryLayer` / `renderRegistryLayer` (map render glue, try/catch-safe).
-- `icons.tsx` — lucide icon-name resolver (+ local Shield). `index.ts` — barrel.
+Per the plan, reuse the framework with a new `kind: 'route'`:
+1. **`src/app/api/route/route.ts`** — thin proxy (template = `src/app/api/entity/expand/route.ts`)
+   to OSRM via `ROUTING_URL` (default the public OSRM demo `https://router.project-osrm.org` for
+   dev; **note self-host for prod**). Input start/end (lat,lng); return `{geometry:LineString,
+   distance, duration}`. Use `safeAbortTimeout` + `releaseResponseBody`.
+2. **`src/lib/intel/providers/route.ts`** (`kind:'route'`): `gather` = call routing → route
+   polyline; compute corridor bbox via `geo.bboxOfPoints(coords, padM)` (tile if it exceeds the
+   25° Overpass cap); query nearby surveillance (one Overpass call like `address.ts`); filter to
+   points within W metres of the line via `geo.pointToLineMeters`; order by distance-along.
+   `synthesize` = LLM "surveillance exposure" briefing (counts by type, densest segments, ALPR
+   chokepoints). `geometry` = FeatureCollection (route line + corridor + exposure points).
+3. **Map overlay:** headless `route` layer in `builtins.ts` (`route-line` glow/core, `route-corridor`
+   fill, `route-surveil` markers — reuse `osmPointStyle`); `OsirisMap` `routeOverlay` prop + a
+   `setGeo` effect (mirror the dossier overlay effect). Add `route-surveil-dots` to the cursor
+   list + a click popup.
+4. **`src/components/RoutePlanner.tsx`** — start/end inputs (geocode via `src/lib/geocode` or the
+   SearchBar pattern), trigger `kind:'route'` compile, render the exposure summary. Mount in
+   `page.tsx` (add `routeTarget`/`routeOverlay` state + an entry point, e.g. in the Surveillance
+   panel next to ADDRESS INTEL).
+5. **Settings:** add `ROUTING_URL` to `ApiKeys` + `SettingsPanel` + `runtime-config` defaults.
 
-## Extension file map (`src/lib/plugins/`)
-- `host.ts` — live host services bridge (map, data, flyTo, camera/live-feed/entity graph openers).
-- `context.ts` — plugin `activate(ctx)` adapter into internal registry/feed APIs plus teardown.
-- `loader.ts` — persisted trusted ES-module plugin install/enable/disable/uninstall/bootstrap.
-- `customSources.ts` — persisted custom-source list, live registration, and React subscription.
-- `index.ts` — public plugin/custom-source surface and one-shot `bootstrapExtensions()`.
+**Verify:** start/end → route drawn; markers only inside the corridor; exposure counts match
+markers; long routes tile under the 25° cap. `curl '/api/route?...'` + `/api/intel/compile?kind=route`.
+
+---
+
+## How to run / verify SAFELY
+
+- **NEVER run raw `next dev`** — Turbopack's dev server has fork-bombed `node.exe` on Windows
+  (handle exhaustion). `npm run dev` is the **guarded watchdog** (`scripts/dev-watchdog.ps1`).
+- **Agent verification this stream used the Claude_Preview MCP:** `preview_start "osiris-web"`
+  (runs the guarded `npm run dev` on port 3000) → then `curl http://localhost:3000/...`,
+  `preview_eval`, `preview_console_logs`, `preview_screenshot`. This worked cleanly all of P1–P3.
+  (The standalone build path — `npm run build && npm run desktop:prepare` then
+  `preview_start "osiris-standalone"` — also exists in `.claude/launch.json`.)
+- **`npx tsc --noEmit`** is the fastest correctness gate — run it after every change; it's been
+  clean through P3.
+- **Never mass-kill `node`** — the harness + MCP servers run on node.
+
+### Curl recipes (dev server on :3000)
+```
+# stub pipeline (no external services needed)
+curl 'http://localhost:3000/api/intel/compile?kind=stub&id=test&stream=0'
+# address dossier (geocode + Overpass nearby; deterministic LLM if no Ollama)
+curl 'http://localhost:3000/api/intel/compile?kind=address&id=Trafalgar%20Square,%20London&stream=0'
+curl -N 'http://localhost:3000/api/intel/compile?kind=address&id=Eiffel%20Tower&force=1'   # SSE
+curl 'http://localhost:3000/api/llm/health'
+```
+Address compile returns ~39 CCTV near Trafalgar Square — good smoke test. With Ollama/Firecrawl/
+Mapillary running, the summary becomes a real LLM assessment + web results + photos.
+
+### Verifying GPS (P3) in the headless preview
+No real GPS — mock it before clicking "LOCATE ME":
+```js
+navigator.geolocation.watchPosition = (ok) => { setTimeout(() => ok({ coords:{ latitude:51.5085, longitude:-0.1285, accuracy:28, heading:null }, timestamp:Date.now() }), 60); return 1; };
+navigator.geolocation.clearWatch = () => {};
+```
+Then `preview_eval` to click the button and read `map.querySourceFeatures('user-position')`.
+
+---
+
+## Conventions (the codebase is defensively hardened — match it)
+- **Outbound fetches:** use `safeAbortTimeout(ms)` / `safeAbortAny([signal, ...])` /
+  `releaseResponseBody(res)` from `@/lib/http-utils` (feature-detected AbortSignal polyfills).
+  For **our own configured local services** (Ollama, Firecrawl, OSRM, intel sidecar) use plain
+  `fetch` — `safeFetch` would block `127.0.0.1`. For **user/LLM-supplied external URLs**, use
+  `safeFetch` / `validateHost` (SSRF guard).
+- Providers run outbound calls in **`Promise.allSettled`** and tolerate partial failure; pass
+  `ctx.signal` to every fetch (the per-stage 30s timeout rides on it).
+- `stableHash` (from `http-utils`) keys caches; `cloneJson` for cache isolation.
+- **Commits:** the user often does a stability pass on each commit — keep commits focused and
+  verified; end messages with the `Co-Authored-By: Claude Opus 4.8` trailer. On `main`, the user
+  commits directly here. Leave pre-existing unrelated working-tree changes alone.
+
+---
+
+## Reused seams (don't reinvent)
+- **Intel sidecar** `intel/server.js` `GET /resolve?type=&id=` → `{nodes,links}` (aircraft/vessel/
+  company/person/ip/country; Wikidata/OFAC/RIPEstat). Proxied by `src/app/api/entity/expand/route.ts`,
+  rendered by `EntityGraphPanel.tsx`. The dossier graph reuses this shape + enriches via `ctx.resolve`.
+- **Overpass** `src/lib/overpass.ts` (`runOverpassLayer`, bbox `[s,w,n,e]`, 25° cap) backs the
+  `/api/{police,flock,mass-surveillance,surveillance}` layers; the address/route providers do their
+  own single combined Overpass call for radius/corridor.
+- **Registry** `src/lib/registry/` (RegistryLayer/FeedDef/customSource) — declarative layers/feeds.
+  Headless layers render on the map with no sidebar toggle (how `dossier`/`user_position` work).
+- **AI layer** `src/lib/ai-engine.ts` (Gemini) is the Gemini rung behind `getLLM()`; `AiAnalyst` +
+  `/api/ai/*` are untouched (optional P5: route them through `getLLM()`).
+
+---
+
+## Previously shipped (background — all done & on `main`)
+The Electron desktop shell, the **declarative source/layer registry** that replaced the old
+3-place-hardcoded layer model, no-code **custom sources** + trusted in-process **JS plugins**
+(`src/lib/plugins/`), custom themes, **saved workspaces/layouts** (`src/lib/workspaces.ts`),
+bundled **scanner + intel** backends (forked by `desktop/main.js`), and a continent-split CCTV
+surveillance menu + counter-surveillance OSM layers (police/flock/mass-surveillance) + a source
+tester. See `git log` and `FINAL_CODE_REVIEW.md` for that history.
+
+### Key decisions (don't re-litigate)
+- **Electron** (not Tauri); **Windows-first**; one shared codebase with the web app.
+- **Plugins are trusted single-author**, in-process, **no sandbox**.
+- External intel services (Ollama/Firecrawl/OSRM/Mapillary) are **user-run, URL-configured, never
+  bundled**; graceful degradation is mandatory.
+- **No static DB** for intel — compile on demand and cache with a TTL. This is the whole point.
+
+---
 
 ## Memory
-The auto-loaded memory files (`~/.claude/projects/.../memory/`) carry the desktop-app plan,
-the registry-refactor status, and the fork-bomb caution. A new session loads those automatically;
-this file is the deep reference.
+Auto-loaded memory files (`~/.claude/projects/.../memory/`) carry the project plan + cautions; a
+new session loads those automatically. This file is the deep reference, and the plan file
+(`~/.claude/plans/alright-so-one-big-hazy-frog.md`) has the full P1–P5 roadmap.
