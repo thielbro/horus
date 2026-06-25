@@ -11,6 +11,8 @@ import type {
 } from '@/lib/intel/types';
 import { geocode, reverseGeocode, formatAddress, type GeoResult } from '@/lib/geocode';
 import { haversineMeters, pointBbox } from '@/lib/geo';
+import type { BBox } from '@/lib/overpass';
+import { curatedPoliceInBoxes, isWithinCuratedCoverage } from '@/lib/police/curated';
 import { safeAbortTimeout, safeAbortAny, releaseResponseBody } from '@/lib/http-utils';
 
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
@@ -53,6 +55,7 @@ const KIND_LABEL: Record<NearbyKind, string> = { camera: 'CCTV camera', alpr: 'A
 
 async function fetchNearby(lat: number, lng: number, radiusM: number, signal?: AbortSignal): Promise<NearbyItem[]> {
   const [s, w, n, e] = pointBbox(lat, lng, radiusM);
+  const box: BBox = [s, w, n, e];
   const bbox = `${s},${w},${n},${e}`;
   const query =
     `[out:json][timeout:25];\n(\n` +
@@ -72,7 +75,7 @@ async function fetchNearby(lat: number, lng: number, radiusM: number, signal?: A
   }
   const data = await res.json();
   const nodes: OverpassNode[] = Array.isArray(data?.elements) ? data.elements : [];
-  return nodes
+  const osm = nodes
     .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
     .map((el): NearbyItem => {
       const tags = el.tags || {};
@@ -88,6 +91,22 @@ async function fetchNearby(lat: number, lng: number, radiusM: number, signal?: A
         osmUrl: `https://www.openstreetmap.org/node/${el.id}`,
       };
     })
+    // Curated police is authoritative inside its coverage — drop the OSM police there.
+    .filter((it) => !(it.kind === 'police' && isWithinCuratedCoverage(it.lat, it.lng)));
+
+  // Add curated police stations physically within the bbox (then radius-filtered below).
+  const curated: NearbyItem[] = curatedPoliceInBoxes([box]).map((st) => ({
+    id: st.id,
+    kind: 'police',
+    name: st.name,
+    lat: st.lat,
+    lng: st.lng,
+    distanceM: Math.round(haversineMeters(lat, lng, st.lat, st.lng)),
+    operator: st.operator || undefined,
+    osmUrl: st.osm_url || '',
+  }));
+
+  return [...osm, ...curated]
     .filter((it) => it.distanceM <= radiusM)
     .sort((a, b) => a.distanceM - b.distanceM)
     .slice(0, MAX_NEARBY);
@@ -245,7 +264,7 @@ export const addressProvider: IntelProvider = {
       ...(geo.address.postcode ? [{ label: 'Postcode', value: geo.address.postcode, confidence: 'high' as const, source: 'OSM' }] : []),
       { label: 'CCTV within range', value: String(counts.camera), confidence: 'med', source: 'OSM/Overpass' },
       { label: 'ALPR within range', value: String(counts.alpr), confidence: 'med', source: 'OSM/Overpass' },
-      { label: 'Police within range', value: String(counts.police), confidence: 'med', source: 'OSM/Overpass' },
+      { label: 'Police within range', value: String(counts.police), confidence: 'med', source: 'Curated + OSM' },
       ...(nearestCam ? [{ label: 'Nearest camera', value: `${nearestCam.distanceM} m`, confidence: 'med' as const, source: 'OSM/Overpass' }] : []),
     ];
 

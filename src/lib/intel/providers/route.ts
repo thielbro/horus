@@ -13,6 +13,7 @@ import type {
 import { geocode, type GeoResult } from '@/lib/geocode';
 import { haversineMeters, bboxOfPoints, tileBbox, bufferPolygon, projectPointOnLine } from '@/lib/geo';
 import type { BBox } from '@/lib/overpass';
+import { curatedPoliceInBoxes, isWithinCuratedCoverage } from '@/lib/police/curated';
 import { routeBetween, type RoutePoint } from '@/lib/routing';
 import { safeAbortTimeout, safeAbortAny, releaseResponseBody } from '@/lib/http-utils';
 
@@ -144,7 +145,7 @@ export const routeProvider: IntelProvider = {
     }
 
     // 4. Keep devices within the corridor, tag with offset/along, order start→end.
-    const surveil: SurveilItem[] = rawNodes
+    const osmSurveil = rawNodes
       .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
       .map((el): SurveilItem | null => {
         const lat = el.lat as number;
@@ -153,6 +154,8 @@ export const routeProvider: IntelProvider = {
         if (perpM > CORRIDOR_W_M) return null;
         const tags = el.tags || {};
         const kind = classify(tags);
+        // Curated police is authoritative inside its coverage — drop OSM police there.
+        if (kind === 'police' && isWithinCuratedCoverage(lat, lng)) return null;
         return {
           id: `osm-${el.id}`, kind,
           name: tags.name || tags.operator || KIND_LABEL[kind],
@@ -163,7 +166,26 @@ export const routeProvider: IntelProvider = {
           osmUrl: `https://www.openstreetmap.org/node/${el.id}`,
         };
       })
-      .filter((it): it is SurveilItem => it !== null)
+      .filter((it): it is SurveilItem => it !== null);
+
+    // Curated police within the corridor tiles, projected onto the route line.
+    const curatedSurveil = curatedPoliceInBoxes(tiles)
+      .map((st): SurveilItem | null => {
+        const { perpM, alongM } = projectPointOnLine(st.lat, st.lng, line);
+        if (perpM > CORRIDOR_W_M) return null;
+        return {
+          id: st.id, kind: 'police',
+          name: st.name,
+          lat: st.lat, lng: st.lng,
+          offsetM: Math.round(perpM),
+          alongM: Math.round(alongM),
+          operator: st.operator || undefined,
+          osmUrl: st.osm_url || '',
+        };
+      })
+      .filter((it): it is SurveilItem => it !== null);
+
+    const surveil: SurveilItem[] = [...osmSurveil, ...curatedSurveil]
       .sort((a, b) => a.alongM - b.alongM)
       .slice(0, MAX_NEARBY);
 
@@ -223,7 +245,7 @@ export const routeProvider: IntelProvider = {
       { label: 'CCTV on route', value: String(counts.camera), confidence: 'med', source: 'OSM/Overpass' },
       { label: 'ALPR on route', value: String(counts.alpr), confidence: 'med', source: 'OSM/Overpass' },
       { label: 'Speed cameras', value: String(counts.speed), confidence: 'med', source: 'OSM/Overpass' },
-      { label: 'Police on route', value: String(counts.police), confidence: 'med', source: 'OSM/Overpass' },
+      { label: 'Police on route', value: String(counts.police), confidence: 'med', source: 'Curated + OSM' },
     ];
 
     const corridorRing = bufferPolygon(line, CORRIDOR_W_M);

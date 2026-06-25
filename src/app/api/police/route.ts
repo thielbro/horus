@@ -1,11 +1,14 @@
 import { runOverpassLayer, type BBox } from '@/lib/overpass';
+import { curatedPoliceWithin, isWithinCuratedCoverage } from '@/lib/police/curated';
 
 /**
- * OSIRIS — Police Station Locations (OpenStreetMap)
+ * OSIRIS — Police Station Locations
  *
- * Counter-surveillance intel: maps the locations of police stations (`amenity=police`).
- * Positions only — community-sourced, ODbL. Pass ?bbox=s,w,n,e to override the default
- * (continent-scale) coverage.
+ * Counter-surveillance intel: maps the locations of police stations. Curated,
+ * authoritative datasets (see src/lib/police/) are served wherever we have them
+ * and replace live OpenStreetMap (`amenity=police`) inside their coverage; OSM
+ * fills the gaps everywhere else. Positions only — OSM rows are community-sourced,
+ * ODbL. Pass ?bbox=s,w,n,e to override the default (continent-scale) coverage.
  */
 
 // [south, west, north, east] — dense-coverage regions.
@@ -23,16 +26,22 @@ export function GET(request: Request) {
     userAgent: 'OSIRIS-map/1.0 (police-station location layer; OpenStreetMap data)',
     clausesFor: (bbox) => `node["amenity"="police"](${bbox});`,
     mapNode: (el) => {
+      const lat = el.lat as number;
+      const lng = el.lon as number;
+      // Curated data is authoritative inside its coverage — drop the OSM node so
+      // it isn't duplicated by (or conflicting with) the injected curated row.
+      if (isWithinCuratedCoverage(lat, lng)) return null;
       const t = el.tags || {};
       return {
         id: `osm-police-${el.id}`,
-        lat: el.lat as number,
-        lng: el.lon as number,
+        lat,
+        lng,
         name: t.name || t.operator || 'Police Station',
         operator: t.operator || null,
         source: 'OpenStreetMap',
         osm_url: `https://www.openstreetmap.org/node/${el.id}`,
       };
     },
+    extraRecords: (boxes) => curatedPoliceWithin(boxes),
   });
 }

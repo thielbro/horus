@@ -69,11 +69,17 @@ export interface OverpassLayerOptions {
   rateLimit?: number;
   /** Overpass `out body N` cap (default 12000). */
   outCount?: number;
+  /**
+   * Curated records to add to the response after the OSM results, scoped to the
+   * resolved request boxes. Use with a `mapNode` that drops OSM nodes inside the
+   * curated coverage so curated data replaces (rather than duplicates) OSM.
+   */
+  extraRecords?: (boxes: BBox[]) => object[];
 }
 
 /** Run an OSM/Overpass point layer and return a NextResponse with `{ [bucket], total, timestamp }`. */
 export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Response> {
-  const { request, bucket, defaults, clausesFor, mapNode, userAgent, rateLimit = 30, outCount = 12000 } = opts;
+  const { request, bucket, defaults, clausesFor, mapNode, userAgent, rateLimit = 30, outCount = 12000, extraRecords } = opts;
   try {
     const clientIp = getClientIp(request);
     if (isRateLimited(clientIp, rateLimit, 60_000)) {
@@ -85,6 +91,10 @@ export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Resp
     if (!parsed.ok) {
       return NextResponse.json({ [bucket]: [], error: parsed.error }, { status: 400 });
     }
+
+    // Curated records for this viewport — computed up front so they still ship
+    // even if Overpass is slow or down (curated coverage must never blank out).
+    const extra = extraRecords ? extraRecords(parsed.boxes) : [];
 
     const clauses = parsed.boxes
       .map(([s, w, n, e]) => clausesFor(`${s},${w},${n},${e}`))
@@ -103,14 +113,16 @@ export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Resp
     });
     if (!res.ok) {
       await releaseResponseBody(res);
-      return NextResponse.json({ [bucket]: [], error: `Overpass ${res.status}` }, { status: 200 });
+      // Overpass failed — still serve curated data so covered regions don't blank.
+      return NextResponse.json({ [bucket]: extra, total: extra.length, error: `Overpass ${res.status}` }, { status: 200 });
     }
 
     const data = await res.json();
-    const items = (data.elements as OverpassNode[] | undefined || [])
+    const osmItems = (data.elements as OverpassNode[] | undefined || [])
       .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
       .map(mapNode)
       .filter((r): r is Record<string, unknown> => r != null);
+    const items = [...osmItems, ...extra];
 
     return NextResponse.json(
       { [bucket]: items, total: items.length, timestamp: new Date().toISOString() },
