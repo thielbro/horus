@@ -129,6 +129,13 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [formError, setFormError] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
+  const [addrQuery, setAddrQuery] = useState('');
+
+  const runAddressIntel = () => {
+    const q = addrQuery.trim();
+    if (!q) return;
+    (window as unknown as { openOsirisDossier?: (r: { kind: string; id: string; label: string }) => void }).openOsirisDossier?.({ kind: 'address', id: q, label: q });
+  };
 
   const toggle = (key: string) => setActiveLayers((prev: any) => ({ ...prev, [key]: !prev[key] }));
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
@@ -386,16 +393,23 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
                 </div>
               </section>
 
-              {/* ── Future: location + route planning ── */}
+              {/* ── Address intel (compiled on demand: search + local LLM) ── */}
               <section>
-                <SectionTitle icon={Navigation}>LOCATION &amp; ROUTES</SectionTitle>
-                <div className="bg-black/20 border border-dashed border-white/10 rounded px-3 py-4 text-center">
-                  <Navigation className="w-5 h-5 text-white/20 mx-auto mb-2" />
-                  <div className="text-[10px] font-mono tracking-wider text-white/40">COMING SOON</div>
-                  <p className="text-[9px] font-mono text-white/30 leading-relaxed mt-1.5">
-                    Share your location and plan a route to see what surveillance you pass through along the way.
-                  </p>
+                <SectionTitle icon={Navigation}>ADDRESS INTEL</SectionTitle>
+                <div className="flex gap-1.5">
+                  <input
+                    className={inputCls}
+                    value={addrQuery}
+                    onChange={(e) => setAddrQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') runAddressIntel(); }}
+                    placeholder="Address or place — e.g. Trafalgar Square, London"
+                  />
+                  <button onClick={runAddressIntel} className={`${btnCls} shrink-0`}><FlaskConical className="w-3.5 h-3.5" /> INTEL</button>
                 </div>
+                <p className="text-[9px] font-mono text-white/30 leading-relaxed mt-2">
+                  Compiles a dossier on the fly — occupant/business, postcode, and the nearby cameras, ALPR, and
+                  police that can observe the spot. Location tracking &amp; route exposure are coming next.
+                </p>
               </section>
             </div>
 

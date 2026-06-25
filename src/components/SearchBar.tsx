@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Search, X, MapPin } from 'lucide-react';
+import { Search, X, MapPin, Crosshair } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════
    OSIRIS — Search / Locate Bar
@@ -10,9 +10,11 @@ import { Search, X, MapPin } from 'lucide-react';
 
 interface SearchBarProps {
   onLocate: (lat: number, lng: number) => void;
+  /** Optional: compile an address-intel dossier for a result. */
+  onIntel?: (r: { label: string; lat: number; lng: number }) => void;
 }
 
-export default function SearchBar({ onLocate }: SearchBarProps) {
+export default function SearchBar({ onLocate, onIntel }: SearchBarProps) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
   const [results, setResults] = useState<{ label: string; lat: number; lng: number }[]>([]);
@@ -119,14 +121,24 @@ export default function SearchBar({ onLocate }: SearchBarProps) {
       {results.length > 0 && (
         <div className="absolute top-full left-0 right-0 mt-1 glass-panel overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.5)] max-h-[200px] overflow-y-auto styled-scrollbar z-50">
           {results.map((r) => (
-            <button
+            <div
               key={`${r.lat}:${r.lng}:${r.label}`}
-              onClick={() => handleSelect(r)}
-              className="w-full text-left px-3 py-2.5 hover:bg-[var(--hover-accent)] transition-colors border-b border-[var(--border-secondary)] last:border-0 flex items-center gap-2"
+              className="flex items-stretch border-b border-[var(--border-secondary)] last:border-0 hover:bg-[var(--hover-accent)] transition-colors"
             >
-              <MapPin className="w-3 h-3 text-[var(--gold-primary)] flex-shrink-0" />
-              <span className="text-[9px] text-[var(--text-secondary)] font-mono truncate">{r.label}</span>
-            </button>
+              <button onClick={() => handleSelect(r)} className="flex-1 min-w-0 text-left px-3 py-2.5 flex items-center gap-2">
+                <MapPin className="w-3 h-3 text-[var(--gold-primary)] flex-shrink-0" />
+                <span className="text-[9px] text-[var(--text-secondary)] font-mono truncate">{r.label}</span>
+              </button>
+              {onIntel && (
+                <button
+                  onClick={() => { onIntel(r); setOpen(false); setValue(''); setResults([]); }}
+                  title="Compile address intel"
+                  className="flex items-center gap-1 px-2.5 border-l border-[var(--border-secondary)] text-[8px] font-mono tracking-wider text-[var(--text-muted)] hover:text-[var(--gold-primary)] hover:bg-[var(--gold-primary)]/10 transition-colors"
+                >
+                  <Crosshair className="w-3 h-3" /> INTEL
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}

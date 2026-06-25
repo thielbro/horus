@@ -13,6 +13,7 @@ import {
   getStyleLayerSource,
 } from '@/lib/registry';
 import { setHostServices, getHost } from '@/lib/plugins';
+import { circlePolygon } from '@/lib/geo';
 
 interface OsirisMapProps {
   data: any;
@@ -26,6 +27,11 @@ interface OsirisMapProps {
   mapStyle?: string;
   sweepData?: any;
   scanTargets?: any[];
+  dossierOverlay?: {
+    center: { lat: number; lng: number } | null;
+    radiusM: number;
+    nearby: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }>;
+  } | null;
   demoMode?: boolean;
   theme?: 'core' | 'ghost';
 }
@@ -43,7 +49,7 @@ function safeJsonArray<T = unknown>(value: unknown): T[] {
   }
 }
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core' }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], dossierOverlay = null, demoMode = false, theme = 'core' }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -292,6 +298,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       // ══ SCAN TARGETS — Geolocated individual scans (registry style; imperative render) ══
       addRegistryLayer(map, 'scan_targets');
 
+      // Address-intel overlay (pin / radius / nearby surveillance / sightlines) — top of z-order
+      addRegistryLayer(map, 'dossier');
+
       // Flight layers (WebGL symbol — GPU rendered, handles 50K+ smooth) — registry-driven.
       // Icons (plane-cyan/green/pink/red) are created above and recolored live by the theme effect.
       addRegistryLayer(map, 'flights');
@@ -491,6 +500,20 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       </div>`);
     });
 
+    // ── Dossier nearby surveillance (address-intel overlay) ──
+    map.on('click', 'dossier-nearby-dots', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      const c = p.kind === 'alpr' ? '#FF7043' : p.kind === 'police' ? '#42A5F5' : p.kind === 'speed' ? '#FFD54F' : '#00E676';
+      const rgb = p.kind === 'alpr' ? '255,112,67' : p.kind === 'police' ? '66,165,245' : p.kind === 'speed' ? '255,213,79' : '0,230,118';
+      popup(coords, `<div style="${pStyle}border:1px solid rgba(${rgb},0.35);">
+        <div style="color:${c};font-size:13px;font-weight:700;margin-bottom:2px;">${p.name || 'Surveillance'}</div>
+        <div style="font-size:9px;color:#8A8780;margin-bottom:8px;">${(p.kind || 'camera').toUpperCase()} · ${p.distanceM}m away · can observe this location</div>
+        <a href="${p.osmUrl || '#'}" target="_blank" rel="noopener" style="${linkStyle}color:${c};border:1px solid rgba(${rgb},0.4);background:rgba(${rgb},0.1);">🗺 VIEW ON OSM</a>
+      </div>`);
+    });
+
     // ── Earthquakes (with USGS link) ──
     map.on('click', 'eq-circles', e => {
       if (!e.features?.length) return;
@@ -643,7 +666,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
 
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','surv-dots','police-dots','flock-dots','mass-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','sigint-news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots'].forEach(layer => {
+    ['conflict-icons','cctv-dots','surv-dots','police-dots','flock-dots','mass-dots','dossier-nearby-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','sigint-news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -1330,6 +1353,30 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     const src = map.getSource('scan-targets') as maplibregl.GeoJSONSource;
     if (src) src.setData({ type: 'FeatureCollection', features });
   }, [scanTargets, mapReady]);
+
+  // Address-intel overlay — pin, radius ring, nearby surveillance markers, and sightlines from
+  // each camera/ALPR/speed device to the pin ("what can see this spot"). Empty when no dossier.
+  useEffect(() => {
+    if (!mapReady) return;
+    const o = dossierOverlay;
+    const center = o?.center;
+    if (!center) {
+      setGeo('dossier-pin', []); setGeo('dossier-radius', []); setGeo('dossier-nearby', []); setGeo('dossier-sightlines', []);
+      return;
+    }
+    const { lat, lng } = center;
+    setGeo('dossier-pin', [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { role: 'pin' } }]);
+    setGeo('dossier-radius', o!.radiusM > 0
+      ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [circlePolygon(lat, lng, o!.radiusM)] }, properties: {} }]
+      : []);
+    setGeo('dossier-nearby', (o!.nearby || []).map((nbr) => ({
+      type: 'Feature', geometry: { type: 'Point', coordinates: [nbr.lng, nbr.lat] },
+      properties: { kind: nbr.kind, name: nbr.name, distanceM: nbr.distanceM, osmUrl: nbr.osmUrl },
+    })));
+    setGeo('dossier-sightlines', (o!.nearby || []).filter((nbr) => nbr.kind !== 'police').map((nbr) => ({
+      type: 'Feature', geometry: { type: 'LineString', coordinates: [[nbr.lng, nbr.lat], [lng, lat]] }, properties: { kind: nbr.kind },
+    })));
+  }, [mapReady, dossierOverlay, setGeo]);
 
   // Fly-to. `zoom` is honored when provided (workspace restore / view presets); otherwise
   // we default to 8 for a generic "fly here" nudge. Gated on mapReady so workspace restore

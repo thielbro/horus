@@ -458,4 +458,18 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
       { id: 'scan-targets-label', source: 'scan-targets', type: 'symbol', layout: { 'text-field': ['get', 'id'], 'text-size': 11, 'text-font': ['Open Sans Bold'], 'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false }, paint: { 'text-color': '#D32F2F', 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.9 } },
     ],
   },
+  {
+    // Address-intel overlay — pin, radius ring, nearby surveillance, and sightlines from each
+    // device to the pin. Style only; features pushed imperatively by OsirisMap from the dossier.
+    id: 'dossier', label: 'Dossier Overlay', group: 'SURVEIL', icon: 'MapPin', color: '#D4AF37', headless: true,
+    styleLayers: [
+      { id: 'dossier-radius-fill', source: 'dossier-radius', type: 'fill', paint: { 'fill-color': '#00E676', 'fill-opacity': 0.05 } },
+      { id: 'dossier-radius-line', source: 'dossier-radius', type: 'line', paint: { 'line-color': '#00E676', 'line-width': 1.5, 'line-opacity': 0.5, 'line-dasharray': [2, 2] } },
+      { id: 'dossier-sightlines', source: 'dossier-sightlines', type: 'line', paint: { 'line-color': ['match', ['get', 'kind'], 'alpr', '#FF7043', 'speed', '#FFD54F', '#00E676'], 'line-width': 1, 'line-opacity': 0.3 } },
+      { id: 'dossier-nearby-glow', source: 'dossier-nearby', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 10,5, 16,12], 'circle-color': ['match', ['get', 'kind'], 'alpr', '#FF7043', 'speed', '#FFD54F', 'police', '#42A5F5', '#00E676'], 'circle-opacity': 0.18, 'circle-blur': 1 } },
+      { id: 'dossier-nearby-dots', source: 'dossier-nearby', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 10,3, 16,7], 'circle-color': ['match', ['get', 'kind'], 'alpr', '#FF7043', 'speed', '#FFD54F', 'police', '#42A5F5', '#00E676'], 'circle-opacity': 0.9, 'circle-stroke-width': 1, 'circle-stroke-color': '#000', 'circle-stroke-opacity': 0.7 } },
+      { id: 'dossier-pin-glow', source: 'dossier-pin', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 10,10, 16,24], 'circle-color': '#D4AF37', 'circle-opacity': 0.2, 'circle-blur': 1 } },
+      { id: 'dossier-pin-dot', source: 'dossier-pin', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 10,5, 16,9], 'circle-color': '#D4AF37', 'circle-opacity': 1, 'circle-stroke-width': 2, 'circle-stroke-color': '#000', 'circle-stroke-opacity': 0.8 } },
+    ],
+  },
 ];

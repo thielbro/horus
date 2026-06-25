@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import {
   X, Maximize2, Minimize2, Loader2, AlertTriangle,
   Plane, Ship, Building2, User, Globe, Newspaper, ShieldAlert,
-  RefreshCw, Network, Wifi
+  RefreshCw, Network, Wifi, MapPin, Camera, ShieldCheck, Hash
 } from 'lucide-react';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { ssr: false });
@@ -37,12 +37,14 @@ const TYPE_COLORS: Record<string, string> = {
   aircraft: '#00E5FF', vessel: '#00BCD4', company: '#D4AF37',
   person: '#B388FF', country: '#76FF03', event: '#FF9500', sanction: '#FF1744',
   ip: '#FF6D00',
+  address: '#D4AF37', camera: '#00E676', police: '#42A5F5', postcode: '#9FA8DA',
 };
 
 const TYPE_ICONS: Record<string, typeof Plane> = {
   aircraft: Plane, vessel: Ship, company: Building2,
   person: User, country: Globe, event: Newspaper, sanction: ShieldAlert,
   ip: Wifi,
+  address: MapPin, camera: Camera, police: ShieldCheck, postcode: Hash,
 };
 
 // ── PROPS ──

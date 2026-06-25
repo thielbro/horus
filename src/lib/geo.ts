@@ -69,6 +69,18 @@ export function bboxOfPoints(points: Array<[number, number]>, padM = 0): BBox | 
   return [s, w, n, e];
 }
 
+/** Closed ring of [lng,lat] approximating a circle of `radiusM` around a point (for map fills). */
+export function circlePolygon(lat: number, lng: number, radiusM: number, steps = 64): Array<[number, number]> {
+  const dLat = radiusM / M_PER_DEG_LAT;
+  const dLng = radiusM / (M_PER_DEG_LAT * Math.max(0.01, Math.cos(lat * D2R)));
+  const ring: Array<[number, number]> = [];
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * 2 * Math.PI;
+    ring.push([lng + dLng * Math.cos(a), lat + dLat * Math.sin(a)]);
+  }
+  return ring;
+}
+
 // Local equirectangular projection (metres) around an origin latitude — good enough for the
 // short distances involved in "near this point / along this segment" filtering.
 function toLocal(lat: number, lng: number, lat0: number): [number, number] {

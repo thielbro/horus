@@ -27,6 +27,7 @@ const OsintPanel = dynamic(() => import('@/components/OsintPanel'));
 const EntityGraphPanel = dynamic(() => import('@/components/EntityGraphPanel'));
 const SettingsPanel = dynamic(() => import('@/components/SettingsPanel'));
 const SurveillancePanel = dynamic(() => import('@/components/SurveillancePanel'));
+const DossierPanel = dynamic(() => import('@/components/DossierPanel'));
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -210,6 +211,9 @@ export default function Dashboard() {
   const setTheme = useCallback((t: 'core' | 'ghost') => updateSettings({ appearance: { theme: t } }), [updateSettings]);
   const [showSettings, setShowSettings] = useState(false);
   const [showSurveillance, setShowSurveillance] = useState(false);
+  const [showDossier, setShowDossier] = useState(false);
+  const [dossierTarget, setDossierTarget] = useState<{ kind: string; id: string; label?: string; lat?: number; lng?: number } | null>(null);
+  const [dossierOverlay, setDossierOverlay] = useState<{ center: { lat: number; lng: number } | null; radiusM: number; nearby: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }> } | null>(null);
 
   // Base theme class (core/ghost)
   useEffect(() => {
@@ -601,8 +605,32 @@ export default function Dashboard() {
         setShowEntityGraph(true);
       }
     };
-    return () => { delete (window as any).openOsirisIntel; };
+    // On-the-go dossier compiler (address intel, …). ref = { kind, id, label?, lat?, lng? }.
+    (window as any).openOsirisDossier = (ref: any) => {
+      if (!ref?.id && (ref?.lat == null || ref?.lng == null)) return;
+      setDossierOverlay(null);
+      setDossierTarget({ kind: ref.kind || 'address', id: ref.id || `${ref.lat},${ref.lng}`, label: ref.label, lat: ref.lat, lng: ref.lng });
+      setShowDossier(true);
+    };
+    return () => { delete (window as any).openOsirisIntel; delete (window as any).openOsirisDossier; };
   }, []);
+
+  // When a dossier finishes compiling, drive the map: fly to the location and draw the
+  // pin / radius / nearby-surveillance / sightlines overlay.
+  const onDossierLoaded = useCallback((d: any) => {
+    const radiusAction = d?.actions?.find((a: any) => a.type === 'drawRadius');
+    const center = radiusAction
+      ? { lat: radiusAction.lat, lng: radiusAction.lng }
+      : (d?.ref?.lat != null && d?.ref?.lng != null ? { lat: d.ref.lat, lng: d.ref.lng } : null);
+    if (!center) return;
+    const nearby = (d?.geometry?.features ?? [])
+      .filter((f: any) => f.properties?.role === 'nearby')
+      .map((f: any) => ({ lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], kind: f.properties.kind, name: f.properties.name, distanceM: f.properties.distanceM, osmUrl: f.properties.osmUrl }));
+    setDossierOverlay({ center, radiusM: radiusAction?.radiusM ?? 0, nearby });
+    setFlyToLocation({ lat: center.lat, lng: center.lng, ts: Date.now(), zoom: 16 });
+  }, []);
+
+  const closeDossier = useCallback(() => { setShowDossier(false); setDossierOverlay(null); }, []);
 
   // ── SHARED FETCH UTILITY (Fixes #107 — single definition, not 3 copies) ──
   const fetchEndpoint = useCallback(async (url: string, transform?: (d: any) => any, options?: RequestInit) => {
@@ -1008,6 +1036,7 @@ export default function Dashboard() {
           flyToLocation={flyToLocation}
           sweepData={sweepData}
           scanTargets={scanTargets}
+          dossierOverlay={dossierOverlay}
           demoMode={demoMode}
           theme={osirisTheme}
         />
@@ -1322,7 +1351,7 @@ export default function Dashboard() {
                   {mobilePanel === 'intel' && <IntelFeed data={data} onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); closeMobilePanel(); }} />}
                   {mobilePanel === 'search' && (
                     <div className="space-y-2">
-                      <SearchBar onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); closeMobilePanel(); }} />
+                      <SearchBar onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); closeMobilePanel(); }} onIntel={(r) => { setDossierOverlay(null); setDossierTarget({ kind: 'address', id: r.label, label: r.label, lat: r.lat, lng: r.lng }); setShowDossier(true); closeMobilePanel(); }} />
                       <SharePanel mapView={mapView} activeLayers={activeLayers} mouseCoords={null} />
                     </div>
                   )}
@@ -1410,6 +1439,8 @@ export default function Dashboard() {
       <SettingsPanel open={showSettings} onClose={closeSettings} getWorkspaceSnapshot={getWorkspaceSnapshot} onApplyWorkspace={applyWorkspace} />
 
       <SurveillancePanel open={showSurveillance} onClose={() => setShowSurveillance(false)} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />
+
+      <DossierPanel open={showDossier} target={dossierTarget} onClose={closeDossier} onLoaded={onDossierLoaded} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now(), zoom: 17 })} />
 
       {/* ── Workspace restore notice (missing extension layers) ── */}
       <AnimatePresence>
