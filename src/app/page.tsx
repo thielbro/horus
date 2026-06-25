@@ -227,6 +227,7 @@ export default function Dashboard() {
   const [currentDossierRequestId, setCurrentDossierRequestId] = useState(0);
   const [dossierOverlay, setDossierOverlay] = useState<{ center: { lat: number; lng: number } | null; radiusM: number; nearby: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }> } | null>(null);
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+  const [routeOverlay, setRouteOverlay] = useState<{ line: Array<[number, number]>; corridor: Array<[number, number]> | null; surveil: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }> } | null>(null);
 
   // Base theme class (core/ghost)
   useEffect(() => {
@@ -626,6 +627,7 @@ export default function Dashboard() {
       dossierRequestIdRef.current = nextRequestId;
       setCurrentDossierRequestId(nextRequestId);
       setDossierOverlay(null);
+      setRouteOverlay(null);
       setDossierTarget({ kind: ref.kind || 'address', id: ref.id || `${ref.lat},${ref.lng}`, label: ref.label, lat: ref.lat, lng: ref.lng });
       setShowDossier(true);
     };
@@ -637,6 +639,44 @@ export default function Dashboard() {
   // pin / radius / nearby-surveillance / sightlines overlay.
   const onDossierLoaded = useCallback((d: any, requestId?: number) => {
     if (typeof requestId === 'number' && requestId !== dossierRequestIdRef.current) return;
+
+    // Route dossiers drive a separate overlay (line + corridor + on-route surveillance).
+    if (d?.kind === 'route') {
+      setDossierOverlay(null);
+      const feats: any[] = Array.isArray(d?.geometry?.features) ? d.geometry.features : [];
+      const lineFeat = feats.find((f) => f?.properties?.role === 'route' && f?.geometry?.type === 'LineString');
+      const corridorFeat = feats.find((f) => f?.properties?.role === 'corridor' && f?.geometry?.type === 'Polygon');
+      const line = (lineFeat?.geometry?.coordinates ?? [])
+        .filter((c: any) => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]))
+        .map((c: any) => [Number(c[0]), Number(c[1])] as [number, number]);
+      if (line.length < 2) { setRouteOverlay(null); return; }
+      const corridor = (corridorFeat?.geometry?.coordinates?.[0] ?? [])
+        .filter((c: any) => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]))
+        .map((c: any) => [Number(c[0]), Number(c[1])] as [number, number]);
+      const surveil = feats
+        .filter((f) => f?.properties?.role === 'surveil' && Array.isArray(f?.geometry?.coordinates))
+        .map((f) => {
+          const point = safeDossierPoint(f.geometry.coordinates[1], f.geometry.coordinates[0]);
+          if (!point) return null;
+          const distanceM = Number(f.properties?.distanceM ?? 0);
+          return {
+            ...point,
+            kind: String(f.properties?.kind || 'camera'),
+            name: String(f.properties?.name || 'Surveillance'),
+            distanceM: Number.isFinite(distanceM) ? distanceM : 0,
+            osmUrl: typeof f.properties?.osmUrl === 'string' ? f.properties.osmUrl : undefined,
+          };
+        })
+        .filter(Boolean)
+        .slice(0, MAX_DOSSIER_NEARBY) as Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }>;
+      setRouteOverlay({ line, corridor: corridor.length >= 4 ? corridor : null, surveil });
+      const flyAction = d?.actions?.find((a: any) => a.type === 'flyTo');
+      const flyTo = flyAction ? safeDossierPoint(flyAction.lat, flyAction.lng) : null;
+      if (flyTo) setFlyToLocation({ lat: flyTo.lat, lng: flyTo.lng, ts: Date.now(), zoom: Number(flyAction?.zoom) || 12 });
+      return;
+    }
+
+    setRouteOverlay(null);
     const radiusAction = d?.actions?.find((a: any) => a.type === 'drawRadius');
     const center = radiusAction
       ? safeDossierPoint(radiusAction.lat, radiusAction.lng)
@@ -663,7 +703,7 @@ export default function Dashboard() {
     setFlyToLocation({ lat: center.lat, lng: center.lng, ts: Date.now(), zoom: 16 });
   }, []);
 
-  const closeDossier = useCallback(() => { setShowDossier(false); setDossierOverlay(null); }, []);
+  const closeDossier = useCallback(() => { setShowDossier(false); setDossierOverlay(null); setRouteOverlay(null); }, []);
 
   // ── SHARED FETCH UTILITY (Fixes #107 — single definition, not 3 copies) ──
   const fetchEndpoint = useCallback(async (url: string, transform?: (d: any) => any, options?: RequestInit) => {
@@ -1071,6 +1111,7 @@ export default function Dashboard() {
           scanTargets={scanTargets}
           dossierOverlay={dossierOverlay}
           userPosition={userPosition}
+          routeOverlay={routeOverlay}
           demoMode={demoMode}
           theme={osirisTheme}
         />

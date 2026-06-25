@@ -35,6 +35,8 @@ export interface ApiKeys {
   FIRECRAWL_KEY?: string;
   /** Mapillary token for street-level imagery near an address. */
   MAPILLARY_TOKEN?: string;
+  /** OSRM routing base URL for route-exposure planning (self-hosted, or the public OSRM demo). */
+  ROUTING_URL?: string;
 }
 
 export interface CustomThemeTokens {

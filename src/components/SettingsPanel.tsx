@@ -29,6 +29,7 @@ const KEY_FIELDS: Array<{ key: keyof ApiKeys; label: string; type: 'text' | 'pas
   { key: 'FIRECRAWL_URL', label: 'Firecrawl URL', type: 'text', hint: 'self-hosted search/scrape (http://127.0.0.1:3002)' },
   { key: 'FIRECRAWL_KEY', label: 'Firecrawl Key', type: 'password', hint: 'optional' },
   { key: 'MAPILLARY_TOKEN', label: 'Mapillary Token', type: 'password', hint: 'street-level imagery' },
+  { key: 'ROUTING_URL', label: 'Routing URL', type: 'text', hint: 'OSRM for route exposure (self-host, or https://router.project-osrm.org)' },
 ];
 
 const COLOR_ROWS: Array<{ token: keyof CustomThemeTokens; label: string }> = [

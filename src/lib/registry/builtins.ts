@@ -483,4 +483,18 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
       { id: 'user-pos-dot', source: 'user-position', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 3,4, 16,8], 'circle-color': '#00E5FF', 'circle-opacity': 1, 'circle-stroke-width': 2, 'circle-stroke-color': '#FFFFFF', 'circle-stroke-opacity': 0.9 } },
     ],
   },
+  {
+    // Route-exposure overlay — the route line, its surveillance corridor (buffer fill), and the
+    // cameras/ALPR/police within it. Style only; features pushed imperatively by OsirisMap from
+    // the route dossier. Cyan route line distinguishes it from the gold address dossier.
+    id: 'route', label: 'Route Exposure', group: 'SURVEIL', icon: 'Navigation', color: '#00E5FF', headless: true,
+    styleLayers: [
+      { id: 'route-corridor-fill', source: 'route-corridor', type: 'fill', paint: { 'fill-color': '#00E5FF', 'fill-opacity': 0.06 } },
+      { id: 'route-corridor-line', source: 'route-corridor', type: 'line', paint: { 'line-color': '#00E5FF', 'line-width': 1, 'line-opacity': 0.25 } },
+      { id: 'route-line-glow', source: 'route-line', type: 'line', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#00E5FF', 'line-width': ['interpolate',['linear'],['zoom'], 8,4, 16,12], 'line-opacity': 0.25, 'line-blur': 3 } },
+      { id: 'route-line-core', source: 'route-line', type: 'line', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#00E5FF', 'line-width': ['interpolate',['linear'],['zoom'], 8,1.5, 16,4], 'line-opacity': 0.9 } },
+      { id: 'route-surveil-glow', source: 'route-surveil', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 10,5, 16,12], 'circle-color': ['match', ['get', 'kind'], 'alpr', '#FF7043', 'speed', '#FFD54F', 'police', '#42A5F5', '#00E676'], 'circle-opacity': 0.18, 'circle-blur': 1 } },
+      { id: 'route-surveil-dots', source: 'route-surveil', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 10,3, 16,7], 'circle-color': ['match', ['get', 'kind'], 'alpr', '#FF7043', 'speed', '#FFD54F', 'police', '#42A5F5', '#00E676'], 'circle-opacity': 0.9, 'circle-stroke-width': 1, 'circle-stroke-color': '#000', 'circle-stroke-opacity': 0.7 } },
+    ],
+  },
 ];

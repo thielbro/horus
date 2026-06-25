@@ -4,6 +4,8 @@ const DESKTOP_ENGINE_DEFAULTS = Object.freeze({
   // On-the-go intel framework defaults (user-run external services; overridable in Settings).
   LLM_URL: 'http://127.0.0.1:11434/v1',
   FIRECRAWL_URL: 'http://127.0.0.1:3002',
+  // Routing has no bundled backend; default to the public OSRM demo (self-host for prod).
+  ROUTING_URL: 'https://router.project-osrm.org',
 });
 
 function isNonBlankString(value) {

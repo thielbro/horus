@@ -33,6 +33,11 @@ interface OsirisMapProps {
     nearby: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }>;
   } | null;
   userPosition?: { lat: number; lng: number; accuracy?: number } | null;
+  routeOverlay?: {
+    line: Array<[number, number]>;
+    corridor: Array<[number, number]> | null;
+    surveil: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }>;
+  } | null;
   demoMode?: boolean;
   theme?: 'core' | 'ghost';
 }
@@ -71,7 +76,7 @@ function safeJsonArray<T = unknown>(value: unknown): T[] {
   }
 }
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], dossierOverlay = null, userPosition = null, demoMode = false, theme = 'core' }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], dossierOverlay = null, userPosition = null, routeOverlay = null, demoMode = false, theme = 'core' }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -545,6 +550,25 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       </div>`);
     });
 
+    // ── Route exposure surveillance (route-intel overlay) ──
+    map.on('click', 'route-surveil-dots', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      const kind = String(p.kind || 'camera').toLowerCase();
+      const c = DOSSIER_KIND_COLOR[kind] || DOSSIER_KIND_COLOR.camera;
+      const rgb = DOSSIER_KIND_RGB[kind] || DOSSIER_KIND_RGB.camera;
+      const name = escapeHtml(String(p.name || 'Surveillance'));
+      const distanceM = escapeHtml(String(p.distanceM ?? ''));
+      const label = escapeHtml(kind.toUpperCase());
+      const href = escapeHtml(String(p.osmUrl || '#'));
+      popup(coords, `<div style="${pStyle}border:1px solid rgba(${rgb},0.35);">
+        <div style="color:${c};font-size:13px;font-weight:700;margin-bottom:2px;">${name}</div>
+        <div style="font-size:9px;color:#8A8780;margin-bottom:8px;">${label} · ${distanceM}m from route · can observe the route</div>
+        <a href="${href}" target="_blank" rel="noopener" style="${linkStyle}color:${c};border:1px solid rgba(${rgb},0.4);background:rgba(${rgb},0.1);">🗺 VIEW ON OSM</a>
+      </div>`);
+    });
+
     // ── Earthquakes (with USGS link) ──
     map.on('click', 'eq-circles', e => {
       if (!e.features?.length) return;
@@ -697,7 +721,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
 
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','surv-dots','police-dots','flock-dots','mass-dots','dossier-nearby-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','sigint-news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots'].forEach(layer => {
+    ['conflict-icons','cctv-dots','surv-dots','police-dots','flock-dots','mass-dots','dossier-nearby-dots','route-surveil-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','sigint-news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -1306,9 +1330,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setVis(['sdk-air','sdk-air-glow','sdk-air-atmo'], activeLayers.sdk_air !== false);
     setVis(['sdk-intel','sdk-intel-glow','sdk-intel-atmo'], activeLayers.sdk_naval !== false);
     setVis(['dossier-radius-fill','dossier-radius-line','dossier-sightlines','dossier-nearby-glow','dossier-nearby-dots','dossier-pin-glow','dossier-pin-dot'], Boolean(dossierOverlay?.center));
+    setVis(['route-corridor-fill','route-corridor-line','route-line-glow','route-line-core','route-surveil-glow','route-surveil-dots'], Boolean(routeOverlay?.line?.length));
     // Sweep layers always visible when data is present (controlled by useEffect)
     setVis(['sweep-connections','sweep-pulse-ring','sweep-device-glow','sweep-device-dots','sweep-device-labels'], true);
-  }, [mapReady, activeLayers, dossierOverlay?.center, setVis]);
+  }, [mapReady, activeLayers, dossierOverlay?.center, routeOverlay?.line?.length, setVis]);
 
   // IP Sweep visualization
   useEffect(() => {
@@ -1440,6 +1465,26 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [circlePolygon(lat, lng, Math.min(accuracy, 5000))] }, properties: {} }]
       : []);
   }, [mapReady, userPosition, setGeo]);
+
+  // Route-exposure overlay — route line, surveillance corridor fill, and the cameras/ALPR/police
+  // along it. Empty sources when no route dossier is active.
+  useEffect(() => {
+    if (!mapReady) return;
+    const o = routeOverlay;
+    const line = o?.line ?? [];
+    if (line.length < 2) {
+      setGeo('route-line', []); setGeo('route-corridor', []); setGeo('route-surveil', []);
+      return;
+    }
+    setGeo('route-line', [{ type: 'Feature', geometry: { type: 'LineString', coordinates: line }, properties: {} }]);
+    setGeo('route-corridor', o?.corridor && o.corridor.length >= 4
+      ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [o.corridor] }, properties: {} }]
+      : []);
+    setGeo('route-surveil', (o?.surveil ?? []).map((it) => ({
+      type: 'Feature', geometry: { type: 'Point', coordinates: [it.lng, it.lat] },
+      properties: { kind: it.kind, name: it.name, distanceM: it.distanceM, osmUrl: it.osmUrl },
+    })));
+  }, [mapReady, routeOverlay, setGeo]);
 
   // Fly-to. `zoom` is honored when provided (workspace restore / view presets); otherwise
   // we default to 8 for a generic "fly here" nudge. Gated on mapReady so workspace restore

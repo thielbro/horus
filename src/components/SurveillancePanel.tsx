@@ -13,6 +13,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Camera, Eye, Shield, ScanLine, Boxes, Plus, Trash2, Pencil, AlertTriangle, MapPin, Navigation, FlaskConical, Loader2, CheckCircle2 } from 'lucide-react';
 import { getGroups } from '@/lib/registry';
+import RoutePlanner from '@/components/RoutePlanner';
 import {
   useCustomSources, upsertCustomSource, removeCustomSource,
   validateCustomSourceSpec, formatValidationErrors,
@@ -408,9 +409,12 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
                 </div>
                 <p className="text-[9px] font-mono text-white/30 leading-relaxed mt-2">
                   Compiles a dossier on the fly — occupant/business, postcode, and the nearby cameras, ALPR, and
-                  police that can observe the spot. Location tracking &amp; route exposure are coming next.
+                  police that can observe the spot.
                 </p>
               </section>
+
+              {/* ── Route exposure (compiled on demand: routing + Overpass corridor + local LLM) ── */}
+              <RoutePlanner />
             </div>
 
             {/* Footer status */}

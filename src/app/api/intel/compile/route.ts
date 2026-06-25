@@ -63,6 +63,10 @@ export async function GET(req: Request) {
   }
 
   const encoder = new TextEncoder();
+  // Count-based headroom so a synchronous burst of events (notably the cache-hit path, which
+  // emits graph → section → done back-to-back) doesn't trip the desiredSize backpressure guard
+  // below. Without this, the default highWaterMark of 1 drops every event after the first.
+  const queuingStrategy = new CountQueuingStrategy({ highWaterMark: 1024 });
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       let errorSent = false;
@@ -87,7 +91,7 @@ export async function GET(req: Request) {
         }
       }
     },
-  });
+  }, queuingStrategy);
 
   return new Response(body, {
     headers: {

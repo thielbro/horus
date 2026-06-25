@@ -38,9 +38,15 @@ degrades gracefully when any is absent.
 - ✅ **P3 — location tracking** (`02dbe12`): `LocationTracker` (opt-in GPS `watchPosition`,
   follow-me, throttled reverse-geocode, "INTEL ON MY LOCATION"), headless `user_position` layer
   (cyan dot + accuracy ring).
-- ⏭️ **P4 — route planning + exposure** (NEXT — see below).
+- ✅ **P4 — route planning + exposure**: `kind:'route'` provider (`src/lib/intel/providers/route.ts`)
+  — resolve start/end → OSRM polyline (`src/lib/routing.ts` + `/api/route` proxy) → corridor bbox
+  (tiled under the 25° cap) → one Overpass call per tile → devices within 150m of the line, ordered
+  start→end → LLM exposure briefing. Headless `route` map layer (cyan line + glow, corridor buffer
+  fill, kind-coloured on-route markers); `OsirisMap` `routeOverlay` prop + setGeo effect + click
+  popup; `RoutePlanner` entry point in the Surveillance panel. Settings: `ROUTING_URL`. Reuses the
+  `DossierPanel` (kind-agnostic) for display. **Also fixed a latent streaming bug** (see below).
 - ⏭️ **P5 — generalize** the intel side (person/company/vehicle providers; "Compile dossier" on
-  graph nodes; optionally route `/api/ai/*` + AiAnalyst through `getLLM()`).
+  graph nodes; optionally route `/api/ai/*` + AiAnalyst through `getLLM()`). **NEXT — see below.**
 
 Also note: the user has done several **stability/optimization passes** on this work
 (`f989488` "Harden dossier streaming and overlay handling", and inline hardening of the P1/P2
@@ -58,8 +64,13 @@ files). Build on those — see "Conventions" below.
 - **`src/lib/intel/compile.ts`** — orchestrator. Byte-bounded LRU dossier cache + **single-flight
   `INFLIGHT`** dedup (user-hardened), per-stage 30s abort (`runProviderStage`/`abortable`),
   `/resolve` graph enrichment, provenance. Streams `status → graph → section → done`.
-- **`src/lib/intel/providers/{index,stub,address}.ts`** — `registerProvider` registry keyed by
+- **`src/lib/intel/providers/{index,stub,address,route}.ts`** — `registerProvider` registry keyed by
   `kind`. Add new kinds here (mirrors `RESOLVERS` in the sidecar).
+- **`src/lib/routing.ts`** — `routeBetween(start,end)` / `routingBaseUrl()` (OSRM via `ROUTING_URL`,
+  plain fetch). Shared by `/api/route` (proxy) and the route provider.
+- **`src/lib/geo.ts`** route additions — `projectPointOnLine` (perp + along distance, for corridor
+  filtering/ordering), `bufferPolygon` (corridor fill ring), `tileBbox` (split a corridor bbox under
+  the Overpass area cap).
 - **`src/lib/llm/{index,ollama,gemini-adapter}.ts`** — `getLLM()` returns one `chat()` with the
   fallback chain. `llmHealth()` reports the live rung. Gemini keys are read once at module load.
 - **`src/lib/search/{index,firecrawl}.ts`** — `getSearch()` → Firecrawl. `search()` + `fetchPage()`
@@ -80,36 +91,42 @@ files). Build on those — see "Conventions" below.
 
 ### Settings keys (flow `ApiKeys` → `buildEngineEnv` → `process.env` on desktop; `.env` on web)
 `LLM_URL` (default `http://127.0.0.1:11434/v1`), `LLM_MODEL` (default `llama3.1`),
-`FIRECRAWL_URL` (default `http://127.0.0.1:3002`), `FIRECRAWL_KEY?`, `MAPILLARY_TOKEN?`.
-(`ROUTING_URL` lands in P4.) Desktop defaults live in `desktop/runtime-config.js`.
+`FIRECRAWL_URL` (default `http://127.0.0.1:3002`), `FIRECRAWL_KEY?`, `MAPILLARY_TOKEN?`,
+`ROUTING_URL` (default the public OSRM demo `https://router.project-osrm.org`; self-host for prod).
+Desktop defaults live in `desktop/runtime-config.js`.
 
 ---
 
-## ⏭️ Phase 4 — route planning + surveillance exposure (start here)
+## ✅ Phase 4 — route planning + surveillance exposure (DONE)
 
-Per the plan, reuse the framework with a new `kind: 'route'`:
-1. **`src/app/api/route/route.ts`** — thin proxy (template = `src/app/api/entity/expand/route.ts`)
-   to OSRM via `ROUTING_URL` (default the public OSRM demo `https://router.project-osrm.org` for
-   dev; **note self-host for prod**). Input start/end (lat,lng); return `{geometry:LineString,
-   distance, duration}`. Use `safeAbortTimeout` + `releaseResponseBody`.
-2. **`src/lib/intel/providers/route.ts`** (`kind:'route'`): `gather` = call routing → route
-   polyline; compute corridor bbox via `geo.bboxOfPoints(coords, padM)` (tile if it exceeds the
-   25° Overpass cap); query nearby surveillance (one Overpass call like `address.ts`); filter to
-   points within W metres of the line via `geo.pointToLineMeters`; order by distance-along.
-   `synthesize` = LLM "surveillance exposure" briefing (counts by type, densest segments, ALPR
-   chokepoints). `geometry` = FeatureCollection (route line + corridor + exposure points).
-3. **Map overlay:** headless `route` layer in `builtins.ts` (`route-line` glow/core, `route-corridor`
-   fill, `route-surveil` markers — reuse `osmPointStyle`); `OsirisMap` `routeOverlay` prop + a
-   `setGeo` effect (mirror the dossier overlay effect). Add `route-surveil-dots` to the cursor
-   list + a click popup.
-4. **`src/components/RoutePlanner.tsx`** — start/end inputs (geocode via `src/lib/geocode` or the
-   SearchBar pattern), trigger `kind:'route'` compile, render the exposure summary. Mount in
-   `page.tsx` (add `routeTarget`/`routeOverlay` state + an entry point, e.g. in the Surveillance
-   panel next to ADDRESS INTEL).
-5. **Settings:** add `ROUTING_URL` to `ApiKeys` + `SettingsPanel` + `runtime-config` defaults.
+Shipped exactly per the plan. Notes for whoever builds on it:
+- **Route ref encoding:** the route provider takes `ref.id = "<start>|<end>"` where each side is
+  either `"lat,lng"` or a free-text place it geocodes. `RoutePlanner` builds that id and calls the
+  `window.openOsirisDossier` global with `kind:'route'`; the kind-agnostic `DossierPanel` renders the
+  result and `page.tsx`'s `onDossierLoaded` branches on `d.kind === 'route'` to build `routeOverlay`
+  (line/corridor/surveil) from the dossier `geometry`. No separate route panel — reuse the dossier UI.
+- **Geometry roles:** `route` (LineString), `corridor` (Polygon ring), `surveil` (Points). The panel's
+  "nearby" list now also accepts `role:'surveil'` (shown as "SURVEILLANCE ON ROUTE").
+- **Corridor:** devices kept within `CORRIDOR_W_M = 150`m of the line (`projectPointOnLine`), ordered
+  by `alongM`. Corridor bbox padded `200`m then `tileBbox`-split under a 24° cap (≤16 tiles), one
+  Overpass call per tile in `Promise.allSettled`, deduped by node id.
 
-**Verify:** start/end → route drawn; markers only inside the corridor; exposure counts match
-markers; long routes tile under the 25° cap. `curl '/api/route?...'` + `/api/intel/compile?kind=route`.
+### ⚠️ Fixed a latent SSE streaming bug (affected ALL kinds on cache hits)
+The compile route's `send()` drops events when `controller.desiredSize <= 0`. The **cache-hit path**
+(`emitDossier`) emits `graph → section → done` *synchronously*, so with the default highWaterMark of 1
+every event after `graph` was dropped — a revisited (cached) address/route rendered "No dossier". The
+live path only escaped this because its inter-stage `await`s let the consumer drain. **Fix:** the
+`ReadableStream` now uses `new CountQueuingStrategy({ highWaterMark: 1024 })`
+(`src/app/api/intel/compile/route.ts`). If you touch that stream, keep the headroom.
+
+## ⏭️ Phase 5 — generalize the intel side (start here)
+
+Per the plan: add more `kind`s (person / company / vehicle) as `IntelProvider`s registered in
+`src/lib/intel/providers/index.ts`, following the `address`/`route` template (split `gather`
+deterministic + cited from `synthesize` one-LLM-call). Wire "Compile dossier" actions on
+`EntityGraphPanel` nodes (call `window.openOsirisDossier({ kind, id, label })`). Optionally route
+`/api/ai/*` + `AiAnalyst` through `getLLM()` so the whole app shares the local→Gemini→deterministic
+fallback chain. Reuse `ctx.resolve(type,id)` to enrich graphs from the intel sidecar.
 
 ---
 
@@ -133,8 +150,14 @@ curl 'http://localhost:3000/api/intel/compile?kind=stub&id=test&stream=0'
 # address dossier (geocode + Overpass nearby; deterministic LLM if no Ollama)
 curl 'http://localhost:3000/api/intel/compile?kind=address&id=Trafalgar%20Square,%20London&stream=0'
 curl -N 'http://localhost:3000/api/intel/compile?kind=address&id=Eiffel%20Tower&force=1'   # SSE
+# route exposure (OSRM + tiled Overpass corridor; id = "start|end", place or "lat,lng")
+curl 'http://localhost:3000/api/route?from=51.501,-0.142&to=51.505,-0.075'
+curl 'http://localhost:3000/api/intel/compile?kind=route&id=Buckingham%20Palace%2C%20London%7CTower%20Bridge%2C%20London&stream=0'
 curl 'http://localhost:3000/api/llm/health'
 ```
+The Buckingham Palace → Tower Bridge route returns a 5.7km line with ~67 CCTV / 12 ALPR within 150m —
+a good route smoke test. **Cache-hit tip:** re-request *without* `force=1` and confirm the SSE still
+emits `graph`+`section`+`done` (this is the path the streaming bug above broke).
 Address compile returns ~39 CCTV near Trafalgar Square — good smoke test. With Ollama/Firecrawl/
 Mapillary running, the summary becomes a real LLM assessment + web results + photos.
 

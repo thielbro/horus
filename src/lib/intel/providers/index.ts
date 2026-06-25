@@ -4,6 +4,7 @@
 import type { IntelProvider } from '@/lib/intel/types';
 import { stubProvider } from './stub';
 import { addressProvider } from './address';
+import { routeProvider } from './route';
 
 const PROVIDERS = new Map<string, IntelProvider>();
 
@@ -24,3 +25,4 @@ export function providerKinds(): string[] {
 
 registerProvider(stubProvider);
 registerProvider(addressProvider);
+registerProvider(routeProvider);

@@ -111,7 +111,8 @@ function pointCoordinates(feature: DossierPointFeature): [number, number] | null
 }
 
 function isNearbyFeature(feature: DossierPointFeature): boolean {
-  return feature.properties?.role === 'nearby' && pointCoordinates(feature) !== null;
+  const role = feature.properties?.role;
+  return (role === 'nearby' || role === 'surveil') && pointCoordinates(feature) !== null;
 }
 
 function DossierPanel({ open, target, requestId, onClose, onLoaded, onLocate }: Props) {
@@ -303,7 +304,7 @@ function DossierPanel({ open, target, requestId, onClose, onLoaded, onLocate }: 
             {/* Nearby surveillance */}
             {nearby.length > 0 && (
               <section>
-                <div className="text-[10px] font-mono font-bold tracking-widest text-[var(--gold-primary)] border-b border-[var(--border-primary)] pb-1.5 mb-2">NEARBY SURVEILLANCE ({nearby.length})</div>
+                <div className="text-[10px] font-mono font-bold tracking-widest text-[var(--gold-primary)] border-b border-[var(--border-primary)] pb-1.5 mb-2">{dossier?.kind === 'route' ? 'SURVEILLANCE ON ROUTE' : 'NEARBY SURVEILLANCE'} ({nearby.length})</div>
                 <div className="space-y-1">
                   {nearby.map((n, i) => {
                     const Icon = KIND_ICON[n.kind] || Camera;

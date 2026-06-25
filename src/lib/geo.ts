@@ -155,3 +155,92 @@ export function pointToLineMeters(pLat: number, pLng: number, line: Array<[numbe
   }
   return best;
 }
+
+/**
+ * Project a point onto a polyline (array of [lng,lat]). Returns the perpendicular distance to
+ * the nearest segment and the distance travelled *along* the line to that projection — used to
+ * filter route-corridor candidates (`perpM`) and order them start→end (`alongM`).
+ */
+export function projectPointOnLine(pLat: number, pLng: number, line: Array<[number, number]>): { perpM: number; alongM: number } {
+  let best = { perpM: Infinity, alongM: 0 };
+  let cum = 0;
+  for (let i = 1; i < line.length; i++) {
+    const [aLng, aLat] = line[i - 1];
+    const [bLng, bLat] = line[i];
+    const lat0 = (aLat + bLat) / 2;
+    const [ax, ay] = toLocal(aLat, aLng, lat0, aLng);
+    const [bx, by] = toLocal(bLat, bLng, lat0, aLng);
+    const [px, py] = toLocal(pLat, pLng, lat0, aLng);
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    const segLen = Math.sqrt(len2);
+    let t = len2 === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + t * dx, cy = ay + t * dy;
+    const perp = Math.hypot(px - cx, py - cy);
+    if (perp < best.perpM) best = { perpM: perp, alongM: cum + t * segLen };
+    cum += segLen;
+  }
+  return best;
+}
+
+/**
+ * Closed ring of [lng,lat] approximating a `halfWidthM` buffer around a polyline (a route
+ * corridor). Offsets each vertex along the segment normal, going forward on one side and back
+ * on the other. May self-intersect on hairpin turns, but reads fine as a translucent fill.
+ */
+export function bufferPolygon(line: Array<[number, number]>, halfWidthM: number): Array<[number, number]> | null {
+  const pts = line.filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat));
+  if (pts.length < 2 || !(halfWidthM > 0)) return null;
+  const left: Array<[number, number]> = [];
+  const right: Array<[number, number]> = [];
+  for (let i = 0; i < pts.length; i++) {
+    const [lng, lat] = pts[i];
+    const prev = pts[i - 1] ?? pts[i];
+    const next = pts[i + 1] ?? pts[i];
+    const cos = Math.max(0.01, Math.cos(lat * D2R));
+    // Tangent of the line at this vertex, in metres.
+    const dxM = normalizeLng(next[0] - prev[0]) * M_PER_DEG_LAT * cos;
+    const dyM = (next[1] - prev[1]) * M_PER_DEG_LAT;
+    const len = Math.hypot(dxM, dyM) || 1;
+    const nxM = -dyM / len, nyM = dxM / len; // unit normal
+    const dLng = (nxM * halfWidthM) / (M_PER_DEG_LAT * cos);
+    const dLat = (nyM * halfWidthM) / M_PER_DEG_LAT;
+    left.push([normalizeLng(lng + dLng), clampLat(lat + dLat)]);
+    right.push([normalizeLng(lng - dLng), clampLat(lat - dLat)]);
+  }
+  return [...left, ...right.reverse(), left[0]];
+}
+
+/**
+ * Split a bbox [s,w,n,e] into a grid of sub-boxes each under `maxAreaDeg` (degrees²), so a long
+ * route corridor can be queried within the Overpass area cap. Antimeridian-crossing boxes
+ * (w >= e) and degenerate boxes are returned as-is. Total tiles are capped at `maxTiles`.
+ */
+export function tileBbox(bbox: BBox, maxAreaDeg: number, maxTiles = 24): BBox[] {
+  const [s, w, n, e] = bbox;
+  const height = n - s;
+  const width = e - w;
+  if (!(height > 0) || !(width > 0)) return [bbox];
+  if (height * width <= maxAreaDeg) return [bbox];
+  const side = Math.sqrt(maxAreaDeg) * 0.95;
+  let nx = Math.max(1, Math.ceil(width / side));
+  let ny = Math.max(1, Math.ceil(height / side));
+  while (nx * ny > maxTiles) {
+    if (nx >= ny && nx > 1) nx--;
+    else if (ny > 1) ny--;
+    else break;
+  }
+  const tiles: BBox[] = [];
+  for (let iy = 0; iy < ny; iy++) {
+    for (let ix = 0; ix < nx; ix++) {
+      tiles.push([
+        s + (height * iy) / ny,
+        w + (width * ix) / nx,
+        s + (height * (iy + 1)) / ny,
+        w + (width * (ix + 1)) / nx,
+      ]);
+    }
+  }
+  return tiles;
+}
