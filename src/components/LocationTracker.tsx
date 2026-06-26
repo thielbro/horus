@@ -25,6 +25,7 @@ type Status = 'idle' | 'locating' | 'active' | 'denied' | 'unavailable' | 'error
 const FOLLOW_MIN_MOVE_M = 15;     // re-centre only after meaningful movement
 const GEOCODE_MIN_MOVE_M = 40;    // re-label only after meaningful movement
 const GEOCODE_MIN_INTERVAL_MS = 8_000;
+const NOMINATIM_MIN_INTERVAL_MS = 1_100;
 
 function LocationTracker({ onUpdate, onClear, onIntel, onFollow }: Props) {
   const [enabled, setEnabled] = useState(false);
@@ -44,6 +45,7 @@ function LocationTracker({ onUpdate, onClear, onIntel, onFollow }: Props) {
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     const last = lastGeocode.current;
     const now = Date.now();
+    if (last && now - last.at < NOMINATIM_MIN_INTERVAL_MS) return;
     if (last && now - last.at < GEOCODE_MIN_INTERVAL_MS && haversineMeters(last.lat, last.lng, lat, lng) < GEOCODE_MIN_MOVE_M) return;
     lastGeocode.current = { lat, lng, at: now };
     geocodeAbort.current?.abort();
@@ -59,12 +61,16 @@ function LocationTracker({ onUpdate, onClear, onIntel, onFollow }: Props) {
       const label = [a.road || a.neighbourhood, a.suburb || a.city || a.town || a.village, a.postcode].filter(Boolean).join(', ');
       if (!controller.signal.aborted) setAddress(label || d.display_name || null);
     } catch { /* keep prior label */ }
+    finally {
+      if (geocodeAbort.current === controller) geocodeAbort.current = null;
+    }
   }, []);
 
   const stop = useCallback(() => {
     if (watchId.current != null && typeof navigator !== 'undefined') navigator.geolocation.clearWatch(watchId.current);
     watchId.current = null;
     geocodeAbort.current?.abort();
+    geocodeAbort.current = null;
     lastFollow.current = null;
     lastGeocode.current = null;
     setEnabled(false);
@@ -102,6 +108,7 @@ function LocationTracker({ onUpdate, onClear, onIntel, onFollow }: Props) {
   useEffect(() => () => {
     if (watchId.current != null && typeof navigator !== 'undefined') navigator.geolocation.clearWatch(watchId.current);
     geocodeAbort.current?.abort();
+    geocodeAbort.current = null;
   }, []);
 
   const toggleFollow = () => {

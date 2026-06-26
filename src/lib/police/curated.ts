@@ -14,15 +14,31 @@ const DATASETS: CuratedPoliceDataset[] = [
   NZ_POLICE,
 ];
 
+function lngInBox(lng: number, w: number, e: number): boolean {
+  return w <= e ? lng >= w && lng <= e : lng >= w || lng <= e;
+}
+
+function splitAntimeridianBox(box: BBox): BBox[] {
+  const [s, w, n, e] = box;
+  if (w <= e) return [box];
+  return [
+    [s, w, n, 180],
+    [s, -180, n, e],
+  ];
+}
+
 function boxesIntersect(a: BBox, b: BBox): boolean {
-  const [as_, aw, an, ae] = a;
-  const [bs, bw, bn, be] = b;
-  return as_ <= bn && bs <= an && aw <= be && bw <= ae;
+  for (const [as_, aw, an, ae] of splitAntimeridianBox(a)) {
+    for (const [bs, bw, bn, be] of splitAntimeridianBox(b)) {
+      if (as_ <= bn && bs <= an && aw <= be && bw <= ae) return true;
+    }
+  }
+  return false;
 }
 
 function pointInBox(lat: number, lng: number, box: BBox): boolean {
   const [s, w, n, e] = box;
-  return lat >= s && lat <= n && lng >= w && lng <= e;
+  return lat >= s && lat <= n && lngInBox(lng, w, e);
 }
 
 /**

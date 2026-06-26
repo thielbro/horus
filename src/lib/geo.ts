@@ -188,6 +188,8 @@ export function projectPointOnLine(pLat: number, pLng: number, line: Array<[numb
  * Closed ring of [lng,lat] approximating a `halfWidthM` buffer around a polyline (a route
  * corridor). Offsets each vertex along the segment normal, going forward on one side and back
  * on the other. May self-intersect on hairpin turns, but reads fine as a translucent fill.
+ * Intended for a continuous local route; antimeridian-spanning corridors can render split or
+ * wrapped depending on the map engine's GeoJSON line handling.
  */
 export function bufferPolygon(line: Array<[number, number]>, halfWidthM: number): Array<[number, number]> | null {
   const pts = line.filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat));

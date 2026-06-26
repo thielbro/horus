@@ -83,6 +83,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   const onEntityClickRef = useRef(onEntityClick);
   const themeRef = useRef(theme);
   const dossierOverlayFrameRef = useRef<number | null>(null);
+  const geoBatchUpdatesRef = useRef<Record<string, any[]>>({});
   const [mapReady, setMapReady] = useState(false);
   const prevStyleRef = useRef(mapStyle);
 
@@ -973,18 +974,24 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     if (src) src.setData({ type: 'FeatureCollection', features });
   }, []);
 
-  const setDossierGeoBatch = useCallback((updates: Record<string, any[]>) => {
-    if (dossierOverlayFrameRef.current != null) cancelAnimationFrame(dossierOverlayFrameRef.current);
+  const setGeoBatch = useCallback((updates: Record<string, any[]>) => {
+    geoBatchUpdatesRef.current = { ...geoBatchUpdatesRef.current, ...updates };
+    if (dossierOverlayFrameRef.current != null) return;
     dossierOverlayFrameRef.current = requestAnimationFrame(() => {
+      const pending = geoBatchUpdatesRef.current;
+      geoBatchUpdatesRef.current = {};
       dossierOverlayFrameRef.current = null;
-      for (const [source, features] of Object.entries(updates)) {
+      for (const [source, features] of Object.entries(pending)) {
         setGeo(source, features);
       }
     });
   }, [setGeo]);
 
+  const setDossierGeoBatch = setGeoBatch;
+
   useEffect(() => () => {
     if (dossierOverlayFrameRef.current != null) cancelAnimationFrame(dossierOverlayFrameRef.current);
+    geoBatchUpdatesRef.current = {};
   }, []);
 
   // Day/Night — registry-driven; the binding recomputes the terminator polygon, re-run here
@@ -1456,15 +1463,17 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   useEffect(() => {
     if (!mapReady) return;
     if (!userPosition) {
-      setGeo('user-position', []); setGeo('user-accuracy', []);
+      setGeoBatch({ 'user-position': [], 'user-accuracy': [] });
       return;
     }
     const { lat, lng, accuracy } = userPosition;
-    setGeo('user-position', [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} }]);
-    setGeo('user-accuracy', accuracy && accuracy > 0
-      ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [circlePolygon(lat, lng, Math.min(accuracy, 5000))] }, properties: {} }]
-      : []);
-  }, [mapReady, userPosition, setGeo]);
+    setGeoBatch({
+      'user-position': [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} }],
+      'user-accuracy': accuracy && accuracy > 0
+        ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [circlePolygon(lat, lng, Math.min(accuracy, 5000))] }, properties: {} }]
+        : [],
+    });
+  }, [mapReady, userPosition, setGeoBatch]);
 
   // Route-exposure overlay — route line, surveillance corridor fill, and the cameras/ALPR/police
   // along it. Empty sources when no route dossier is active.
@@ -1473,18 +1482,20 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     const o = routeOverlay;
     const line = o?.line ?? [];
     if (line.length < 2) {
-      setGeo('route-line', []); setGeo('route-corridor', []); setGeo('route-surveil', []);
+      setGeoBatch({ 'route-line': [], 'route-corridor': [], 'route-surveil': [] });
       return;
     }
-    setGeo('route-line', [{ type: 'Feature', geometry: { type: 'LineString', coordinates: line }, properties: {} }]);
-    setGeo('route-corridor', o?.corridor && o.corridor.length >= 4
-      ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [o.corridor] }, properties: {} }]
-      : []);
-    setGeo('route-surveil', (o?.surveil ?? []).map((it) => ({
-      type: 'Feature', geometry: { type: 'Point', coordinates: [it.lng, it.lat] },
-      properties: { kind: it.kind, name: it.name, distanceM: it.distanceM, osmUrl: it.osmUrl },
-    })));
-  }, [mapReady, routeOverlay, setGeo]);
+    setGeoBatch({
+      'route-line': [{ type: 'Feature', geometry: { type: 'LineString', coordinates: line }, properties: {} }],
+      'route-corridor': o?.corridor && o.corridor.length >= 4
+        ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [o.corridor] }, properties: {} }]
+        : [],
+      'route-surveil': (o?.surveil ?? []).map((it) => ({
+        type: 'Feature', geometry: { type: 'Point', coordinates: [it.lng, it.lat] },
+        properties: { kind: it.kind, name: it.name, distanceM: it.distanceM, osmUrl: it.osmUrl },
+      })),
+    });
+  }, [mapReady, routeOverlay, setGeoBatch]);
 
   // Fly-to. `zoom` is honored when provided (workspace restore / view presets); otherwise
   // we default to 8 for a generic "fly here" nudge. Gated on mapReady so workspace restore

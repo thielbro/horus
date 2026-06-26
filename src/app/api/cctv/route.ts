@@ -626,6 +626,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const continent = searchParams.get('continent');
     const region = searchParams.get('region');
+    const hasCoordinateQuery = searchParams.has('lat') || searchParams.has('lng');
     const lat = parseFloat(searchParams.get('lat') || '0');
     const lng = parseFloat(searchParams.get('lng') || '0');
     const radius = parseFloat(searchParams.get('radius') || '10');
@@ -638,7 +639,7 @@ export async function GET(request: Request) {
       regionsToFetch = Object.keys(REGION_FETCHERS);
     } else if (region) {
       regionsToFetch = region.split(',').filter(r => r in REGION_FETCHERS);
-    } else if (lat !== 0 || lng !== 0) {
+    } else if (hasCoordinateQuery) {
       regionsToFetch = getRegionsForBounds(lat, lng, radius);
     } else {
       regionsToFetch = DEFAULT_CCTV_REGIONS;
@@ -648,8 +649,8 @@ export async function GET(request: Request) {
 
     const { cameras: allCameras, sources } = mergeCamerasFairly(results, MAX_CAMERAS);
 
-    const cacheControl = allCameras.length < 50
-      ? 'no-store, max-age=0' 
+    const cacheControl = hasCoordinateQuery
+      ? 'no-store, max-age=0'
       : 'public, s-maxage=300, stale-while-revalidate=600';
 
     return NextResponse.json({

@@ -44,10 +44,14 @@ interface OverpassNode {
   tags?: Record<string, string>;
 }
 
+function isAlprTag(value?: string): boolean {
+  return typeof value === 'string' && value.toLowerCase() === 'alpr';
+}
+
 function classify(tags: Record<string, string>): NearbyKind {
   if (tags.amenity === 'police') return 'police';
   if (tags.highway === 'speed_camera') return 'speed';
-  if (tags['surveillance:type'] === 'ALPR' || tags['camera:type'] === 'ALPR') return 'alpr';
+  if (isAlprTag(tags['surveillance:type']) || isAlprTag(tags['camera:type'])) return 'alpr';
   return 'camera';
 }
 
