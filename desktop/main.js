@@ -181,6 +181,20 @@ function scheduleBackendRestart(state) {
   state.restartTimer.unref?.();
 }
 
+// Open a log file in append mode, first rotating it to <name>.1 if it exceeds maxBytes.
+// Keeps one previous generation so logs can't grow unbounded and eventually fill the disk.
+function openRotatingLog(logPath, maxBytes = 10 * 1024 * 1024) {
+  try {
+    const st = fs.statSync(logPath);
+    if (st.size > maxBytes) {
+      const rotated = `${logPath}.1`;
+      try { fs.rmSync(rotated, { force: true }); } catch { /* ignore */ }
+      fs.renameSync(logPath, rotated);
+    }
+  } catch { /* no existing file → nothing to rotate */ }
+  return fs.openSync(logPath, 'a');
+}
+
 // Fork (or re-fork) one backend on its already-assigned port so the URL handed to the Next
 // server stays valid across crashes. Resolves once its /health responds.
 async function forkBackend(state) {
@@ -192,7 +206,7 @@ async function forkBackend(state) {
   try {
     const logPath = path.join(app.getPath('userData'), `${state.id}.log`);
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    state.logFd = fs.openSync(logPath, 'a');
+    state.logFd = openRotatingLog(logPath);
     fs.writeSync(state.logFd, `\n[${new Date().toISOString()}] starting ${state.id} on :${state.port}\n`);
     stdio = ['ignore', state.logFd, state.logFd, 'ipc'];
   } catch {
@@ -294,8 +308,14 @@ function stopManagedBackends() {
       state.restartTimer = null;
     }
     if (state.child) {
-      try { state.child.kill(); } catch { /* ignore */ }
+      const child = state.child;
       state.child = null;
+      // SIGTERM for a graceful exit, then SIGKILL if it's still alive after 5s so a hung
+      // backend can't linger as a zombie. unref so the timer never keeps the app alive.
+      try { child.kill('SIGTERM'); } catch { /* ignore */ }
+      const killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* ignore */ } }, 5000);
+      killTimer.unref?.();
+      child.once?.('exit', () => clearTimeout(killTimer));
     }
     if (state.logFd !== null) {
       try { fs.closeSync(state.logFd); } catch { /* ignore */ }
@@ -316,12 +336,17 @@ function stopEmbeddedServer() {
     serverRestartTimer = null;
   }
   if (serverChild) {
+    const child = serverChild;
+    serverChild = null;
+    // SIGTERM then SIGKILL-after-5s so a hung Next server child can't become a zombie.
     try {
-      serverChild.kill();
+      child.kill('SIGTERM');
     } catch {
       /* ignore */
     }
-    serverChild = null;
+    const killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* ignore */ } }, 5000);
+    killTimer.unref?.();
+    child.once?.('exit', () => clearTimeout(killTimer));
   }
   if (logFd !== null) {
     try {
@@ -388,7 +413,7 @@ async function startEmbeddedServer() {
     if (logFd !== null) fs.closeSync(logFd);
     const logPath = path.join(app.getPath('userData'), 'server.log');
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    logFd = fs.openSync(logPath, 'a');
+    logFd = openRotatingLog(logPath);
     fs.writeSync(logFd, `\n[${new Date().toISOString()}] starting ${serverJs} on :${port}\n`);
     stdio = ['ignore', logFd, logFd, 'ipc'];
   } catch {
@@ -505,17 +530,22 @@ async function createWindow() {
   });
 
   if (SMOKE) {
+    // Declared before the handlers so a successful/failed load can clear it — otherwise the
+    // 50s timeout could fire after an OK and overwrite the smoke file with TIMEOUT (false CI fail).
+    let smokeTimeout = null;
     win.webContents.on('did-finish-load', () => {
+      if (smokeTimeout) { clearTimeout(smokeTimeout); smokeTimeout = null; }
       console.log('HORUS_SMOKE_OK');
       writeSmoke('OK');
       setTimeout(() => app.quit(), 200);
     });
     win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+      if (smokeTimeout) { clearTimeout(smokeTimeout); smokeTimeout = null; }
       console.error('HORUS_SMOKE_FAIL', code, desc, url);
       writeSmoke('FAIL ' + code + ' ' + desc);
       quitWithCode(1);
     });
-    const smokeTimeout = setTimeout(() => {
+    smokeTimeout = setTimeout(() => {
       console.error('HORUS_SMOKE_TIMEOUT');
       writeSmoke('TIMEOUT');
       quitWithCode(2);

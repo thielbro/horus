@@ -53,6 +53,8 @@ export async function GET(req: Request) {
       duration: route.duration,
     });
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : 'routing failed' }, 500);
+    // Don't leak the internal routing-engine URL/stack to the client; log it instead.
+    console.error('Route lookup failed:', e);
+    return json({ error: 'Routing failed' }, 500);
   }
 }

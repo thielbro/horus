@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitOr429 } from '@/lib/ssrf-guard';
 import { stealthFetch } from '@/lib/stealthFetch';
 import { releaseResponseBody, safeAbortTimeout, safeAbortAny } from '@/lib/http-utils';
 import { fetchAsfinagCameras } from './asfinag';
@@ -31,11 +32,19 @@ import { settleCameraFetchers } from './fanout';
  * Or pass ?lat=x&lng=y&radius=5 for proximity-based loading
  */
 
+// Fanning out to many regional sources can take a while; allow the platform up to 60s
+// rather than letting the default function timeout abort mid-flight (orphaning fetches).
+export const maxDuration = 60;
+
 // ═══ CAMERA SOURCE DEFINITIONS ═══
 
 const MAX_CAMERAS = 5000;
 const DEFAULT_CCTV_REGIONS = ['uk'];
-const MAX_REGION_ALL_CONCURRENCY = 5;
+// Batched fanout: each batch runs concurrently with a per-batch deadline (below). These are
+// tuned so even the widest query (region=all, ~27 sources) finishes well under maxDuration:
+// ceil(27/8) = 4 batches × 12s ≈ 48s worst case (was 5-wide × 25s ≈ 150s, which timed out).
+const MAX_REGION_ALL_CONCURRENCY = 8;
+const REGION_BATCH_TIMEOUT_MS = 12_000;
 
 // ── UK: Transport for London JamCams (~900) ──
 async function fetchTfLCameras(): Promise<any[]> {
@@ -547,7 +556,7 @@ async function runRegionFetchers(regionsToFetch: string[]): Promise<PromiseSettl
     const batch = regionsToFetch.slice(i, i + MAX_REGION_ALL_CONCURRENCY);
     results.push(...await settleCameraFetchers<any>(
       batch.map(r => REGION_FETCHERS[r]),
-      25000,
+      REGION_BATCH_TIMEOUT_MS,
     ));
   }
   return results;
@@ -622,6 +631,7 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
 }
 
 export async function GET(request: Request) {
+  const limited = rateLimitOr429(request, 30); if (limited) return limited;
   try {
     const { searchParams } = new URL(request.url);
     const continent = searchParams.get('continent');

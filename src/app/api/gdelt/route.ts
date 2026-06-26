@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitOr429 } from '@/lib/ssrf-guard';
 import { stealthFetch } from '@/lib/stealthFetch';
 import { releaseResponseBody, stableHash } from '@/lib/http-utils';
 
@@ -38,7 +39,8 @@ function deterministicOffset(seed: string, spread: number, salt: number): number
   return ((hash % 10000) / 10000) * spread - spread / 2;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const limited = rateLimitOr429(request, 60); if (limited) return limited;
   try {
     // GDELT GEO 2.0 API — returns real events with actual coordinates
     const queries = [

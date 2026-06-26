@@ -41,10 +41,12 @@ test('Electron main waits for backend health and tears them down on quit', () =>
   assert.match(main, /waitForServer\(`http:\/\/127\.0\.0\.1:\$\{state\.port\}\$\{state\.healthPath\}`/);
 
   // Backends are killed alongside the server on quit/relaunch (stopEmbeddedServer runs on
-  // before-quit, SIGTERM/SIGINT, relaunch, and fatal handlers).
+  // before-quit, SIGTERM/SIGINT, relaunch, and fatal handlers). SIGTERM first, then a SIGKILL
+  // fallback after a timeout so a hung backend can't linger as a zombie.
   assert.match(main, /function stopManagedBackends\(\)/);
   assert.match(main, /stopManagedBackends\(\);/);
-  assert.match(main, /state\.child\.kill\(\)/);
+  assert.match(main, /child\.kill\('SIGTERM'\)/);
+  assert.match(main, /child\.kill\('SIGKILL'\)/);
 
   // Crash recovery: bounded restart on the same stored port keeps the injected URL valid.
   assert.match(main, /function scheduleBackendRestart\(state\)/);

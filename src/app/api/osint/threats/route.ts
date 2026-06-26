@@ -44,6 +44,7 @@ export async function GET(req: Request) {
       });
       // Public endpoint may require auth, fall back to activity feed
       if (!res.ok) {
+        await releaseResponseBody(res); // don't leak the failed subscribed-feed socket
         const actRes = await fetch('https://otx.alienvault.com/api/v1/pulses/activity?limit=10', {
           signal: safeAbortTimeout(8000),
         });
@@ -59,7 +60,11 @@ export async function GET(req: Request) {
             targeted_countries: p.targeted_countries,
             indicators_count: p.indicator_count,
           }));
+        } else {
+          await releaseResponseBody(actRes);
         }
+      } else {
+        await releaseResponseBody(res);
       }
     } catch (e) { console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e); }
 
@@ -89,6 +94,8 @@ export async function GET(req: Request) {
               country: data.country_name,
               asn: data.asn,
             };
+          } else {
+            await releaseResponseBody(res);
           }
         } catch (e) { console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e); }
       } else {
@@ -107,6 +114,8 @@ export async function GET(req: Request) {
                 expiration_date: data.whois.expiration_date,
               } : null,
             };
+          } else {
+            await releaseResponseBody(res);
           }
         } catch (e) { console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e); }
       }

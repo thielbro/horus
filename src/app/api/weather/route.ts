@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitOr429 } from '@/lib/ssrf-guard';
 import { stealthFetch } from '@/lib/stealthFetch';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
@@ -80,7 +81,8 @@ type NwsResponse = {
   features?: NwsFeature[];
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const limited = rateLimitOr429(request, 60); if (limited) return limited;
   try {
     const [eonetRes, nwsRes] = await Promise.allSettled([
       stealthFetch('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=100', {

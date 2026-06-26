@@ -54,7 +54,8 @@ export async function GET(req: Request) {
       avatar_url: userData.avatar_url,
       recent_repos: Array.isArray(reposData) ? reposData.map((r: any) => ({ name: r.name, language: r.language, updated: r.updated_at })) : []
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'GitHub lookup failed', detail: error.message }, { status: 502 });
+  } catch (error) {
+    console.error('GitHub lookup failed:', error);
+    return NextResponse.json({ error: 'GitHub lookup failed' }, { status: 502 });
   }
 }

@@ -205,6 +205,12 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
       return;
     }
 
+    // Surface tile/style/source/WebGL errors instead of failing silently to a blank map.
+    map.on('error', (e: unknown) => {
+      const err = (e as { error?: unknown })?.error ?? e;
+      console.error('[HORUS] MapLibre error:', err);
+    });
+
     const resizeObserver = new ResizeObserver(() => {
       map.resize();
     });
@@ -1356,7 +1362,7 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     setVis(['gdelt-dots'], activeLayers.global_incidents);
 
     setVis(['malware-glow','malware-dots','malware-label'], activeLayers.malware);
-    setVis(['network-mesh-atmo', 'network-mesh-glow', 'network-mesh-core'], activeLayers.internet_outages || activeLayers.malware);
+    setVis(['network-mesh-atmo', 'network-mesh-glow', 'network-mesh-core'], activeLayers.malware);
     setVis(['jam-fill','jam-label'], activeLayers.gps_jamming);
     setVis(['day-night-fill'], activeLayers.day_night);
     setVis(['fl-commercial'], activeLayers.flights);
@@ -1600,7 +1606,10 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
             tileSize: 256,
             maxzoom: 18,
           });
-          map.addLayer({ id: 'satellite-layer', type: 'raster', source: 'satellite-tiles', paint: { 'raster-opacity': 0.85 } }, 'day-night-fill');
+          // Only anchor before day-night-fill if it actually exists yet; otherwise MapLibre
+          // throws "layer does not exist". Falling back to no beforeId just appends on top.
+          const beforeId = map.getLayer('day-night-fill') ? 'day-night-fill' : undefined;
+          map.addLayer({ id: 'satellite-layer', type: 'raster', source: 'satellite-tiles', paint: { 'raster-opacity': 0.85 } }, beforeId);
         } else {
           map.setLayoutProperty('satellite-layer', 'visibility', 'visible');
         }

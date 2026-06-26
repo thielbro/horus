@@ -18,6 +18,34 @@ import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const MAX_BBOX_AREA_DEGREES = 25;
 
+// Short-lived in-memory cache of merged results, keyed by bucket+query. Panning back to a
+// recently viewed viewport returns instantly instead of re-hitting the public Overpass API.
+const OVERPASS_CACHE_TTL_MS = 60_000;
+const OVERPASS_CACHE_MAX = 200;
+const overpassCache = new Map<string, { at: number; items: object[] }>();
+
+function getOverpassCache(key: string): object[] | null {
+  const hit = overpassCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > OVERPASS_CACHE_TTL_MS) {
+    overpassCache.delete(key);
+    return null;
+  }
+  // Refresh LRU position.
+  overpassCache.delete(key);
+  overpassCache.set(key, hit);
+  return hit.items;
+}
+
+function setOverpassCache(key: string, items: object[]): void {
+  overpassCache.set(key, { at: Date.now(), items });
+  while (overpassCache.size > OVERPASS_CACHE_MAX) {
+    const oldest = overpassCache.keys().next().value;
+    if (!oldest) break;
+    overpassCache.delete(oldest);
+  }
+}
+
 // [south, west, north, east]
 export type BBox = [number, number, number, number];
 
@@ -103,6 +131,16 @@ export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Resp
       .join('\n  ');
     const query = `[out:json][timeout:30];\n(\n  ${clauses}\n);\nout body ${outCount};`;
 
+    // Serve a fresh-enough cached result for this exact viewport/query if we have one.
+    const cacheKey = `${bucket}|${query}`;
+    const cachedItems = getOverpassCache(cacheKey);
+    if (cachedItems) {
+      return NextResponse.json(
+        { [bucket]: cachedItems, total: cachedItems.length, timestamp: new Date().toISOString(), cached: true },
+        { headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=172800' } },
+      );
+    }
+
     // Plain fetch (not stealthFetch — it hard-aborts at 10s; Overpass needs longer).
     const res = await fetch(OVERPASS, {
       method: 'POST',
@@ -127,6 +165,7 @@ export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Resp
     // Curated first so that if any downstream cap (server `out body`, client
     // payload cap) truncates, it sheds OSM rows — never the curated ones.
     const items = [...extra, ...osmItems];
+    setOverpassCache(cacheKey, items);
 
     return NextResponse.json(
       { [bucket]: items, total: items.length, timestamp: new Date().toISOString() },

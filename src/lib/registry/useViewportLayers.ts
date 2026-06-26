@@ -57,9 +57,18 @@ export function useViewportLayers(
   const bounds = mapView.bounds;
   // Last bbox string fetched per layer — skip refetching an unchanged viewport.
   const lastFetched = useRef<Map<string, string>>(new Map());
+  // In-flight fetch per layer — aborted when a newer viewport supersedes it (rapid pan/zoom)
+  // so stale responses can't overwrite fresh data and sockets don't pile up.
+  const controllers = useRef<Map<string, AbortController>>(new Map());
   // Whether the always-on curated police set has been loaded for this session.
   const curatedLoaded = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Abort any still-running viewport fetches on unmount.
+  useEffect(() => {
+    const live = controllers.current;
+    return () => { live.forEach((c) => c.abort()); live.clear(); };
+  }, []);
 
   // Always-on curated police — load once the first time Police is enabled.
   useEffect(() => {
@@ -80,6 +89,8 @@ export function useViewportLayers(
       for (const { layer, route, bucket } of VIEWPORT_LAYERS) {
         if (!activeLayers[layer]) {
           lastFetched.current.delete(layer);
+          controllers.current.get(layer)?.abort();
+          controllers.current.delete(layer);
           continue;
         }
         // Zoomed too far out for a live query — leave the existing bucket as-is
@@ -87,7 +98,11 @@ export function useViewportLayers(
         if (tooLarge) continue;
         if (lastFetched.current.get(layer) === param) continue;
         lastFetched.current.set(layer, param);
-        fetchEndpoint(`${route}?bbox=${param}`, (d) => ({ [bucket]: d[bucket] ?? [] }));
+        // Supersede any in-flight fetch for this layer before starting the new one.
+        controllers.current.get(layer)?.abort();
+        const ac = new AbortController();
+        controllers.current.set(layer, ac);
+        fetchEndpoint(`${route}?bbox=${param}`, (d) => ({ [bucket]: d[bucket] ?? [] }), { signal: ac.signal });
       }
     }, DEBOUNCE_MS);
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { clampFinite, clampFiniteInt, safeAbortTimeout } from '@/lib/http-utils';
+import { clampFinite, clampFiniteInt, releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 // Sentinel-1 SAR Satellite — STAC Catalog via Element84 Earth Search + Copernicus fallback
 export async function GET(req: Request) {
@@ -42,6 +42,8 @@ export async function GET(req: Request) {
         scenes = (data.features || []).map(formatScene);
         total = data.numberMatched || scenes.length;
         source = 'element84';
+      } else {
+        await releaseResponseBody(res);
       }
     } catch (e) { console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e); }
 
@@ -65,6 +67,8 @@ export async function GET(req: Request) {
           scenes = (data.features || []).map(formatScene);
           total = data.numberMatched || scenes.length;
           source = 'element84-s2';
+        } else {
+          await releaseResponseBody(res);
         }
       } catch (e) { console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e); }
     }
@@ -88,6 +92,8 @@ export async function GET(req: Request) {
           scenes = (data.features || []).map(formatScene);
           total = data.numberMatched || scenes.length;
           source = 'copernicus';
+        } else {
+          await releaseResponseBody(fallbackRes);
         }
       } catch (e) { console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e); }
     }

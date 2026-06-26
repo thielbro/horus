@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitOr429 } from '@/lib/ssrf-guard';
 import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
@@ -30,6 +31,7 @@ const SUPPLIERS = [
 ];
 
 export async function GET(request: Request) {
+  const limited = rateLimitOr429(request, 60); if (limited) return limited;
   const dynamicSuppliers = [...SUPPLIERS].map(s => ({ ...s, risk_level: 'NORMAL', active_threats: [] as string[] }));
 
   // Fast distance approximation (km)

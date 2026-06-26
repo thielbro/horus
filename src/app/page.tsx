@@ -187,8 +187,10 @@ const DEFAULT_ACTIVE_LAYERS = {
 export default function Dashboard() {
   const [data, setData] = useState<Record<string, any>>({});
   // Live mirror of `data` for the plugin host's getData() (avoids stale closures).
+  // Synced in an effect rather than during render so a concurrent render can't observe a
+  // torn ref (getData() is called from event handlers/async, never during render).
   const dataRef = useRef<Record<string, any>>({});
-  dataRef.current = data;
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   const [backendStatus, setBackendStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [mapView, setMapView] = useState<{ zoom: number; latitude: number; longitude: number; bounds?: [number, number, number, number] }>({ zoom: 2.5, latitude: 20, longitude: 0 });
@@ -748,8 +750,9 @@ export default function Dashboard() {
     const b = mapView.bounds;
     if (!b) return { ok: false, police: 0, camera: 0, error: 'Map is still loading — try again in a moment.' };
     const s = Math.max(-90, b[0]); const w = Math.max(-180, b[1]); const n = Math.min(90, b[2]); const e = Math.min(180, b[3]);
-    // Mirror the route's area cap — give friendly guidance instead of a 400.
-    if ((n - s) * (e - w) > 4) {
+    // Mirror the route's area cap (with antimeridian wrap) — friendly guidance instead of a 400.
+    const lngWidth = w < e ? e - w : 360 - (w - e);
+    if ((n - s) * lngWidth > 4) {
       return { ok: false, police: 0, camera: 0, error: 'Area too large — zoom in to scan for Waze alerts.' };
     }
     const bbox = `${s.toFixed(4)},${w.toFixed(4)},${n.toFixed(4)},${e.toFixed(4)}`;

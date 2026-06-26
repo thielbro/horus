@@ -1,5 +1,6 @@
 
 import { NextResponse } from 'next/server';
+import { rateLimitOr429 } from '@/lib/ssrf-guard';
 import { stealthFetch } from '@/lib/stealthFetch';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
@@ -138,7 +139,8 @@ let lastFetchTime = 0;
 const CACHE_TTL = 45000; // 45 seconds cache window
 let fetchPromise: Promise<any> | null = null;
 
-export async function GET() {
+export async function GET(request: Request) {
+  const limited = rateLimitOr429(request, 60); if (limited) return limited;
   const now = Date.now();
 
   // Return cached data if within TTL

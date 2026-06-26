@@ -36,9 +36,20 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const MAX_RATE_LIMIT_ENTRIES = 10_000;
 
 function pruneRateLimitMap(now: number) {
+  // First evict every expired entry.
   for (const [ip, entry] of rateLimitMap.entries()) {
-    if (now > entry.resetAt || rateLimitMap.size > MAX_RATE_LIMIT_ENTRIES) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip);
+  }
+  // If still over the cap, evict the oldest-inserted entries until back under it.
+  // (Previously the size check sat inside the per-entry condition, which could delete
+  // far more than the excess — effectively wiping live rate-limit state.)
+  if (rateLimitMap.size > MAX_RATE_LIMIT_ENTRIES) {
+    const excess = rateLimitMap.size - MAX_RATE_LIMIT_ENTRIES;
+    let removed = 0;
+    for (const ip of rateLimitMap.keys()) {
+      if (removed >= excess) break;
       rateLimitMap.delete(ip);
+      removed++;
     }
   }
 }

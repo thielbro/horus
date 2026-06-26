@@ -33,6 +33,20 @@ test('tileBbox splits large boxes into bounded tiles', () => {
   assert.deepEqual(tiles.at(-1), [2, 2, 2.4, 2.1]);
 });
 
+test('tileBbox splits antimeridian-crossing boxes into two non-crossing halves', () => {
+  // Fiji-ish box crossing 180°: west=178, east=-178. Every tile must be west<east.
+  const tiles = tileBbox([-18, 178, -16, -178], 1);
+  assert.ok(tiles.length > 0);
+  for (const [s, w, n, e] of tiles) {
+    assert.ok(w < e, `tile west(${w}) should be < east(${e})`);
+    assert.ok(s < n);
+    assert.ok(w >= -180 && e <= 180);
+  }
+  // Coverage reaches both sides of the antimeridian.
+  assert.ok(tiles.some((t) => t[1] >= 178), 'expected a tile on the 178°E side');
+  assert.ok(tiles.some((t) => t[3] <= -178), 'expected a tile on the -178°W side');
+});
+
 test('buildWazeGeoRssUrl mirrors the Waze Live Map request shape', () => {
   const url = buildWazeGeoRssUrl([40.7, -74.03, 40.85, -73.85], 'na');
 

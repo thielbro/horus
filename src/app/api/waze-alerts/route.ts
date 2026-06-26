@@ -56,10 +56,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ alerts: [], total: 0, error: 'invalid bbox format; expected south,west,north,east' }, { status: 400 });
     }
     const [s, w, n, e] = parts;
-    if (s < -90 || n > 90 || w < -180 || e > 180 || s >= n || w >= e) {
+    // w > e is a valid antimeridian-crossing box (the scraper splits it); only w === e is degenerate.
+    if (s < -90 || n > 90 || w < -180 || e > 180 || s >= n || w === e) {
       return NextResponse.json({ alerts: [], total: 0, error: 'invalid bbox coordinates' }, { status: 400 });
     }
-    if ((n - s) * (e - w) > MAX_BBOX_AREA_DEGREES) {
+    // Longitude width accounts for the antimeridian wrap so a crossing box isn't mis-sized.
+    const lngWidth = w < e ? e - w : 360 - (w - e);
+    if ((n - s) * lngWidth > MAX_BBOX_AREA_DEGREES) {
       return NextResponse.json({ alerts: [], total: 0, error: 'bbox area too large' }, { status: 400 });
     }
 
@@ -81,7 +84,9 @@ export async function GET(request: Request) {
       { headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120' } },
     );
   } catch (error) {
+    // Surface a real scrape failure as an error status so the client shows it rather than
+    // silently treating an exception as "0 alerts found". Log the cause server-side.
     console.error('Waze alerts fetch error:', error);
-    return NextResponse.json({ alerts: [], total: 0, error: 'Failed to fetch Waze alerts' }, { status: 200 });
+    return NextResponse.json({ alerts: [], total: 0, error: 'Failed to fetch Waze alerts' }, { status: 502 });
   }
 }

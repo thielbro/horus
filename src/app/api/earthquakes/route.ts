@@ -1,5 +1,6 @@
 
 import { NextResponse } from 'next/server';
+import { rateLimitOr429 } from '@/lib/ssrf-guard';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
@@ -8,7 +9,8 @@ import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
  * No API key required
  */
 
-export async function GET() {
+export async function GET(request: Request) {
+  const limited = rateLimitOr429(request, 60); if (limited) return limited;
   try {
     const url = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson';
     const res = await fetch(url, {

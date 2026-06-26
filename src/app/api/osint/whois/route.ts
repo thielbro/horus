@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { safeFetch, isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 import { matchExact, type SanctionEntry } from '@/lib/sanctions';
-import { safeAbortTimeout } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 // WHOIS + Domain Intelligence via RDAP (free, standardized).
 // Cross-checks any registrant / org names returned by RDAP against the
@@ -55,6 +55,8 @@ export async function GET(req: Request) {
         results.registration = events.find((e: any) => e.action === 'registration')?.date;
         results.expiration = events.find((e: any) => e.action === 'expiration')?.date;
         results.last_changed = events.find((e: any) => e.action === 'last changed')?.date;
+      } else {
+        await releaseResponseBody(res);
       }
     } catch (e) { console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e); }
 

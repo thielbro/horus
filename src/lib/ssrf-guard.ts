@@ -283,3 +283,19 @@ export function getClientIp(req: Request): string {
   const forwarded = req.headers.get('x-forwarded-for');
   return forwarded?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
 }
+
+/**
+ * Convenience guard for route handlers: returns a ready-to-return 429 Response when the
+ * caller is over the limit, or null to proceed. Uses a plain Web `Response` so it stays
+ * decoupled from next/server. Usage:
+ *   const limited = rateLimitOr429(request, 60); if (limited) return limited;
+ */
+export function rateLimitOr429(req: Request, limit: number = 60, windowMs: number = 60_000): Response | null {
+  if (isRateLimited(getClientIp(req), limit, windowMs)) {
+    return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
+      status: 429,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  return null;
+}

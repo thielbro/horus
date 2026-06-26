@@ -81,7 +81,9 @@ export async function GET(req: Request) {
 
     if (weatherRes.status === 'fulfilled') {
       const data = await readJsonOrNull(weatherRes.value);
-      weather = data?.weather_events?.length || 0;
+      // /api/weather returns { events: [...] } (the feed transform renames it to
+      // weather_events client-side — the raw route does not).
+      weather = data?.events?.length || 0;
     }
 
     if (infraRes.status === 'fulfilled') {

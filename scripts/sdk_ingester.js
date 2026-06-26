@@ -176,4 +176,13 @@ async function runIngestCycle() {
 
 // Run immediately, then every 10 seconds
 runIngestCycle();
-setInterval(runIngestCycle, 10000);
+const ingestTimer = setInterval(runIngestCycle, 10000);
+
+// Clean shutdown so orchestrators (Docker/systemd) don't have to SIGKILL after a timeout.
+function shutdownIngester(signal) {
+  console.log(`[sdk_ingester] Received ${signal}, stopping ingest loop.`);
+  clearInterval(ingestTimer);
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdownIngester('SIGTERM'));
+process.on('SIGINT', () => shutdownIngester('SIGINT'));

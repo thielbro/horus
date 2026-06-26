@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitOr429 } from '@/lib/ssrf-guard';
 import WebSocket from 'ws';
 
 /**
@@ -290,7 +291,8 @@ const MAX_SHIPS_FOR_AGGREGATES = 5000;
 const MAX_SHIPS_RESPONSE = 1000;
 let maritimeResponseCache: { timestamp: number; payload: any } | null = null;
 
-export async function GET() {
+export async function GET(request: Request) {
+  const limited = rateLimitOr429(request, 30); if (limited) return limited;
   // Lazily ensure the AIS stream is connected (no-op if already live).
   connectAisStream();
 

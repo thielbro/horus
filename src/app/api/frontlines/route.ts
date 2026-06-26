@@ -1,5 +1,6 @@
 
 import { NextResponse } from 'next/server';
+import { rateLimitOr429 } from '@/lib/ssrf-guard';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
@@ -7,7 +8,8 @@ import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
  * Fetches live warfront GeoJSON from DeepState Map
  */
 
-export async function GET() {
+export async function GET(request: Request) {
+  const limited = rateLimitOr429(request, 60); if (limited) return limited;
   try {
     const url = 'https://deepstatemap.live/api/history/last';
     const res = await fetch(url, {

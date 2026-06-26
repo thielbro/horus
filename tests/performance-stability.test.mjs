@@ -130,10 +130,12 @@ test('batchFetch uses a queue instead of shared incrementing index workers', () 
   assert.match(utils, /queue\.pop\(\)/);
 });
 
-test('stealth fetch removes external abort listeners and clamps generated IPs', () => {
+test('stealth fetch removes external abort listeners', () => {
   const stealth = file('src/lib/stealthFetch.ts');
-  assert.match(stealth, /Math\.min\(255/);
+  // The non-functional "residential IP" generator (its value was never used in any header)
+  // was removed; only UA/Accept-Language randomization + abort cleanup remain.
   assert.match(stealth, /removeEventListener\('abort'/);
+  assert.doesNotMatch(stealth, /generateResidentialIP/);
 });
 
 test('AI and sweep rate limit maps have hard caps', () => {
@@ -156,9 +158,11 @@ test('CCTV fallbacks are bounded and key feed fields are stable', () => {
   const queensland = file('src/app/api/cctv/queensland.ts');
 
   assert.match(route, /MAX_CAMERAS\s*=\s*5000/);
-  // The 25s fan-out bound moved from an inline AbortSignal into settleCameraFetchers().
+  // The fan-out bound lives in a named per-batch timeout constant passed to settleCameraFetchers()
+  // (tuned to 12s so the widest region=all query stays under the route's maxDuration=60).
   assert.match(route, /settleCameraFetchers(?:<[^>]+>)?\(/);
-  assert.match(route, /\b25000\b/);
+  assert.match(route, /REGION_BATCH_TIMEOUT_MS\s*=\s*12_?000/);
+  assert.match(route, /export const maxDuration\s*=\s*60/);
   assert.match(resilient, /LAST_GOOD_TTL_MS/);
   assert.match(asfinag, /withFallback\('at-asfinag'/);
   assert.match(australia, /Number\.isFinite\(c\.lat\)/);

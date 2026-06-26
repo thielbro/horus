@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitOr429 } from '@/lib/ssrf-guard';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 export const dynamic = 'force-dynamic';
@@ -25,7 +26,8 @@ const COUNTRY_CENTROIDS: Record<string, [number, number]> = {
   VE:[-66,8],VN:[106,16],YE:[48,15.5],ZM:[28,-14],ZW:[30,-20],
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const limited = rateLimitOr429(request, 60); if (limited) return limited;
   try {
     const now = Math.floor(Date.now() / 1000);
     const from = now - 86400; // Last 24 hours

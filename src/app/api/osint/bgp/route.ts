@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
-import { safeAbortTimeout } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 // BGP/ASN Lookup via bgpview.io (free, no key)
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -62,6 +62,8 @@ export async function GET(req: Request) {
           results.ip = data.data;
           results.type = 'ip';
         }
+      } else {
+        await releaseResponseBody(res);
       }
     } else if (asnNum) {
       // ASN details
@@ -71,28 +73,40 @@ export async function GET(req: Request) {
         fetch(`https://api.bgpview.io/asn/${asnNum}/peers`, { signal: safeAbortTimeout(8000) }),
       ]);
 
-      if (asnRes.status === 'fulfilled' && asnRes.value.ok) {
-        const d = await asnRes.value.json();
-        if (d.status === 'ok') results.asn = d.data;
-      }
-      if (prefixRes.status === 'fulfilled' && prefixRes.value.ok) {
-        const d = await prefixRes.value.json();
-        if (d.status === 'ok') {
-          results.prefixes = {
-            ipv4: (d.data?.ipv4_prefixes || []).slice(0, 20),
-            ipv6: (d.data?.ipv6_prefixes || []).slice(0, 10),
-            total_v4: d.data?.ipv4_prefixes?.length || 0,
-            total_v6: d.data?.ipv6_prefixes?.length || 0,
-          };
+      if (asnRes.status === 'fulfilled') {
+        if (asnRes.value.ok) {
+          const d = await asnRes.value.json();
+          if (d.status === 'ok') results.asn = d.data;
+        } else {
+          await releaseResponseBody(asnRes.value);
         }
       }
-      if (peersRes.status === 'fulfilled' && peersRes.value.ok) {
-        const d = await peersRes.value.json();
-        if (d.status === 'ok') {
-          results.peers = {
-            upstream: (d.data?.ipv4_peers || []).slice(0, 10),
-            total: d.data?.ipv4_peers?.length || 0,
-          };
+      if (prefixRes.status === 'fulfilled') {
+        if (prefixRes.value.ok) {
+          const d = await prefixRes.value.json();
+          if (d.status === 'ok') {
+            results.prefixes = {
+              ipv4: (d.data?.ipv4_prefixes || []).slice(0, 20),
+              ipv6: (d.data?.ipv6_prefixes || []).slice(0, 10),
+              total_v4: d.data?.ipv4_prefixes?.length || 0,
+              total_v6: d.data?.ipv6_prefixes?.length || 0,
+            };
+          }
+        } else {
+          await releaseResponseBody(prefixRes.value);
+        }
+      }
+      if (peersRes.status === 'fulfilled') {
+        if (peersRes.value.ok) {
+          const d = await peersRes.value.json();
+          if (d.status === 'ok') {
+            results.peers = {
+              upstream: (d.data?.ipv4_peers || []).slice(0, 10),
+              total: d.data?.ipv4_peers?.length || 0,
+            };
+          }
+        } else {
+          await releaseResponseBody(peersRes.value);
         }
       }
       results.type = 'asn';

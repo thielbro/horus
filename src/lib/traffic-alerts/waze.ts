@@ -16,6 +16,10 @@ const WAZE_LIVE_MAP_URL = 'https://www.waze.com/live-map';
 const WAZE_LIVE_MAP_TYPES = 'alerts,traffic,users';
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_RECAPTCHA_SETTLE_MS = 5_000;
+// Guardrails: cap the raw GeoRSS payload we parse, and the total normalized alerts we
+// accumulate, so a pathological response can't OOM the parser or balloon memory.
+const MAX_GEORSS_RESPONSE_CHARS = 5_000_000;
+const MAX_NORMALIZED_ALERTS = 10_000;
 const PLAYWRIGHT_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.55 Safari/537.36';
 
 // Endpoint and raw-field handling informed by public Waze Live Map/GeoRSS projects:
@@ -35,6 +39,7 @@ export async function scrapeWazePoliceCameraAlerts(options: ScrapeWazePoliceCame
       try {
         const response = await transport.fetchGeoRss(url, { bbox: tile, env, signal: options.signal });
         for (const rawAlert of extractRawAlerts(response)) {
+          if (alerts.length >= MAX_NORMALIZED_ALERTS) break;
           const normalized = normalizeWazeAlert(rawAlert);
           if (normalized) alerts.push(normalized);
         }
@@ -239,6 +244,9 @@ function createBrowserWazeTransport(options: { browserHeadless: boolean }): Waze
         throw new WazeTransportError(`Waze browser HTTP ${result.status}`, result.status, 'browser');
       }
 
+      if (result.text.length > MAX_GEORSS_RESPONSE_CHARS) {
+        throw new WazeTransportError(`Waze browser response too large (${result.text.length} chars)`, 413, 'browser');
+      }
       return JSON.parse(result.text);
     },
     async close() {

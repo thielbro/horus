@@ -10,6 +10,29 @@ const DEFAULT_ROUTING_URL = 'https://router.project-osrm.org';
 const UA = 'HORUS-map/1.0 (route exposure; OpenStreetMap/OSRM)';
 const ROUTE_TIMEOUT_MS = 15_000;
 
+// Bounded TTL cache keyed by rounded start/end — the same A→B route requested repeatedly
+// (route preview re-renders, the intel provider re-running) shouldn't re-hit OSRM each time.
+const ROUTE_CACHE_TTL_MS = 5 * 60_000;
+const ROUTE_CACHE_MAX = 300;
+const routeCache = new Map<string, { at: number; value: RouteResult | null }>();
+
+function routeCacheGet(key: string): { value: RouteResult | null } | null {
+  const hit = routeCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > ROUTE_CACHE_TTL_MS) { routeCache.delete(key); return null; }
+  routeCache.delete(key); routeCache.set(key, hit); // refresh LRU
+  return { value: hit.value };
+}
+
+function routeCacheSet(key: string, value: RouteResult | null): void {
+  routeCache.set(key, { at: Date.now(), value });
+  while (routeCache.size > ROUTE_CACHE_MAX) {
+    const oldest = routeCache.keys().next().value;
+    if (!oldest) break;
+    routeCache.delete(oldest);
+  }
+}
+
 export interface RoutePoint {
   lat: number;
   lng: number;
@@ -42,6 +65,10 @@ function validPoint(p: RoutePoint | null | undefined): p is RoutePoint {
 export async function routeBetween(start: RoutePoint, end: RoutePoint, signal?: AbortSignal): Promise<RouteResult | null> {
   if (!validPoint(start) || !validPoint(end)) return null;
   const coords = `${start.lng},${start.lat};${end.lng},${end.lat}`;
+  // ~5 decimals ≈ 1m — enough to dedupe repeats without conflating distinct endpoints.
+  const cacheKey = `${start.lat.toFixed(5)},${start.lng.toFixed(5)};${end.lat.toFixed(5)},${end.lng.toFixed(5)}`;
+  const cached = routeCacheGet(cacheKey);
+  if (cached) return cached.value;
   const url = `${routingBaseUrl()}/route/v1/driving/${coords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
   try {
     const res = await fetch(url, {
@@ -61,12 +88,15 @@ export async function routeBetween(start: RoutePoint, end: RoutePoint, signal?: 
       .filter((c: unknown): c is [number, number] => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]))
       .map((c: [number, number]): [number, number] => [c[0], c[1]]);
     if (coordinates.length < 2) return null;
-    return {
+    const result: RouteResult = {
       coordinates,
       distance: Number.isFinite(route.distance) ? route.distance : 0,
       duration: Number.isFinite(route.duration) ? route.duration : 0,
     };
+    routeCacheSet(cacheKey, result);
+    return result;
   } catch {
+    // Don't cache transient network/abort errors — only definitive results above.
     return null;
   }
 }

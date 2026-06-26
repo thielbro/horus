@@ -117,12 +117,19 @@ export async function GET(req: Request) {
     const res = await fetch(`${SCANNER_URL}${scanConfig.endpoint}?${params.toString()}`, {
       signal: safeAbortTimeout(scanConfig.timeout),
     });
-    const data = await res.json();
+    // Read as text first so the body is always consumed (no undici socket leak) and a
+    // non-JSON error page from the scanner doesn't throw an unhandled parse error.
+    const text = await res.text();
+    let data: unknown;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      return NextResponse.json({ error: 'Scanner returned a malformed response' }, { status: 502 });
+    }
     return NextResponse.json(data, { status: res.status });
-  } catch (e: any) {
-    return NextResponse.json({
-      error: 'Scanner unreachable',
-      detail: e.message,
-    }, { status: 502 });
+  } catch (e) {
+    // Log the real cause server-side; don't leak internal URLs/stack to the client.
+    console.error('Scanner fetch failed:', e);
+    return NextResponse.json({ error: 'Scanner unreachable' }, { status: 502 });
   }
 }

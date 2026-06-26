@@ -81,9 +81,11 @@ test('coverage drives injection: Oceania intersects, Europe does not', () => {
 
 test('police route serves curated data and drops OSM inside coverage', () => {
   const route = readFileSync(routePath, 'utf8');
-  assert.match(route, /curatedPoliceWithin/);
+  // Curated stations are served via the always-on ?curated=1 bucket (curatedPoliceAll),
+  // and live OSM nodes inside curated coverage are dropped so the two buckets stay disjoint.
+  assert.match(route, /curatedPoliceAll\(\)/);
+  assert.match(route, /searchParams\.get\('curated'\)/);
   assert.match(route, /isWithinCuratedCoverage\(lat, lng\)\)\s*return null/);
-  assert.match(route, /extraRecords:\s*\(boxes\)\s*=>\s*curatedPoliceWithin\(boxes\)/);
 });
 
 test('curated registry and overpass injection are wired', () => {

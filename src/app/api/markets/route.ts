@@ -1,6 +1,7 @@
 import { safeAbortTimeout } from '@/lib/http-utils';
 
 import { NextResponse } from 'next/server';
+import { rateLimitOr429 } from '@/lib/ssrf-guard';
 
 /**
  * HORUS — Financial Markets & Commodities API
@@ -215,6 +216,7 @@ async function buildMarketsPayload(request: Request) {
 }
 
 export async function GET(request: Request) {
+  const limited = rateLimitOr429(request, 60); if (limited) return limited;
   try {
     const now = Date.now();
     if (cachedPayload && now - cachedPayload.timestamp < MARKET_CACHE_TTL_MS) {
