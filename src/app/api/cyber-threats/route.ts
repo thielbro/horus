@@ -35,7 +35,7 @@ export async function GET() {
         results.threats.push(...recent);
         results.stats.cisa_total = data.vulnerabilities?.length || 0;
       }
-    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
+    } catch (e) { console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e); }
 
     // 2. Shadowserver honeypot stats (global attack surface)
     try {

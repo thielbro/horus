@@ -1,4 +1,4 @@
-# OSIRIS Desktop Stability & Infrastructure Review
+# HORUS Desktop Stability & Infrastructure Review
 
 **Reviewer:** Desktop_Infra_Stability_Reviewer  
 **Scope:** Performance and stability only. Security issues are explicitly out of scope.  
@@ -96,7 +96,7 @@
 |----------|------|-------|--------|----------------|
 | High | `desktop/main.js:245,249` | `render-process-gone` and `crashed` handlers reload indefinitely. | Infinite reload loop on persistent renderer crashes; can hang the app and spike CPU. | Add a `rendererCrashCount` with a cap (e.g., 3 crashes) and show a fatal error page after the limit. |
 | Medium | `desktop/main.js:241` | `win.once('ready-to-show', () => win.show())` lacks a destroyed-window check. | Throws if the window is destroyed before the event fires. | Guard with `if (win && !win.isDestroyed()) win.show()`. |
-| Medium | `desktop/main.js:302-307` | `ipcMain.handle('osiris:relaunch', ...)` calls `app.relaunch()` then `app.quit()`. | On macOS, `app.quit()` can be blocked by `before-quit` handlers; if blocked, `relaunch()` has already queued a relaunch, causing a double-start. | Reverse the order: `app.quit(); app.relaunch();` or set `app.relaunch({ args: process.argv.slice(1).concat(['--relaunch']) })` and rely on `app.on('will-quit')`. |
+| Medium | `desktop/main.js:302-307` | `ipcMain.handle('horus:relaunch', ...)` calls `app.relaunch()` then `app.quit()`. | On macOS, `app.quit()` can be blocked by `before-quit` handlers; if blocked, `relaunch()` has already queued a relaunch, causing a double-start. | Reverse the order: `app.quit(); app.relaunch();` or set `app.relaunch({ args: process.argv.slice(1).concat(['--relaunch']) })` and rely on `app.on('will-quit')`. |
 | Medium | `desktop/main.js:329` | `app.on('activate', ...)` is registered inside `app.whenReady().then(...)` but uses `createWindow().catch(...)`. | If `createWindow()` throws on activate, the error is logged but the user sees no window. | Also notify the user via a dialog or native notification. |
 | Low | `desktop/main.js:345` | `app.on('before-quit', ...)` calls `stopEmbeddedServer()` but doesn't wait for the child to exit. | Electron may quit before the child is fully terminated, leaving a zombie on some platforms. | Wait for the child `exit` event before allowing quit to proceed (use `event.preventDefault()` + `app.quit()` after confirmation). |
 | Low | `desktop/main.js:350-359` | `process.on('SIGTERM')` and `process.on('SIGINT')` are not supported on Windows for packaged GUI apps. | On Windows, these signals don't fire in a packaged Electron app; cleanup is skipped. | Add `app.on('window-all-closed', ...)` cleanup or use Electron's `app.on('before-quit')` exclusively. |
@@ -122,7 +122,7 @@
 
 | Severity | File | Issue | Impact | Recommendation |
 |----------|------|-------|--------|----------------|
-| Medium | `desktop/main.js:293-298` | `ipcMain.handle('osiris:getPath', (_e, name) => ...)` passes `name` directly to `app.getPath(name)`. | `name` is untrusted renderer input. While `app.getPath` validates the name, an invalid name throws. | Validate `name` against a allowlist before calling `app.getPath`. |
+| Medium | `desktop/main.js:293-298` | `ipcMain.handle('horus:getPath', (_e, name) => ...)` passes `name` directly to `app.getPath(name)`. | `name` is untrusted renderer input. While `app.getPath` validates the name, an invalid name throws. | Validate `name` against a allowlist before calling `app.getPath`. |
 | Medium | `scripts/patch_*.js` (multiple) | All patch scripts read files without checking existence first. | `fs.readFileSync` throws `ENOENT` if the target file is missing. | Add `fs.existsSync` checks before reads. |
 | Medium | `scripts/extract_v51.js:12` | `obj.tool_calls[0].args.CodeContent` with no null/length checks. | If `tool_calls` is empty or `args` is missing, this throws. | Guard with `obj.tool_calls?.[0]?.args?.CodeContent`. |
 | Low | `next.config.ts:8` | `outputFileTracingRoot: process.cwd()` assumes the build is run from the project root. | If built from a different directory, standalone tracing includes the wrong paths. | Validate `process.cwd()` or use `__dirname` resolution. |

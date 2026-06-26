@@ -1,5 +1,5 @@
 /**
- * OSIRIS Intelligence Layer — osiris-intel
+ * HORUS Intelligence Layer — horus-intel
  *
  * Centralized ontology engine that ingests, indexes, and correlates entities
  * across open-source intelligence feeds. All other services query this one
@@ -30,7 +30,7 @@ const PORT = process.env.INTEL_PORT || 4000;
 // §1 — CONFIGURATION
 // ════════════════════════════════════════════════════
 
-const WIKIDATA_UA = 'OSIRIS-Intel/1.0 (https://osirisai.live; ontology engine)';
+const WIKIDATA_UA = 'HORUS-Intel/1.0 (https://osirisai.live; ontology engine)';
 const SDN_REFRESH_MS = 24 * 60 * 60 * 1000; // 24h
 const WIKIDATA_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h
 const WIKIDATA_CACHE_MAX = 10_000;
@@ -862,7 +862,7 @@ app.get('/resolve', async (req, res) => {
       nodes: result.nodes,
       links: result.links,
       entity: { type, id },
-      source: 'OSIRIS Intelligence Layer',
+      source: 'HORUS Intelligence Layer',
       sanctions_index_size: sanctionsIndex.entries.length,
       wikidata_cache_hits: wdCache.size,
       timestamp: new Date().toISOString(),
@@ -892,7 +892,7 @@ function shutdown(signal) {
 }
 
 async function boot() {
-  console.log('[INTEL] OSIRIS Intelligence Layer starting...');
+  console.log('[INTEL] HORUS Intelligence Layer starting...');
   console.log(`[INTEL] OSINT cache: ${OSINT_CACHE_URL || 'disabled'}`);
   console.log(`[INTEL] Yente: ${YENTE_URL || 'disabled'}`);
   await loadSanctions();

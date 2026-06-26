@@ -3,7 +3,7 @@ import { stealthFetch } from '@/lib/stealthFetch';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Severe Weather & Anomalies API
+ * HORUS — Severe Weather & Anomalies API
  * Fetches active natural events from NASA EONET and NOAA/NWS active alerts.
  * Tracks: Severe storms, volcanoes, sea ice, and U.S. active weather alerts.
  */
@@ -89,7 +89,7 @@ export async function GET() {
       fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert', {
         headers: {
           Accept: 'application/geo+json',
-          'User-Agent': 'OSIRIS Severe Weather Layer',
+          'User-Agent': 'HORUS Severe Weather Layer',
         },
         signal: safeAbortTimeout(10000),
       }),

@@ -1,6 +1,6 @@
-# OSIRIS — Second-Pass Code Review (Delta Report)
+# HORUS — Second-Pass Code Review (Delta Report)
 
-**Project:** osiris-native-desktop  
+**Project:** horus-native-desktop  
 **Stack:** Next.js 16.2.6, React 19.2.4, TypeScript 5, Electron 42.4.1, Tailwind CSS v4, MapLibre GL  
 **Review Date:** 2025-06-23  
 **Scope:** Stability, functionality, and performance. Security is out of scope.  
@@ -28,7 +28,7 @@ The delta between the first review and this one is **feature-heavy, fix-light**.
 | 4 | `cctv/route.ts` now uses `releaseResponseBody` on failed fetches, bounded merging, timeouts | `src/app/api/cctv/route.ts` | `releaseResponseBody(res)` on every `!res.ok` path; `MAX_CAMERAS = 5000`; `mergeCamerasFairly` round-robin |
 | 5 | `http-utils.ts` new `releaseResponseBody` helper added | `src/lib/http-utils.ts:1-7` | Exported for use across routes |
 | 6 | `settings/index.ts` `JSON.parse` wrapped in try/catch | `src/lib/settings/index.ts:134-138` | `try { JSON.parse(...) } catch { return {} }` |
-| 7 | `OsirisMap.tsx` `safeJsonArray` guard added | `src/components/OsirisMap.tsx:35-44` | `JSON.parse` wrapped in try/catch with array validation |
+| 7 | `HorusMap.tsx` `safeJsonArray` guard added | `src/components/HorusMap.tsx:35-44` | `JSON.parse` wrapped in try/catch with array validation |
 | 8 | `techFingerprint` in `scanner/server.js` no longer fetches unbounded headers (the original "entire HTML body" vector was partially mitigated by slicing, though `res.text()` still buffers the full response before slicing — see 🔴 Remaining #16) | `scanner/server.js:189-209` | Now reads headers first, then body with `.slice(0, 200000)` |
 
 ---
@@ -41,7 +41,7 @@ All 15 Critical issues from the first review remain unaddressed. The most impact
 |---|---|---|---|---|
 | 1 | Critical | `src/app/page.tsx:160` | `Dashboard` is still a 1,430-line God component; monolithic `data` state forces full-tree re-renders | ❌ Unchanged |
 | 2 | Critical | `src/app/page.tsx:604-623` | `fetchEndpoint` still calls `fetch()` with `cache: 'no-store'` but **no timeout** | ❌ Unchanged |
-| 3 | Critical | `src/components/OsirisMap.tsx:151` | `new maplibregl.Map()` still not wrapped in `try/catch` | ❌ Unchanged |
+| 3 | Critical | `src/components/HorusMap.tsx:151` | `new maplibregl.Map()` still not wrapped in `try/catch` | ❌ Unchanged |
 | 4 | Critical | `src/components/OsintPanel.tsx:283-339` | `ResultRow`, `StatusBadge`, `SanctionsBadge`, `SectionHeader`, `PortRow` still declared **inside** `OsintPanelInner` | ❌ Unchanged |
 | 5 | Critical | `src/lib/http-utils.ts:9-16` | `stableStringify` still has **no circular-reference guard** | ❌ Unchanged |
 | 6 | Critical | `desktop/main.js:157` | `scheduleBackendRestart` anonymous `setTimeout` still **not stored on `state`**; `stopManagedBackends` cannot clear it | ❌ Partial (isQuitting guard added, but timer still leaks) |

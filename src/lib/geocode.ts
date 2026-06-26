@@ -6,7 +6,7 @@
 import { safeAbortTimeout, safeAbortAny, releaseResponseBody } from '@/lib/http-utils';
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org';
-const UA = 'OSIRIS-map/1.0 (address intel; OpenStreetMap/Nominatim)';
+const UA = 'HORUS-map/1.0 (address intel; OpenStreetMap/Nominatim)';
 const GEOCODE_TIMEOUT_MS = 10_000;
 
 export interface GeoAddress {

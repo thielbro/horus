@@ -4,7 +4,7 @@ import { llmHealth } from '@/lib/llm';
 export const dynamic = 'force-dynamic';
 
 /**
- * OSIRIS — LLM backend health.
+ * HORUS — LLM backend health.
  * GET /api/llm/health → which rung is live: local Ollama, Gemini cloud, or deterministic.
  * Backs the Settings UX so users can tell whether their local model is wired up.
  */

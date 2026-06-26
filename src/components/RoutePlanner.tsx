@@ -1,7 +1,7 @@
 'use client';
 
-// OSIRIS — route exposure planner. Collects a start + end (address or "lat,lng") and triggers
-// an on-the-go `route` dossier via the global openOsirisDossier hook. The result (route line,
+// HORUS — route exposure planner. Collects a start + end (address or "lat,lng") and triggers
+// an on-the-go `route` dossier via the global openHorusDossier hook. The result (route line,
 // surveillance corridor, on-route cameras/ALPR/police) is rendered by DossierPanel and drawn on
 // the map by the route overlay — this component is only the entry point.
 
@@ -23,7 +23,7 @@ function RoutePlanner() {
     const a = start.trim();
     const b = end.trim();
     if (!a || !b) return;
-    const open = (window as unknown as { openOsirisDossier?: OpenDossier }).openOsirisDossier;
+    const open = (window as unknown as { openHorusDossier?: OpenDossier }).openHorusDossier;
     open?.({ kind: 'route', id: `${a}|${b}`, label: `${a} → ${b}` });
   };
 

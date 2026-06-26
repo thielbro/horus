@@ -5,7 +5,7 @@ import type { CompileEvent, EntityRef } from '@/lib/intel/types';
 export const dynamic = 'force-dynamic';
 
 /**
- * OSIRIS — on-the-go intel compiler.
+ * HORUS — on-the-go intel compiler.
  *
  * GET /api/intel/compile?kind=<kind>&id=<ref>[&lat=&lng=&label=][&stream=0][&force=1]
  *   Streams Server-Sent Events (status / graph / section / done) by default.

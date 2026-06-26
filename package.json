@@ -1,11 +1,11 @@
 {
-  "name": "osiris-native-desktop",
+  "name": "horus-native-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "OSIRIS — Open Source Intelligence & Reconnaissance Integrated System",
-  "author": "OSIRIS",
-  "homepage": "https://osirisai.live",
-  "desktopName": "osiris",
+  "description": "HORUS — counter-surveillance & on-the-go OSINT intelligence map (native desktop; built on OSIRIS)",
+  "author": "rocco",
+  "homepage": "https://github.com/rocco-crypto/horus",
+  "desktopName": "horus",
   "main": "desktop/main.js",
   "engines": {
     "node": ">=20.9.0"
@@ -17,8 +17,8 @@
     "start": "next start",
     "lint": "eslint",
     "desktop": "electron .",
-    "desktop:smoke": "cross-env OSIRIS_SMOKE=1 electron .",
-    "desktop:dev": "concurrently -k -n NEXT,ELECTRON -c green,cyan \"npm run dev\" \"wait-on http://localhost:3000 && cross-env OSIRIS_DEV=1 electron .\"",
+    "desktop:smoke": "cross-env HORUS_SMOKE=1 electron .",
+    "desktop:dev": "concurrently -k -n NEXT,ELECTRON -c green,cyan \"npm run dev\" \"wait-on http://localhost:3000 && cross-env HORUS_DEV=1 electron .\"",
     "desktop:prepare": "node desktop/prepare-standalone.js",
     "desktop:build": "npm run desktop:build:win",
     "desktop:build:win": "next build && npm run desktop:prepare && electron-builder --win",

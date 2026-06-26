@@ -52,7 +52,7 @@ export async function GET(req: Request) {
           };
         }
       }
-    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
+    } catch (e) { console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e); }
 
     // 2. AbuseIPDB-style check via ip-api proxy flag
     results.reputation = {
@@ -76,7 +76,7 @@ export async function GET(req: Request) {
       results.sanctions_match = hits.length
         ? { source: 'OFAC SDN', hits }
         : null;
-    } catch (e) { console.warn('[OSIRIS] Sanctions cross-check failed:', e instanceof Error ? e.message : e); }
+    } catch (e) { console.warn('[HORUS] Sanctions cross-check failed:', e instanceof Error ? e.message : e); }
 
     return NextResponse.json(results);
   } catch {

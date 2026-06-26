@@ -1,5 +1,5 @@
 // Map render engine — applies a registry layer's declarative styleLayers/render to a
-// live MapLibre map. Used incrementally: OsirisMap calls addRegistryLayer at the exact
+// live MapLibre map. Used incrementally: HorusMap calls addRegistryLayer at the exact
 // init position of the layer it's replacing (preserving z-order) and renderRegistryLayer
 // from that layer's existing data-sync effect (preserving its fine-grained deps).
 
@@ -22,13 +22,13 @@ function safeRegistryLayerSources(layer: RegistryLayer, layerId: string): Set<st
   try {
     return registryLayerSources(layer);
   } catch (err) {
-    console.error('[OSIRIS] Registry source resolution failed', { layerId, err });
+    console.error('[HORUS] Registry source resolution failed', { layerId, err });
     const sources = new Set<string>();
     for (const sl of layer.styleLayers ?? []) {
-      try { sources.add(getStyleLayerSource(sl)); } catch (sourceErr) { console.error('[OSIRIS] Registry style source resolution failed', { layerId, styleLayerId: sl.id, err: sourceErr }); }
+      try { sources.add(getStyleLayerSource(sl)); } catch (sourceErr) { console.error('[HORUS] Registry style source resolution failed', { layerId, styleLayerId: sl.id, err: sourceErr }); }
     }
     for (const binding of layer.render ?? []) {
-      try { sources.add(getRenderBindingSource(binding)); } catch (sourceErr) { console.error('[OSIRIS] Registry render source resolution failed', { layerId, err: sourceErr }); }
+      try { sources.add(getRenderBindingSource(binding)); } catch (sourceErr) { console.error('[HORUS] Registry render source resolution failed', { layerId, err: sourceErr }); }
     }
     return sources;
   }
@@ -37,7 +37,7 @@ function safeRegistryLayerSources(layer: RegistryLayer, layerId: string): Set<st
 /**
  * Register a layer's sources + style layers (idempotent — skips ones already present).
  * `theme` resolves any theme→paint/layout functions (ghost-recolored layers like cctv);
- * runtime theme changes are handled in-place by OsirisMap's setPaint effect, so this only
+ * runtime theme changes are handled in-place by HorusMap's setPaint effect, so this only
  * needs the initial theme to paint correctly.
  */
 export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: ThemeMode = 'core'): void {
@@ -49,7 +49,7 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
       try {
         map.addSource(source, { type: 'geojson', data: EMPTY_FC } as any);
       } catch (err) {
-        console.error('[OSIRIS] Registry source add failed', { layerId, source, err });
+        console.error('[HORUS] Registry source add failed', { layerId, source, err });
       }
     }
   }
@@ -60,7 +60,7 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
     try {
       source = getStyleLayerSource(sl);
     } catch (err) {
-      console.error('[OSIRIS] Registry style source resolution failed', { layerId, styleLayerId: sl.id, err });
+      console.error('[HORUS] Registry style source resolution failed', { layerId, styleLayerId: sl.id, err });
       continue;
     }
     const spec: Record<string, unknown> = { id: sl.id, type: sl.type, source };
@@ -74,7 +74,7 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
     try {
       map.addLayer(spec as any);
     } catch (err) {
-      console.error('[OSIRIS] Registry layer add failed', { layerId, styleLayerId: sl.id, source, err });
+      console.error('[HORUS] Registry layer add failed', { layerId, styleLayerId: sl.id, source, err });
     }
   }
 }
@@ -133,7 +133,7 @@ export function renderRegistryLayer(
       const source = getRenderBindingSource(binding);
       setGeo(source, binding.toFeatures(data, active));
     } catch (err) {
-      console.error('[OSIRIS] Registry render binding failed', { layerId, err });
+      console.error('[HORUS] Registry render binding failed', { layerId, err });
     }
   }
 }

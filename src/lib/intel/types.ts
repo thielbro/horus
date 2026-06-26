@@ -1,4 +1,4 @@
-// OSIRIS — on-the-go intel framework: the core contracts.
+// HORUS — on-the-go intel framework: the core contracts.
 //
 // A SearchProvider (Firecrawl) + an LLMClient (Ollama→Gemini→deterministic) let an
 // IntelProvider compile a Dossier for an entity at request time — no static database.

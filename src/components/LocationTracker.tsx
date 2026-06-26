@@ -1,6 +1,6 @@
 'use client';
 
-// OSIRIS — live location tracker. Opt-in GPS via navigator.geolocation.watchPosition.
+// HORUS — live location tracker. Opt-in GPS via navigator.geolocation.watchPosition.
 //
 // Privacy: never auto-prompts; the user explicitly enables it. The position stays on the
 // device — only lat/lng leave the client, and only when the user runs "intel on my location"
@@ -135,7 +135,7 @@ function LocationTracker({ onUpdate, onClear, onIntel, onFollow }: Props) {
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5">
               {status === 'active'
-                ? <span className="w-1.5 h-1.5 rounded-full bg-[var(--cyan-primary)] animate-osiris-pulse" />
+                ? <span className="w-1.5 h-1.5 rounded-full bg-[var(--cyan-primary)] animate-horus-pulse" />
                 : <Loader2 className="w-3 h-3 text-[var(--cyan-primary)] animate-spin" />}
               <span className="text-[10px] font-mono font-bold tracking-widest text-[var(--cyan-primary)]">
                 {status === 'active' ? 'LIVE POSITION' : status === 'locating' ? 'LOCATING…' : status.toUpperCase()}

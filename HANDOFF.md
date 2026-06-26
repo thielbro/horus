@@ -1,6 +1,6 @@
-# OSIRIS — Session Handoff
+# HORUS — Session Handoff
 
-`osiris-native-desktop` — Next.js 16 + Electron OSINT/counter-surveillance map app (MapLibre GL),
+`horus-native-desktop` — Next.js 16 + Electron OSINT/counter-surveillance map app (MapLibre GL),
 branch `main`. Read this top-to-bottom, then skim `git log`.
 
 > ⚠️ Read `AGENTS.md` first: this is **Next.js 16 with breaking changes** — consult
@@ -33,7 +33,7 @@ degrades gracefully when any is absent.
   radius (one Overpass call, distance-filtered) → Firecrawl occupant → Mapillary photos → LLM
   exposure synth. `src/lib/geocode.ts` (Nominatim fwd/reverse).
 - ✅ **P2b — Dossier UI + map overlay** (`c98ab97`): `DossierPanel` (SSE-streamed), headless
-  `dossier` map layer (pin / radius ring / nearby markers / sightlines), `openOsirisDossier`
+  `dossier` map layer (pin / radius ring / nearby markers / sightlines), `openHorusDossier`
   global, entry points (SearchBar "INTEL" action + Surveillance panel "ADDRESS INTEL" box).
 - ✅ **P3 — location tracking** (`02dbe12`): `LocationTracker` (opt-in GPS `watchPosition`,
   follow-me, throttled reverse-geocode, "INTEL ON MY LOCATION"), headless `user_position` layer
@@ -42,7 +42,7 @@ degrades gracefully when any is absent.
   — resolve start/end → OSRM polyline (`src/lib/routing.ts` + `/api/route` proxy) → corridor bbox
   (tiled under the 25° cap) → one Overpass call per tile → devices within 150m of the line, ordered
   start→end → LLM exposure briefing. Headless `route` map layer (cyan line + glow, corridor buffer
-  fill, kind-coloured on-route markers); `OsirisMap` `routeOverlay` prop + setGeo effect + click
+  fill, kind-coloured on-route markers); `HorusMap` `routeOverlay` prop + setGeo effect + click
   popup; `RoutePlanner` entry point in the Surveillance panel. Settings: `ROUTING_URL`. Reuses the
   `DossierPanel` (kind-agnostic) for display. **Also fixed a latent streaming bug** (see below).
 - ⏭️ **P5 — generalize** the intel side (person/company/vehicle providers; "Compile dossier" on
@@ -83,9 +83,9 @@ files). Build on those — see "Conventions" below.
   `src/app/api/llm/health/route.ts`.
 - **UI:** `src/components/DossierPanel.tsx` (SSE reader + render), `src/components/LocationTracker.tsx`.
 - **Map overlays:** headless `dossier` + `user_position` layers in `src/lib/registry/builtins.ts`;
-  `OsirisMap` takes `dossierOverlay` + `userPosition` props and `setGeo`s the sources in effects
+  `HorusMap` takes `dossierOverlay` + `userPosition` props and `setGeo`s the sources in effects
   (mirrors the `scanTargets` pattern). `geo.circlePolygon` builds the radius/accuracy rings.
-- **`page.tsx` wiring:** `window.openOsirisDossier(ref)` global + `onDossierLoaded` (flyTo +
+- **`page.tsx` wiring:** `window.openHorusDossier(ref)` global + `onDossierLoaded` (flyTo +
   overlay), state `dossierTarget/showDossier/dossierOverlay/userPosition`, `<DossierPanel>` +
   `<LocationTracker>` renders, `SearchBar onIntel`, Surveillance panel ADDRESS INTEL box.
 
@@ -102,7 +102,7 @@ Desktop defaults live in `desktop/runtime-config.js`.
 Shipped exactly per the plan. Notes for whoever builds on it:
 - **Route ref encoding:** the route provider takes `ref.id = "<start>|<end>"` where each side is
   either `"lat,lng"` or a free-text place it geocodes. `RoutePlanner` builds that id and calls the
-  `window.openOsirisDossier` global with `kind:'route'`; the kind-agnostic `DossierPanel` renders the
+  `window.openHorusDossier` global with `kind:'route'`; the kind-agnostic `DossierPanel` renders the
   result and `page.tsx`'s `onDossierLoaded` branches on `d.kind === 'route'` to build `routeOverlay`
   (line/corridor/surveil) from the dossier `geometry`. No separate route panel — reuse the dossier UI.
 - **Geometry roles:** `route` (LineString), `corridor` (Polygon ring), `surveil` (Points). The panel's
@@ -124,7 +124,7 @@ live path only escaped this because its inter-stage `await`s let the consumer dr
 Per the plan: add more `kind`s (person / company / vehicle) as `IntelProvider`s registered in
 `src/lib/intel/providers/index.ts`, following the `address`/`route` template (split `gather`
 deterministic + cited from `synthesize` one-LLM-call). Wire "Compile dossier" actions on
-`EntityGraphPanel` nodes (call `window.openOsirisDossier({ kind, id, label })`). Optionally route
+`EntityGraphPanel` nodes (call `window.openHorusDossier({ kind, id, label })`). Optionally route
 `/api/ai/*` + `AiAnalyst` through `getLLM()` so the whole app shares the local→Gemini→deterministic
 fallback chain. Reuse `ctx.resolve(type,id)` to enrich graphs from the intel sidecar.
 
@@ -134,11 +134,11 @@ fallback chain. Reuse `ctx.resolve(type,id)` to enrich graphs from the intel sid
 
 - **NEVER run raw `next dev`** — Turbopack's dev server has fork-bombed `node.exe` on Windows
   (handle exhaustion). `npm run dev` is the **guarded watchdog** (`scripts/dev-watchdog.ps1`).
-- **Agent verification this stream used the Claude_Preview MCP:** `preview_start "osiris-web"`
+- **Agent verification this stream used the Claude_Preview MCP:** `preview_start "horus-web"`
   (runs the guarded `npm run dev` on port 3000) → then `curl http://localhost:3000/...`,
   `preview_eval`, `preview_console_logs`, `preview_screenshot`. This worked cleanly all of P1–P3.
   (The standalone build path — `npm run build && npm run desktop:prepare` then
-  `preview_start "osiris-standalone"` — also exists in `.claude/launch.json`.)
+  `preview_start "horus-standalone"` — also exists in `.claude/launch.json`.)
 - **`npx tsc --noEmit`** is the fastest correctness gate — run it after every change; it's been
   clean through P3.
 - **Never mass-kill `node`** — the harness + MCP servers run on node.

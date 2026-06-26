@@ -1,6 +1,6 @@
-# OSIRIS — Final Code Review: Stability, Functionality & Performance
+# HORUS — Final Code Review: Stability, Functionality & Performance
 
-**Project:** osiris-native-desktop  
+**Project:** horus-native-desktop  
 **Stack:** Next.js 16.2.6, React 19.2.4, TypeScript 5, Electron 42.4.1, Tailwind CSS v4, MapLibre GL, Framer Motion, WebSocket  
 **Total LOC:** ~12,600 (main app, desktop, intel, scanner, plugins-sdk)  
 **Review Date:** 2025-06-23  
@@ -32,7 +32,7 @@ This is a large, ambitious OSINT platform with a well-structured feature set and
 |---|---|---|---|---|---|
 | 1 | 🔴 **Critical** | `src/app/page.tsx:160` | `Dashboard` is a 1,430-line God component with 35+ state variables. Every data update forces a full-tree re-render. | Severe jank and GC pressure as data volume grows; all memoization downstream is useless. | Decompose into `DataProvider`, `MapController`, `UIManager`, and `PluginHost`. Split `data` into independent atoms or use context selectors. |
 | 2 | 🔴 **Critical** | `src/app/page.tsx:590` | `fetchEndpoint` calls `fetch()` with `cache: 'no-store'` but **no timeout**. | Hung connections accumulate, block the HTTP/1.1 pool, and eventually freeze the tab. | Wrap every `fetch` in `Promise.race` with a 15 s `AbortController` timeout. |
-| 3 | 🔴 **Critical** | `src/components/OsirisMap.tsx:151` | `new maplibregl.Map()` is **not wrapped in try/catch**. | If WebGL is unavailable or the container is invalid, the effect throws uncaught and the React tree crashes. | Wrap map creation in `try/catch`, set an error state, and render a fallback UI. |
+| 3 | 🔴 **Critical** | `src/components/HorusMap.tsx:151` | `new maplibregl.Map()` is **not wrapped in try/catch**. | If WebGL is unavailable or the container is invalid, the effect throws uncaught and the React tree crashes. | Wrap map creation in `try/catch`, set an error state, and render a fallback UI. |
 | 4 | 🔴 **Critical** | `src/components/OsintPanel.tsx:283-339` | `ResultRow`, `StatusBadge`, `SanctionsBadge`, `SectionHeader`, and `PortRow` are declared **inside** `OsintPanelInner`. | React treats them as new component types on every parent render, causing full subtree unmount/remount. | Extract all five to top-level module components or stable `memo()` declarations. |
 | 5 | 🔴 **Critical** | `src/lib/http-utils.ts:10-25` | `stableStringify` has **no circular-reference guard**. | Feeding a cyclic object causes infinite recursion and a **stack-overflow crash**. | Track objects in a `seen` `WeakSet`; throw a clear error on cycle detection. |
 | 6 | 🔴 **Critical** | `desktop/main.js:149 / 320` | `scheduleBackendRestart` and `scheduleEmbeddedServerRestart` create anonymous `setTimeout` timers that are **never stored or cleared**. | On quit, timers can fire and spawn orphaned child processes that survive the parent exit. | Store timer refs on state object, clear them in `stopManagedBackends` / `stopEmbeddedServer`, and guard callbacks with `isQuitting`. |
@@ -73,8 +73,8 @@ The root `Dashboard` component is 1,430 lines and holds 35+ state variables. It 
 
 **Recommendation:** Wrap every `fetch` in `Promise.race` with a 15 s `AbortController` timeout.
 
-### 3. `OsirisMap.tsx` — MapLibre Init Not Guarded
-**File:** `src/components/OsirisMap.tsx:151`  
+### 3. `HorusMap.tsx` — MapLibre Init Not Guarded
+**File:** `src/components/HorusMap.tsx:151`  
 **Severity:** Critical  
 
 `new maplibregl.Map()` is not wrapped in `try/catch`. If WebGL is unavailable, the container is invalid, or MapLibre throws during initialization, the `useEffect` throws an uncaught exception. React Error Boundaries **do not catch errors inside effects**, so the entire React tree may crash.
@@ -184,10 +184,10 @@ The `settings:set` IPC handler passes any renderer payload directly to `writeSet
 ### Frontend / Map
 - **`page.tsx:163-164`** — `dataRef.current = data` mutates a ref during render. In React 19 concurrent rendering, renders can be interrupted; mutating refs during render can cause plugins to read torn or partially committed state. **Fix:** Move assignment to `useInsertionEffect` or read directly from the `data` state closure.
 - **`page.tsx:1076`** — `LayerPanel` is wrapped in `memo`, but it receives `data` which is always a new object (`setData(prev => ({ ...prev, ...d }))`). This defeats memoization, forcing `LayerPanel` to re-render on every feed update and re-calculate `getCount()` for every layer. **Fix:** Pass only derived counts, or use a context/selector pattern.
-- **`OsirisMap.tsx:144`** — Map initialization runs in `useEffect(() => {}, [])`. In React Strict Mode (enabled by default in Next.js dev), this effect runs twice. MapLibre's `map.remove()` may not fully release the WebGL context, causing the second `new maplibregl.Map()` to fail. **Fix:** Use a ref guard (`didInit`) or move the map instance to a ref.
+- **`HorusMap.tsx:144`** — Map initialization runs in `useEffect(() => {}, [])`. In React Strict Mode (enabled by default in Next.js dev), this effect runs twice. MapLibre's `map.remove()` may not fully release the WebGL context, causing the second `new maplibregl.Map()` to fail. **Fix:** Use a ref guard (`didInit`) or move the map instance to a ref.
 - **`page.tsx:617`** — `useFeedEngine` is a custom hook whose source is not in the reviewed set. It receives `fetchEndpoint` and `ifVisible` but we cannot verify it has proper cleanup, `AbortController` management, or limits on parallel fetch concurrency. **Fix:** Audit `useFeedEngine` for cleanup, concurrency limits, and leak-free polling.
-- **`OsirisMap.tsx:836`** — `map.remove()` in the cleanup function is not wrapped in `try/catch`. If MapLibre throws during cleanup, the remaining cleanup lines are skipped. **Fix:** Wrap `map.remove()` in `try/catch`.
-- **`OsirisMap.tsx:1190 / 1273`** — `map.flyTo` is called inside the IP sweep and fly-to effects with no coordinate validation or `try/catch`. If coordinates contain `NaN`, `undefined`, or out-of-bounds values, MapLibre may throw. **Fix:** Validate `lat`/`lng` with `Number.isFinite` and bounds checks before calling `map.flyTo`.
+- **`HorusMap.tsx:836`** — `map.remove()` in the cleanup function is not wrapped in `try/catch`. If MapLibre throws during cleanup, the remaining cleanup lines are skipped. **Fix:** Wrap `map.remove()` in `try/catch`.
+- **`HorusMap.tsx:1190 / 1273`** — `map.flyTo` is called inside the IP sweep and fly-to effects with no coordinate validation or `try/catch`. If coordinates contain `NaN`, `undefined`, or out-of-bounds values, MapLibre may throw. **Fix:** Validate `lat`/`lng` with `Number.isFinite` and bounds checks before calling `map.flyTo`.
 - **`page.tsx:1285`** — `SearchBar` receives `onLocate` as an inline anonymous function inside the mobile panel. This creates a new function reference on every `Dashboard` re-render, causing `SearchBar` to re-render unnecessarily. **Fix:** Wrap `onLocate` in `useCallback` at the `Dashboard` level.
 - **`page.tsx:206`** — `applyAppearance(settings.appearance)` is called in a `useEffect` with no cleanup. If `applyAppearance` injects styles, event listeners, or DOM nodes, they are never removed on theme changes. **Fix:** Ensure `applyAppearance` returns a cleanup function and invoke it in the effect return.
 
@@ -215,7 +215,7 @@ The `settings:set` IPC handler passes any renderer payload directly to `writeSet
 - **`SharePanel.tsx:41,51`** — `setTimeout(() => setCopied(false), 2000)` is created in `copyToClipboard` but never cleaned up. If the panel unmounts before the timeout fires, React will attempt a state update on an unmounted component. **Fix:** Store the timeout ID in a `useRef` and clear it in a `useEffect` cleanup.
 - **`SharePanel.tsx:58`** — The `S` keyboard shortcut checks `!e.ctrlKey && !e.metaKey` but misses `e.altKey` and `e.repeat`. Holding `S` causes rapid toggling, and `Alt+S` accidentally triggers the panel. **Fix:** Add `!e.altKey && !e.shiftKey && !e.repeat` guards.
 - **`KeyboardShortcuts.tsx:21-29`** — The global `keydown` listener does not call `e.stopPropagation()` or `e.preventDefault()`, and there is no collision-avoidance system. If another component also registers a global handler, both will fire. **Fix:** Add `e.stopPropagation()` inside the handler and consider a central keyboard manager.
-- **`SettingsPanel.tsx:90`** — `window.osiris?.relaunch?.()` is called without error handling. If the desktop API throws, the exception is unhandled. **Fix:** Wrap in `try/catch` and show an error message.
+- **`SettingsPanel.tsx:90`** — `window.horus?.relaunch?.()` is called without error handling. If the desktop API throws, the exception is unhandled. **Fix:** Wrap in `try/catch` and show an error message.
 
 ### Core Libraries / Data Layer
 - **`ssrf-guard.ts:62`** — `AbortSignal.any(...)` is used without feature detection. This API is only available in Node.js ≥ 20.0.0 / v18.17.0+ and very recent browsers. Running on older runtimes throws a `TypeError` and crashes the request. **Fix:** Add a polyfill or guard: `typeof AbortSignal.any === 'function' ? AbortSignal.any([...]) : parentSignal || timeoutController.signal`.
@@ -236,8 +236,8 @@ The `settings:set` IPC handler passes any renderer payload directly to `writeSet
 - **`intel/server.js:801`** — `isRateLimited` iterates over the entire `rateMap` (up to 10,000 entries) on every request to evict stale entries. **Fix:** Switch to a periodic cleanup interval or a time-ordered Map/queue.
 - **`desktop/main.js:444`** — `createWindow` only attaches `webContents.on('did-fail-load')` in `SMOKE` mode. In normal operation, if the embedded server or dev URL fails to load, the user is left with a blank window and no automatic recovery. **Fix:** Attach a `did-fail-load` handler that falls back to the splash page and logs the failure.
 - **`desktop/main.js:76 / 86`** — `readSettingsFile` and `writeSettingsFile` use synchronous `fs.readFileSync` / `fs.writeFileSync` inside the main process. **Fix:** Use `fs.promises.readFile` and `fs.promises.writeFile` (or atomic temp-write + rename).
-- **`docker-compose.yml:32 / 52`** — The `osiris` healthcheck hits `http://127.0.0.1:3000/api/health` and the `osiris-cache` healthcheck hits `http://127.0.0.1:8080/health`. Neither endpoint is visible in the reviewed source files. **Fix:** Verify the routes exist or align the healthcheck URLs with actual endpoints.
-- **`docker-compose.yml:73 / 149`** — The `osiris` app service does not declare `depends_on` for `osiris-intel` or `scanner`. **Fix:** Add `depends_on` with `condition: service_healthy` where the app truly requires the backend.
+- **`docker-compose.yml:32 / 52`** — The `horus` healthcheck hits `http://127.0.0.1:3000/api/health` and the `horus-cache` healthcheck hits `http://127.0.0.1:8080/health`. Neither endpoint is visible in the reviewed source files. **Fix:** Verify the routes exist or align the healthcheck URLs with actual endpoints.
+- **`docker-compose.yml:73 / 149`** — The `horus` app service does not declare `depends_on` for `horus-intel` or `scanner`. **Fix:** Add `depends_on` with `condition: service_healthy` where the app truly requires the backend.
 - **`scanner/server.js:372`** — No rate limiter or global concurrency cap exists on any scanner endpoint. **Fix:** Add a per-IP rate limiter (similar to `intel/server.js`) and a global semaphore for concurrent `portScan` jobs.
 - **`scanner/server.js:388`** — Each `/scan/quick` request launches `PORT_SCAN_CONCURRENCY = 100` sockets, but there is no global cap on total sockets across concurrent requests. 10 simultaneous requests = 1,000 open sockets, risking file-descriptor exhaustion. **Fix:** Add a global semaphore for `probePort` sockets.
 - **`intel/server.js:839 / 840`** — `req.query.type` and `req.query.id` are accessed with `.toLowerCase()` and `.trim()` without checking if Express returned an array (duplicate query params). **Fix:** Coerce to string first: `String(req.query.id || '').trim()`.
@@ -263,10 +263,10 @@ The `settings:set` IPC handler passes any renderer payload directly to `writeSet
 - **`CameraViewer.tsx:22-28`** — Clock `setInterval` (1s) runs regardless of whether a camera is active. The component returns `null` when `!camera`, but the effect is already running. **Fix:** Move clock effect inside the main conditional or add `if (!camera) return;` early.
 - **`SearchBar.tsx:62`** — Nominatim `fetch` has no timeout. **Fix:** Add an `AbortController` with a 5 s timeout.
 - **`page.tsx:775 / 1250`** — `AnimatePresence` in the mobile drawer and slideout panels is missing `mode="wait"`. Rapid toggling can cause overlapping animations. **Fix:** Add `mode="wait"` where children are mutually exclusive.
-- **`OsirisMap.tsx:1285`** — `(map as any).setProjection` bypasses TypeScript safety. **Fix:** Use proper MapLibre typings or check for method existence.
-- **`OsirisMap.tsx:1307`** — Satellite style switch adds `satellite-tiles` source and `satellite-layer` once, but never removes them when switching back to dark mode. **Fix:** Remove the source and layer when switching back, or document the overhead.
+- **`HorusMap.tsx:1285`** — `(map as any).setProjection` bypasses TypeScript safety. **Fix:** Use proper MapLibre typings or check for method existence.
+- **`HorusMap.tsx:1307`** — Satellite style switch adds `satellite-tiles` source and `satellite-layer` once, but never removes them when switching back to dark mode. **Fix:** Remove the source and layer when switching back, or document the overhead.
 - **`GlobalStatusBar.tsx:23`** — The fetch interval has no retry logic on failure. If the backend is temporarily down, the component waits 30 minutes before retrying. **Fix:** Add retry with exponential backoff (e.g., retry 3 times with 5 s, 15 s, 45 s delays).
-- **`page.tsx:571`** — `(window as any).openOsirisIntel = ...` is a mutable global assignment. If the component mounts/unmounts rapidly, the window property may be deleted while a callback is still trying to use it. **Fix:** Use a ref-stable callback registry instead of `window` globals.
+- **`page.tsx:571`** — `(window as any).openHorusIntel = ...` is a mutable global assignment. If the component mounts/unmounts rapidly, the window property may be deleted while a callback is still trying to use it. **Fix:** Use a ref-stable callback registry instead of `window` globals.
 - **`page.tsx:1182`** — `iframe` for live feeds has no `onLoad` or `onError` handlers. **Fix:** Add loading and error states.
 - **`page.tsx:162`** — Extensive use of `any` across the codebase (`data`, `globalStats`, `regionDossier`, `spaceWeather`, `sweepData`, etc.). **Fix:** Gradually replace `any` with domain-specific interfaces.
 - **`LayerPanel.tsx:13`** — `data` and `activeLayers` props are typed as `any`. **Fix:** Define strict interfaces.
@@ -327,7 +327,7 @@ The `settings:set` IPC handler passes any renderer payload directly to `writeSet
 - **`MarketsPanel.tsx:22`** — `Ticker` returns `null` if `!d`, but if `d` is an empty object, it renders with empty/undefined values. **Fix:** Validate required fields (`price`, `change_percent`) explicitly.
 - **`EntityGraphPanel.tsx:387-391`** — `expandedIds` check uses `selectedNode.id.includes(':') ? ...` to derive `rawId`. If the ID format changes, the logic falls back to the full ID. **Fix:** Use a stable helper for ID parsing.
 - **`OsintPanel.tsx:274-277`** — `lookupAbortRef` and `cveAbortRef` are only aborted on unmount. If the panel is mounted/unmounted frequently, requests are aborted after the user has already left the view. **Fix:** Ensure parent also gates lookups when the panel is hidden.
-- **`AiAnalyst.tsx:209-215`** — `localStorage.getItem('osiris-gemini-key')` has no `try/catch`. In sandboxed environments this can throw. **Fix:** Wrap in `try/catch`.
+- **`AiAnalyst.tsx:209-215`** — `localStorage.getItem('horus-gemini-key')` has no `try/catch`. In sandboxed environments this can throw. **Fix:** Wrap in `try/catch`.
 
 ---
 
@@ -345,7 +345,7 @@ The `settings:set` IPC handler passes any renderer payload directly to `writeSet
 - `AiAnalyst.tsx:190-194` — Chat messages are capped at `MAX_MESSAGES = 100` with a FIFO slice.
 
 **Resource Cleanup & Abort Hygiene:**
-- `OsirisMap.tsx:836-842` — Explicit cleanup for `ResizeObserver`, `Popup`, and `Map` on unmount.
+- `HorusMap.tsx:836-842` — Explicit cleanup for `ResizeObserver`, `Popup`, and `Map` on unmount.
 - `CameraViewer.tsx:49-67` — HLS cleanup is thorough: destroys HLS instance, removes event listeners, pauses video, removes `src`, and calls `load()`.
 - `CameraViewer.tsx:118-120` — JPG auto-refresh interval is correctly scoped and cleaned up.
 - `EntityGraphPanel.tsx:72-85` — `ResizeObserver` is properly disconnected in the effect cleanup.
@@ -360,7 +360,7 @@ The `settings:set` IPC handler passes any renderer payload directly to `writeSet
 - `page.tsx:356-373` — URL state sync is debounced (1500ms), preventing excessive `history.replaceState` calls.
 - `GlobalStatusBar.tsx:29` — Uses `Promise.allSettled` for concurrent fetches, ensuring one failed request doesn't block the other.
 - `SearchBar.tsx:58-76` — Uses `AbortController` + `setTimeout` debounce for geocoding, preventing race conditions and redundant requests.
-- `SettingsPanel.tsx` — Correctly avoids a hydration mismatch by reading `window.osiris` inside `useEffect` rather than during render.
+- `SettingsPanel.tsx` — Correctly avoids a hydration mismatch by reading `window.horus` inside `useEffect` rather than during render.
 - `WorkspacesSettings.tsx` — Implements flash auto-dismiss with proper `clearTimeout` cleanup in the effect teardown.
 - `WorkspacesSettings.tsx` — Has case-insensitive name collision detection, protecting data integrity.
 - `SharePanel.tsx` and `KeyboardShortcuts.tsx` — Both register and properly clean up global `keydown` listeners.
@@ -399,7 +399,7 @@ The `settings:set` IPC handler passes any renderer payload directly to `writeSet
 5. **Store and clear restart timers in Electron** — `desktop/main.js:149 / 320`  
    Prevent orphaned child processes on app quit by storing timer refs and clearing them in stop handlers.
 
-6. **Harden MapLibre lifecycle** — `src/components/OsirisMap.tsx:151 / 836`  
+6. **Harden MapLibre lifecycle** — `src/components/HorusMap.tsx:151 / 836`  
    Wrap `new maplibregl.Map()` and `map.remove()` in `try/catch`, and validate coordinates with `Number.isFinite` before `map.flyTo`.
 
 7. **Add response byte limits to scanner** — `scanner/server.js:256`  

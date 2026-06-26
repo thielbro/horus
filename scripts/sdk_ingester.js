@@ -38,7 +38,7 @@ async function runIngestCycle() {
     return;
   }
   running = true;
-  console.log(`[${new Date().toISOString()}] Polling OSIRIS feeds for SDK Ingestion...`);
+  console.log(`[${new Date().toISOString()}] Polling HORUS feeds for SDK Ingestion...`);
   try {
     const [flightsRes, maritimeRes] = await Promise.all([
       fetchJson(`${API_BASE}/flights`),
@@ -154,9 +154,9 @@ async function runIngestCycle() {
     }
 
     if (entities.length > 0) {
-      console.log(`Pushing ${entities.length} entities to OSIRIS SDK...`);
+      console.log(`Pushing ${entities.length} entities to HORUS SDK...`);
       const payload = {
-        source: 'OSIRIS_INGESTER',
+        source: 'HORUS_INGESTER',
         apiKey: API_KEY,
         entities: entities
       };

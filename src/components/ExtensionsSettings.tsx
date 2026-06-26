@@ -43,7 +43,7 @@ function ExtensionBundleSection() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `osiris-extensions-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `horus-extensions-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -239,7 +239,7 @@ export default {
   version: '1.0.0',
   sdk: 1,
   activate(ctx) {
-    const point = window.OsirisSDK?.point ?? ((lng, lat, props = {}) => ({
+    const point = window.HorusSDK?.point ?? ((lng, lat, props = {}) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [lng, lat] },
       properties: props,

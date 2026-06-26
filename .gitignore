@@ -34,7 +34,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Backends — commit source, never deps (key comes from OSIRIS_KEY env)
+# Backends — commit source, never deps (key comes from HORUS_KEY env)
 intel/node_modules/
 scanner/node_modules/
 scanner/.env

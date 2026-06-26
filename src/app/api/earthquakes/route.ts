@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Earthquake Data API
+ * HORUS — Earthquake Data API
  * Fetches real-time seismic events from USGS (last 24h, M2.5+)
  * No API key required
  */

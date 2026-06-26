@@ -1,4 +1,4 @@
-# OSIRIS Code Review — Stability & Performance
+# HORUS Code Review — Stability & Performance
 
 > **Scope:** Stability and performance only. Security is explicitly out of scope.  
 > **Codebase:** 134 source files, ~21,000 lines. Next.js 16.2.6 + React 19 + Electron 42.4.1.  
@@ -116,8 +116,8 @@ This review identified **~130 findings** across the codebase. **8 Critical** and
 - **Fix:** Extract all helpers to module-level components or `useMemo` factories.
 - **Effort:** Medium
 
-### H3. `OsirisMap.tsx` — JSON.parse Without Try/Catch
-- **File:** `src/components/OsirisMap.tsx` (lines 737, 761–763)
+### H3. `HorusMap.tsx` — JSON.parse Without Try/Catch
+- **File:** `src/components/HorusMap.tsx` (lines 737, 761–763)
 - **Issue:** `JSON.parse(p.active_threats)`, `JSON.parse(p.ports)`, `JSON.parse(p.vulns)`, `JSON.parse(p.hostnames)` in popup handlers. Malformed GeoJSON properties crash the popup and map interaction.
 - **Fix:** Wrap all `JSON.parse` in `try/catch` with default empty arrays.
 - **Effort:** Low
@@ -230,14 +230,14 @@ This review identified **~130 findings** across the codebase. **8 Critical** and
 - **Fix:** Store `AbortController` in a ref; abort previous before starting new expansion.
 - **Effort:** Low
 
-### H22. `OsirisMap.tsx` — Malware Mesh Unbounded Growth
-- **File:** `src/components/OsirisMap.tsx:1085`
+### H22. `HorusMap.tsx` — Malware Mesh Unbounded Growth
+- **File:** `src/components/HorusMap.tsx:1085`
 - **Issue:** `nodes.length * 2` connections with no cap. If `malware_threats` grows large (e.g., 5K+), generates 10K+ line features and chokes the GPU.
 - **Fix:** Cap `nodes.length` before generating links (e.g., `Math.min(nodes.length, MAX_MESH_NODES)`).
 - **Effort:** Low
 
-### H23. `OsirisMap.tsx` — Map Load Handler No Try/Catch
-- **File:** `src/components/OsirisMap.tsx:137`
+### H23. `HorusMap.tsx` — Map Load Handler No Try/Catch
+- **File:** `src/components/HorusMap.tsx:137`
 - **Issue:** The `map.on('load', ...)` callback has no `try/catch` around the massive layer/source initialization block. If any single `addLayer` throws, the entire map load fails and the app hangs.
 - **Fix:** Wrap the entire `load` callback body in `try/catch` and surface a fallback UI.
 - **Effort:** Low
@@ -260,14 +260,14 @@ This review identified **~130 findings** across the codebase. **8 Critical** and
 
 | # | File | Line | Issue | Fix |
 |---|------|------|-------|-----|
-| M1 | `src/components/OsirisMap.tsx` | 1264 | `activeLayers.conflict_zones !== false` defaults to visible if key missing | Use `=== true` for explicit opt-in |
-| M2 | `src/components/OsirisMap.tsx` | 1272 | Sweep layers always visible even when `sweepData` is empty | Gate visibility on `sweepData?.devices?.length > 0` |
+| M1 | `src/components/HorusMap.tsx` | 1264 | `activeLayers.conflict_zones !== false` defaults to visible if key missing | Use `=== true` for explicit opt-in |
+| M2 | `src/components/HorusMap.tsx` | 1272 | Sweep layers always visible even when `sweepData` is empty | Gate visibility on `sweepData?.devices?.length > 0` |
 | M3 | `src/components/CameraViewer.tsx` | 14 | Not memoized; re-renders on every parent tick | Wrap in `React.memo` |
 | M4 | `src/components/LiveAlerts.tsx` | 56 | Not memoized; re-renders on every `data` change | Wrap in `React.memo` |
 | M5 | `src/components/AiAnalyst.tsx` | 229 | `getHeaders` reads `localStorage` on every invocation | Memoize the key once on mount |
-| M6 | `src/components/OsirisMap.tsx` | 54 | `canvas.getContext('2d')!` non-null assertion | Check for null and return early |
-| M7 | `src/components/OsirisMap.tsx` | 477 | `e.features[0].properties as any` | Use strict typing with optional chaining |
-| M8 | `src/components/SettingsPanel.tsx` | 85 | `(window as any).osiris?.relaunch?.()` no error handling | Wrap in try/catch and show toast |
+| M6 | `src/components/HorusMap.tsx` | 54 | `canvas.getContext('2d')!` non-null assertion | Check for null and return early |
+| M7 | `src/components/HorusMap.tsx` | 477 | `e.features[0].properties as any` | Use strict typing with optional chaining |
+| M8 | `src/components/SettingsPanel.tsx` | 85 | `(window as any).horus?.relaunch?.()` no error handling | Wrap in try/catch and show toast |
 | M9 | `src/app/api/air-quality/route.ts` | 27 | `.json()` called before checking `r.ok` | Check `r.ok` before `.json()` |
 | M10 | `src/app/api/resilient.ts` | 47 | Retry backoff is linear, not exponential | Use `Math.min(200 * 2^attempt, 5000)` |
 | M11 | `src/app/api/resilient.ts` | 66 | `withFallback` catches errors silently and prunes cache | Move prune to after successful update |
@@ -288,7 +288,7 @@ This review identified **~130 findings** across the codebase. **8 Critical** and
 | # | File | Line | Issue | Fix |
 |---|------|------|-------|-----|
 | L1 | `src/components/SharePanel.tsx` | 44 | `document.execCommand('copy')` deprecated | Use `navigator.clipboard.writeText` exclusively |
-| L2 | `src/components/OsirisMap.tsx` | 1218 | Hardcoded future-dated URL | Review and update URLs periodically |
+| L2 | `src/components/HorusMap.tsx` | 1218 | Hardcoded future-dated URL | Review and update URLs periodically |
 | L3 | `src/components/OsintPanel.tsx` | 183 | `case 'crypto':` is dead code (not in `TABS`) | Remove unused case |
 | L4 | `src/components/LiveAlerts.tsx` | 101 | `filter === 'all'` excludes live feeds | Rename or include feeds |
 | L5 | `src/app/api/cctv/route.ts` | 86 | `fetchCaltransCameras` silent catch for each district | Log district failures with `console.warn` |
@@ -349,7 +349,7 @@ This review identified **~130 findings** across the codebase. **8 Critical** and
 | 26 | Add `SIGTERM`/`SIGINT` graceful shutdown | `desktop/main.js`, `intel/server.js`, `scanner/server.js` | Low |
 | 27 | Fix `stealthFetch` dead IP generation | `src/lib/stealthFetch.ts` | Low |
 | 28 | Fix `PolybolosClient` random fallback IDs | `src/lib/sdk/PolybolosClient.ts` | Low |
-| 29 | Add JSON.parse try/catch in MapLibre popups | `src/components/OsirisMap.tsx` | Low |
+| 29 | Add JSON.parse try/catch in MapLibre popups | `src/components/HorusMap.tsx` | Low |
 | 30 | Add WebSocket cleanup on shutdown | `src/app/api/maritime/route.ts` | Low |
 
 ---

@@ -3,7 +3,7 @@ import { getClientIp, isRateLimited } from '@/lib/ssrf-guard';
 import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Surveillance Camera Locations (OpenStreetMap)
+ * HORUS — Surveillance Camera Locations (OpenStreetMap)
  *
  * Counter-surveillance intel layer: maps the LOCATIONS of fixed surveillance
  * cameras (`man_made=surveillance`) and speed/enforcement cameras
@@ -90,7 +90,7 @@ export async function GET(request: Request) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'OSIRIS-map/1.0 (surveillance-location layer; OpenStreetMap data)',
+        'User-Agent': 'HORUS-map/1.0 (surveillance-location layer; OpenStreetMap data)',
       },
       body: 'data=' + encodeURIComponent(query),
       signal: safeAbortTimeout(30000),

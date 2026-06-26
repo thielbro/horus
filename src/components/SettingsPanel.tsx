@@ -18,7 +18,7 @@ interface SettingsPanelProps {
 const KEY_FIELDS: Array<{ key: keyof ApiKeys; label: string; type: 'text' | 'password'; hint?: string }> = [
   { key: 'INTEL_URL', label: 'Intel URL', type: 'text', hint: 'entity graph backend base URL' },
   { key: 'SCANNER_URL', label: 'Scanner URL', type: 'text', hint: 'RECON backend base URL' },
-  { key: 'SCANNER_KEY', label: 'Scanner Key', type: 'password', hint: 'must match backend OSIRIS_KEY' },
+  { key: 'SCANNER_KEY', label: 'Scanner Key', type: 'password', hint: 'must match backend HORUS_KEY' },
   { key: 'FIRMS_API_KEY', label: 'NASA FIRMS Key', type: 'password' },
   { key: 'OPENSKY_CLIENT_ID', label: 'OpenSky Client ID', type: 'text' },
   { key: 'OPENSKY_CLIENT_SECRET', label: 'OpenSky Secret', type: 'password' },
@@ -99,7 +99,7 @@ function SettingsPanel({ open, onClose, getWorkspaceSnapshot, onApplyWorkspace }
   const previousOpen = usePrevious(open, false);
 
   useEffect(() => {
-    setIsDesktop(typeof window !== 'undefined' && !!(window as unknown as { osiris?: { isDesktop?: boolean } }).osiris?.isDesktop);
+    setIsDesktop(typeof window !== 'undefined' && !!(window as unknown as { horus?: { isDesktop?: boolean } }).horus?.isDesktop);
   }, []);
 
   useEffect(() => {
@@ -130,7 +130,7 @@ function SettingsPanel({ open, onClose, getWorkspaceSnapshot, onApplyWorkspace }
     }
     setSaved(true);
     if (restart) {
-      (window as unknown as { osiris?: { relaunch?: () => void } }).osiris?.relaunch?.();
+      (window as unknown as { horus?: { relaunch?: () => void } }).horus?.relaunch?.();
     }
   }, [keys, update]);
 

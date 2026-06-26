@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Military-Grade Intelligence API
+ * HORUS — Military-Grade Intelligence API
  * Fetches Telegram OSINT feeds directly, with a failsafe fallback 
  * to traditional intelligence sources if Telegram blocks the IP.
  */

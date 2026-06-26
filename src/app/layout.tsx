@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 const SITE_URL = "https://osirisai.live";
-const SITE_NAME = "OSIRIS";
-const SITE_TITLE = "OSIRIS — Open Source Intelligence Platform | Live Flight Tracking, CCTV, OSINT Tools & More";
+const SITE_NAME = "HORUS";
+const SITE_TITLE = "HORUS — Open Source Intelligence Platform | Live Flight Tracking, CCTV, OSINT Tools & More";
 const SITE_DESCRIPTION = "The open-source Palantir alternative. Track 10,000+ aircraft, 2,000 satellites, and worldwide CCTV cameras in real-time on a 3D globe. Run Nmap scans, DNS lookups, WHOIS queries, SSL cert analysis & threat intelligence — all from your browser. 20+ live data feeds including earthquakes, wildfires, nuclear facilities, cyber threats, and global conflicts. Free & open source.";
 
 export const viewport: Viewport = {
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: SITE_TITLE,
-    template: "%s | OSIRIS Intelligence",
+    template: "%s | HORUS Intelligence",
   },
   description: SITE_DESCRIPTION,
   keywords: [
@@ -51,11 +51,11 @@ export const metadata: Metadata = {
     "defense stocks", "commodities tracker",
     
     // Brand
-    "osiris", "osirisai", "osirisai.live",
+    "horus", "osirisai", "osirisai.live",
   ],
-  authors: [{ name: "Osiris Project", url: SITE_URL }],
-  creator: "Osiris Project",
-  publisher: "Osiris Project",
+  authors: [{ name: "Horus Project", url: SITE_URL }],
+  creator: "Horus Project",
+  publisher: "Horus Project",
   robots: {
     index: true,
     follow: true,
@@ -90,7 +90,7 @@ export const metadata: Metadata = {
     canonical: SITE_URL,
   },
   openGraph: {
-    title: "OSIRIS — The Open-Source Palantir Alternative | Live Flights, CCTV, Satellites & OSINT Tools",
+    title: "HORUS — The Open-Source Palantir Alternative | Live Flights, CCTV, Satellites & OSINT Tools",
     description: "Track 10K+ aircraft, 2K satellites & worldwide CCTV on a 3D globe. Run Nmap, DNS, WHOIS & threat intel scans from your browser. 20+ live intelligence feeds. Free. Open source.",
     type: "website",
     siteName: SITE_NAME,
@@ -101,14 +101,14 @@ export const metadata: Metadata = {
         url: `${SITE_URL}/og-image.png`,
         width: 1200,
         height: 630,
-        alt: "OSIRIS — Open Source Intelligence Platform with Live Tracking & OSINT Tools",
+        alt: "HORUS — Open Source Intelligence Platform with Live Tracking & OSINT Tools",
         type: "image/png",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "🛰️ OSIRIS — Open Source Palantir Alternative | Live Tracking + OSINT Tools",
+    title: "🛰️ HORUS — Open Source Palantir Alternative | Live Tracking + OSINT Tools",
     description: "Track 10K+ flights, satellites & CCTV worldwide. Run Nmap, DNS, WHOIS scans from your browser. 20+ live intel feeds. Free & open source.",
     creator: "@simplifaisoul",
     site: "@simplifaisoul",
@@ -119,7 +119,7 @@ export const metadata: Metadata = {
   other: {
     "apple-mobile-web-app-capable": "yes",
     "apple-mobile-web-app-status-bar-style": "black-translucent",
-    "apple-mobile-web-app-title": "OSIRIS",
+    "apple-mobile-web-app-title": "HORUS",
     "mobile-web-app-capable": "yes",
     "msapplication-TileColor": "#06060C",
     "msapplication-config": "none",
@@ -130,8 +130,8 @@ export const metadata: Metadata = {
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "OSIRIS — OSINT Toolkit & Intelligence Platform",
-  alternateName: ["OSIRIS", "OsirisAI", "Osiris OSINT"],
+  name: "HORUS — OSINT Toolkit & Intelligence Platform",
+  alternateName: ["HORUS", "HorusAI", "Horus OSINT"],
   url: SITE_URL,
   description: SITE_DESCRIPTION,
   applicationCategory: "SecurityApplication",
@@ -168,7 +168,7 @@ const jsonLd = {
   screenshot: `${SITE_URL}/og-image.png`,
   author: {
     "@type": "Organization",
-    name: "Osiris Project",
+    name: "Horus Project",
     url: SITE_URL,
   },
 };
@@ -199,7 +199,7 @@ export default function RootLayout({
 
       </head>
       <body className="antialiased">
-        <ErrorBoundary name="OSIRIS Core">
+        <ErrorBoundary name="HORUS Core">
           {children}
         </ErrorBoundary>
       </body>

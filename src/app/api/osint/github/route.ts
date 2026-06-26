@@ -14,11 +14,11 @@ export async function GET(req: Request) {
   try {
     const [userResult, reposResult] = await Promise.allSettled([
       fetch(`https://api.github.com/users/${encodeURIComponent(username)}`, {
-        headers: { 'User-Agent': 'OSIRIS-Recon' },
+        headers: { 'User-Agent': 'HORUS-Recon' },
         signal: safeAbortTimeout(8000),
       }),
       fetch(`https://api.github.com/users/${encodeURIComponent(username)}/repos?sort=updated&per_page=5`, {
-        headers: { 'User-Agent': 'OSIRIS-Recon' },
+        headers: { 'User-Agent': 'HORUS-Recon' },
         signal: safeAbortTimeout(8000),
       })
     ]);

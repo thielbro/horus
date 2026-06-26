@@ -74,7 +74,7 @@ async function fetchTile(bbox: BBox, signal?: AbortSignal): Promise<OverpassNode
     `);\nout body 2000;`;
   const res = await fetch(OVERPASS, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'OSIRIS-map/1.0 (route exposure; OpenStreetMap data)' },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'HORUS-map/1.0 (route exposure; OpenStreetMap data)' },
     body: 'data=' + encodeURIComponent(query),
     signal: safeAbortAny([signal, safeAbortTimeout(OVERPASS_TIMEOUT_MS)]),
   });
@@ -289,7 +289,7 @@ export const routeProvider: IntelProvider = {
         {
           role: 'system',
           content:
-            'You are OSIRIS, an OSINT counter-surveillance analyst. You are given structured public facts about a driving ROUTE (never a person). ' +
+            'You are HORUS, an OSINT counter-surveillance analyst. You are given structured public facts about a driving ROUTE (never a person). ' +
             'Write a concise markdown SURVEILLANCE EXPOSURE briefing (4-7 sentences): the overall camera/ALPR/police load along the route, where the densest cluster is, and any ALPR chokepoints a traveller would pass. ' +
             'Use ONLY the provided facts. Never invent devices, locations, or counts. Frame this as public-infrastructure awareness ("what can observe this route").',
         },

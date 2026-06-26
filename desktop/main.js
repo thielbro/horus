@@ -1,10 +1,10 @@
-// OSIRIS Desktop — Electron main process.
+// HORUS Desktop — Electron main process.
 //
 // Three run modes, resolved from env:
-//   OSIRIS_URL=<url>   → load that URL (used by `desktop:dev` and embed smoke tests)
-//   OSIRIS_DEV=1       → load http://localhost:3000 (a running `next dev`)
+//   HORUS_URL=<url>   → load that URL (used by `desktop:dev` and embed smoke tests)
+//   HORUS_DEV=1       → load http://localhost:3000 (a running `next dev`)
 //   (packaged)         → fork the embedded Next standalone server, then load it
-//   OSIRIS_SMOKE=1     → after first load, log OSIRIS_SMOKE_OK and quit (headless check)
+//   HORUS_SMOKE=1     → after first load, log HORUS_SMOKE_OK and quit (headless check)
 //
 // The embedded-server path mirrors the Dockerfile: run `.next/standalone/server.js`
 // with PORT + HOSTNAME. Electron's main process is a Node runtime, so we fork that
@@ -31,7 +31,7 @@ let rendererReloadAttempts = 0;
 let rendererReloadTimer = null;
 let lastRendererCrashAt = 0;
 
-const SMOKE = !!process.env.OSIRIS_SMOKE;
+const SMOKE = !!process.env.HORUS_SMOKE;
 const MAX_SERVER_RESTARTS = 3;
 const SERVER_RESTART_BASE_MS = 1000;
 const SERVER_RESTART_MAX_MS = 10000;
@@ -52,9 +52,9 @@ const RENDERER_RELOAD_MAX_MS = 10000;
 const RENDERER_RELOAD_RESET_MS = 60 * 1000;
 
 // Smoke outcome marker — a packaged Windows GUI exe doesn't attach stdout, so the
-// verifier reads this file (path via OSIRIS_SMOKE_OUT) and/or the process exit code.
+// verifier reads this file (path via HORUS_SMOKE_OUT) and/or the process exit code.
 function writeSmoke(tag) {
-  const out = process.env.OSIRIS_SMOKE_OUT;
+  const out = process.env.HORUS_SMOKE_OUT;
   if (out) {
     try {
       fs.writeFileSync(out, tag);
@@ -102,7 +102,7 @@ function writeSettingsFile(full) {
     if (tmpPath) {
       try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
     }
-    console.error('[osiris] settings write failed:', e.message);
+    console.error('[horus] settings write failed:', e.message);
     return false;
   }
 }
@@ -165,7 +165,7 @@ function armBackendStableReset(state) {
 function scheduleBackendRestart(state) {
   if (isQuitting) return;
   if (state.attempts >= MAX_BACKEND_RESTARTS) {
-    console.error(`[osiris] backend ${state.id} restart limit reached`);
+    console.error(`[horus] backend ${state.id} restart limit reached`);
     return;
   }
   const delay = Math.min(BACKEND_RESTART_BASE_MS * 2 ** state.attempts, BACKEND_RESTART_MAX_MS);
@@ -174,7 +174,7 @@ function scheduleBackendRestart(state) {
   state.restartTimer = setTimeout(() => {
     state.restartTimer = null;
     forkBackend(state).catch((err) => {
-      console.error(`[osiris] backend ${state.id} restart failed:`, err.message);
+      console.error(`[horus] backend ${state.id} restart failed:`, err.message);
       scheduleBackendRestart(state);
     });
   }, delay);
@@ -224,11 +224,11 @@ async function forkBackend(state) {
     return true;
   };
   child.on('error', (err) => {
-    console.error(`[osiris] backend ${state.id} error:`, err);
+    console.error(`[horus] backend ${state.id} error:`, err);
     if (releaseChild()) scheduleBackendRestart(state);
   });
   child.on('exit', (code) => {
-    console.error(`[osiris] backend ${state.id} exited:`, code);
+    console.error(`[horus] backend ${state.id} exited:`, code);
     if (releaseChild() && !isQuitting) scheduleBackendRestart(state);
   });
 
@@ -251,7 +251,7 @@ async function startManagedBackends(apiKeys) {
     const key = isNonBlank(apiKeys.SCANNER_KEY) ? apiKeys.SCANNER_KEY.trim() : crypto.randomUUID();
     specs.push({
       id: 'scanner', dirName: 'scanner', entry: 'server.js', healthPath: '/health',
-      portEnv: 'PORT', extraEnv: { OSIRIS_KEY: key },
+      portEnv: 'PORT', extraEnv: { HORUS_KEY: key },
       // SCANNER_ALLOW_DEEP un-gates the heavier ports/deep scans for the bundled local
       // scanner only (the public web build never sets it).
       urls: (port) => ({ SCANNER_URL: `http://127.0.0.1:${port}`, SCANNER_KEY: key, SCANNER_ALLOW_DEEP: '1' }),
@@ -272,10 +272,10 @@ async function startManagedBackends(apiKeys) {
       await forkBackend(state);
       managedBackends.push(state);
       Object.assign(overrides, spec.urls(port));
-      console.log(`[osiris] backend ${spec.id} ready on :${port}`);
+      console.log(`[horus] backend ${spec.id} ready on :${port}`);
     } catch (err) {
       // Non-fatal: the Next app still loads; only this backend's feature is unavailable.
-      console.error(`[osiris] backend ${spec.id} failed to start:`, err.message);
+      console.error(`[horus] backend ${spec.id} failed to start:`, err.message);
     }
   }
 
@@ -349,7 +349,7 @@ function armServerStableReset() {
 function scheduleEmbeddedServerRestart() {
   if (isQuitting || !app.isPackaged) return;
   if (serverRestartAttempts >= MAX_SERVER_RESTARTS) {
-    console.error('[osiris] embedded server restart limit reached');
+    console.error('[horus] embedded server restart limit reached');
     return;
   }
   const delay = Math.min(SERVER_RESTART_BASE_MS * 2 ** serverRestartAttempts, SERVER_RESTART_MAX_MS);
@@ -361,7 +361,7 @@ function scheduleEmbeddedServerRestart() {
       const url = await startEmbeddedServer();
       if (win && !win.isDestroyed()) await win.loadURL(url);
     } catch (err) {
-      console.error('[osiris] embedded server restart failed:', err);
+      console.error('[horus] embedded server restart failed:', err);
       scheduleEmbeddedServerRestart();
     }
   }, delay);
@@ -424,12 +424,12 @@ async function startEmbeddedServer() {
     return true;
   };
   serverChild.on('error', (err) => {
-    console.error('[osiris] embedded server error:', err);
+    console.error('[horus] embedded server error:', err);
     if (!releaseChild()) return;
     scheduleEmbeddedServerRestart();
   });
   serverChild.on('exit', (code) => {
-    console.error('[osiris] embedded server exited:', code);
+    console.error('[horus] embedded server exited:', code);
     if (!releaseChild()) return;
     if (!isQuitting) scheduleEmbeddedServerRestart();
   });
@@ -448,9 +448,9 @@ function scheduleRendererReload(reason) {
   lastRendererCrashAt = now;
 
   if (rendererReloadAttempts >= MAX_RENDERER_RELOADS) {
-    console.error('[osiris] renderer reload limit reached after:', reason);
+    console.error('[horus] renderer reload limit reached after:', reason);
     win.loadFile(path.join(__dirname, 'splash.html')).catch((err) => {
-      console.error('[osiris] failed to load fallback splash:', err);
+      console.error('[horus] failed to load fallback splash:', err);
     });
     return;
   }
@@ -466,8 +466,8 @@ function scheduleRendererReload(reason) {
 }
 
 async function resolveTarget() {
-  if (process.env.OSIRIS_URL) return process.env.OSIRIS_URL;
-  if (process.env.OSIRIS_DEV) return 'http://localhost:3000';
+  if (process.env.HORUS_URL) return process.env.HORUS_URL;
+  if (process.env.HORUS_DEV) return 'http://localhost:3000';
   if (app.isPackaged) return startEmbeddedServer();
   return null; // unpackaged with no URL → splash (shell smoke)
 }
@@ -496,27 +496,27 @@ async function createWindow() {
     win = null;
   });
   win.webContents.on('render-process-gone', (_event, details) => {
-    console.error('[osiris] renderer process gone:', details.reason);
+    console.error('[horus] renderer process gone:', details.reason);
     scheduleRendererReload(details.reason);
   });
   win.webContents.on('crashed', () => {
-    console.error('[osiris] renderer crashed');
+    console.error('[horus] renderer crashed');
     scheduleRendererReload('crashed');
   });
 
   if (SMOKE) {
     win.webContents.on('did-finish-load', () => {
-      console.log('OSIRIS_SMOKE_OK');
+      console.log('HORUS_SMOKE_OK');
       writeSmoke('OK');
       setTimeout(() => app.quit(), 200);
     });
     win.webContents.on('did-fail-load', (_e, code, desc, url) => {
-      console.error('OSIRIS_SMOKE_FAIL', code, desc, url);
+      console.error('HORUS_SMOKE_FAIL', code, desc, url);
       writeSmoke('FAIL ' + code + ' ' + desc);
       quitWithCode(1);
     });
     const smokeTimeout = setTimeout(() => {
-      console.error('OSIRIS_SMOKE_TIMEOUT');
+      console.error('HORUS_SMOKE_TIMEOUT');
       writeSmoke('TIMEOUT');
       quitWithCode(2);
     }, 50000);
@@ -527,7 +527,7 @@ async function createWindow() {
   try {
     target = await resolveTarget();
   } catch (err) {
-    console.error('[osiris]', err.message);
+    console.error('[horus]', err.message);
     // In smoke mode a failed embedded server must FAIL, not silently fall back to
     // the splash (which would load fine and report a false OK).
     if (SMOKE) {
@@ -542,8 +542,8 @@ async function createWindow() {
 }
 
 function registerIpc() {
-  ipcMain.handle('osiris:version', () => app.getVersion());
-  ipcMain.handle('osiris:getPath', (_e, name) => {
+  ipcMain.handle('horus:version', () => app.getVersion());
+  ipcMain.handle('horus:getPath', (_e, name) => {
     try {
       return app.getPath(name);
     } catch {
@@ -552,7 +552,7 @@ function registerIpc() {
   });
   ipcMain.handle('settings:getAll', () => readSettingsFile());
   ipcMain.handle('settings:set', (_e, full) => writeSettingsFile(full));
-  ipcMain.handle('osiris:relaunch', () => {
+  ipcMain.handle('horus:relaunch', () => {
     isQuitting = true;
     stopEmbeddedServer();
     app.relaunch();
@@ -566,7 +566,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => {
     if (!win || win.isDestroyed()) {
       createWindow().catch((err) => {
-        console.error('[osiris] failed to recreate window:', err);
+        console.error('[horus] failed to recreate window:', err);
       });
       return;
     }
@@ -582,12 +582,12 @@ if (!app.requestSingleInstanceLock()) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow().catch((err) => {
-          console.error('[osiris] failed to create window on activate:', err);
+          console.error('[horus] failed to create window on activate:', err);
         });
       }
     });
   }).catch((err) => {
-    console.error('[osiris] startup failed:', err);
+    console.error('[horus] startup failed:', err);
     quitWithCode(1);
   });
 
@@ -611,13 +611,13 @@ if (!app.requestSingleInstanceLock()) {
     app.quit();
   });
   process.on('unhandledRejection', (err) => {
-    console.error('[osiris] unhandled rejection:', err);
+    console.error('[horus] unhandled rejection:', err);
     isQuitting = true;
     stopEmbeddedServer();
     app.quit();
   });
   process.on('uncaughtException', (err) => {
-    console.error('[osiris] uncaught exception:', err);
+    console.error('[horus] uncaught exception:', err);
     isQuitting = true;
     stopEmbeddedServer();
     app.quit();

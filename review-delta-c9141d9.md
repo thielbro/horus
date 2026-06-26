@@ -1,4 +1,4 @@
-# OSIRIS Stability / Performance / Functionality — Delta Review
+# HORUS Stability / Performance / Functionality — Delta Review
 **Commits since last review:** `c98ab97` → `c9141d9` (7 commits)  
 **Scope:** Stability, Functionality, Performance  
 **Security:** Out of scope (per request)  
@@ -31,8 +31,8 @@ All 22 previously-flagged issues are confirmed fixed in commit `f989488`:
 | 3 | `toLocal` antimeridian wrap-around | `geo.ts:122` | `refLng` parameter; `normalizeLng(lng - refLng)` |
 | 4 | `bboxOfPoints` padding inversion | `geo.ts:87–98` | `crossesAntimeridian` tracked; span-aware clamping |
 | 5 | `circlePolygon` / `pointBbox` out-of-range | `geo.ts:33–41, 107–117` | `clampLat` + `normalizeLng` on all outputs |
-| 6 | Unbatched `setGeo` calls | `OsirisMap.tsx:945–965` | `setDossierGeoBatch` batches into single `requestAnimationFrame` |
-| 7 | Global `window.openOsirisDossier` race | `page.tsx:624–635` | `dossierRequestIdRef` increments on every open; `onDossierLoaded` validates |
+| 6 | Unbatched `setGeo` calls | `HorusMap.tsx:945–965` | `setDossierGeoBatch` batches into single `requestAnimationFrame` |
+| 7 | Global `window.openHorusDossier` race | `page.tsx:624–635` | `dossierRequestIdRef` increments on every open; `onDossierLoaded` validates |
 | 8 | Stale closure in `useEffect` | `DossierPanel.tsx:129–133, 201` | `latestOnLoadedRef` + `run` added to deps array |
 | 9 | `renderMarkdown` unmemoized | `DossierPanel.tsx:99–102` | `MarkdownBlock` memoized with `useMemo` keyed by `text` |
 | 10 | Unmemoized `nearby` computation | `DossierPanel.tsx:210–223` | `useMemo` over `dossier?.geometry?.features` |
@@ -42,7 +42,7 @@ All 22 previously-flagged issues are confirmed fixed in commit `f989488`:
 | 14 | `bboxOfPoints` latitude padding limits | `geo.ts:84–85` | `clampLat` after padding |
 | 15 | `onDossierLoaded` validation | `page.tsx:35–41, 688–693` | `safeDossierPoint` helper with bounds checks |
 | 16 | Panel vs map nearby cap divergence | `page.tsx:33` | `MAX_DOSSIER_NEARBY = 30` used consistently |
-| 17 | Popup HTML string interpolation | `OsirisMap.tsx:76–82, 540–548` | `escapeHtml` utility on all injected fields |
+| 17 | Popup HTML string interpolation | `HorusMap.tsx:76–82, 540–548` | `escapeHtml` utility on all injected fields |
 | 18 | Dead `dossierAbort` ref | `page.tsx:252` | Renamed to `regionDossierAbort`; used for right-click dossier |
 | 19 | Missing `reader.releaseLock()` | `DossierPanel.tsx:196` | Called in `finally` block |
 | 20 | Runtime type assertions in `nearby` | `DossierPanel.tsx:105–113` | `pointCoordinates` with `Array.isArray` + bounds guards |
@@ -56,7 +56,7 @@ All 22 previously-flagged issues are confirmed fixed in commit `f989488`:
 ### High
 
 #### 1. Route-overlay `setGeo` calls are unbatched — same visual-tearing bug as dossier overlay
-- **File:** `src/components/OsirisMap.tsx` (lines 1471–1487)
+- **File:** `src/components/HorusMap.tsx` (lines 1471–1487)
 - **Issue:** The `routeOverlay` effect calls `setGeo` three times synchronously (`route-line`, `route-corridor`, `route-surveil`). This triggers three separate MapLibre style re-evaluations, causing the same visual tearing that the dossier overlay had. The fix used for dossier (`setDossierGeoBatch`) was not applied to the route overlay.
 - **Fix:** Reuse the `setDossierGeoBatch` pattern (or rename it to `setGeoBatch`) and apply it to the route overlay effect:
   ```typescript
@@ -92,8 +92,8 @@ All 22 previously-flagged issues are confirmed fixed in commit `f989488`:
   } finally { geocodeAbort.current = null; }
   ```
 
-#### 5. `userPosition` effect in `OsirisMap` also uses unbatched `setGeo`
-- **File:** `src/components/OsirisMap.tsx` (lines 1460–1467)
+#### 5. `userPosition` effect in `HorusMap` also uses unbatched `setGeo`
+- **File:** `src/components/HorusMap.tsx` (lines 1460–1467)
 - **Issue:** The `userPosition` effect calls `setGeo` twice synchronously (`user-position`, `user-accuracy`). GPS updates are infrequent, so this is low-impact, but for consistency and correctness the same batching pattern should apply.
 - **Fix:** Wrap in the same `setGeoBatch` helper.
 
@@ -150,7 +150,7 @@ All tests pass, including the new `nz-police-database.test.mjs` and `surveillanc
 ## 📋 Priority Action Plan
 
 ### Sprint 1 (High impact — fix before next release)
-1. **Batch `routeOverlay` `setGeo` calls** in `OsirisMap.tsx` (High #1).
+1. **Batch `routeOverlay` `setGeo` calls** in `HorusMap.tsx` (High #1).
 2. **Throttle Nominatim reverse geocode** in `LocationTracker.tsx` to comply with 1 req/s policy (High #2).
 3. **Make `classify` case-insensitive** for ALPR tags in `route.ts` (High #3).
 

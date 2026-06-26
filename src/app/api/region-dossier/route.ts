@@ -3,7 +3,7 @@ import { getClientIp, isRateLimited } from '@/lib/ssrf-guard';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Region Dossier API
+ * HORUS — Region Dossier API
  * Provides country intelligence for any coordinate (right-click on map)
  * Fix #115: Steps 2-4 now run in parallel via Promise.allSettled
  */
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=5&addressdetails=1`,
       {
         signal: safeAbortTimeout(8000),
-        headers: { 'User-Agent': 'OsirisIntelPlatform/1.0' },
+        headers: { 'User-Agent': 'HorusIntelPlatform/1.0' },
       }
     );
 
@@ -61,7 +61,7 @@ export async function GET(request: Request) {
           );
           if (res.ok) return await res.json();
           await releaseResponseBody(res);
-        } catch (e) { console.warn('[OSIRIS] Country fetch error:', e instanceof Error ? e.message : e); }
+        } catch (e) { console.warn('[HORUS] Country fetch error:', e instanceof Error ? e.message : e); }
         return null;
       })(),
 
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
             };
           }
           await releaseResponseBody(res);
-        } catch (e) { console.warn('[OSIRIS] Wikipedia fetch error:', e instanceof Error ? e.message : e); }
+        } catch (e) { console.warn('[HORUS] Wikipedia fetch error:', e instanceof Error ? e.message : e); }
         return null;
       })(),
 
@@ -104,7 +104,7 @@ export async function GET(request: Request) {
             `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`,
             {
               signal: safeAbortTimeout(5000),
-              headers: { 'User-Agent': 'OsirisIntelPlatform/1.0' },
+              headers: { 'User-Agent': 'HorusIntelPlatform/1.0' },
             }
           );
           if (res.ok) {
@@ -118,7 +118,7 @@ export async function GET(request: Request) {
             }
           }
           await releaseResponseBody(res);
-        } catch (e) { console.warn('[OSIRIS] Wikidata fetch error:', e instanceof Error ? e.message : e); }
+        } catch (e) { console.warn('[HORUS] Wikidata fetch error:', e instanceof Error ? e.message : e); }
         return null;
       })(),
     ]);

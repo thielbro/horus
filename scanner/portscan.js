@@ -1,4 +1,4 @@
-// OSIRIS scanner — bounded TCP-connect port scanning.
+// HORUS scanner — bounded TCP-connect port scanning.
 //
 // Pure logic, depends only on node:net (no express), so it's importable directly by the
 // test suite without installing the backend's production deps. server.js consumes it.

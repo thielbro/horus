@@ -1,5 +1,5 @@
 /**
- * OSIRIS v5 Upgrade Script
+ * HORUS v5 Upgrade Script
  * ─────────────────────────
  * 1. Fix submarine cables data pipeline (page.tsx never fetches the static JSON)
  * 2. Upgrade cable rendering to multi-layer glow (3 layers like the target)
@@ -33,7 +33,7 @@ if (!page.includes('/data/submarine-cables.json')) {
             dataRef.current = { ...dataRef.current, submarine_cables: cablesData.features || [] };
             setDataVersion(v => v + 1);
           }
-        } catch (e) { console.warn('[OSIRIS] Cables fetch failed:', e); }
+        } catch (e) { console.warn('[HORUS] Cables fetch failed:', e); }
       })();
       layerFetchedRef.current.add('cables');
     }`;
@@ -49,9 +49,9 @@ if (!page.includes('/data/submarine-cables.json')) {
 fs.writeFileSync('src/app/page.tsx', page);
 
 // ═══════════════════════════════════════════════════════
-// 2. PATCH OsirisMap.tsx — Upgrade cable rendering
+// 2. PATCH HorusMap.tsx — Upgrade cable rendering
 // ═══════════════════════════════════════════════════════
-let map = fs.readFileSync('src/components/OsirisMap.tsx', 'utf8');
+let map = fs.readFileSync('src/components/HorusMap.tsx', 'utf8');
 
 // 2a. Replace the 2-layer cable rendering with a proper 3-layer glow stack
 const oldCableLayers = `map.addLayer({ id: 'submarine-cables-line', type: 'line', source: 'submarine-cables', paint: {
@@ -89,9 +89,9 @@ const newCableLayers = `// ══ SUBMARINE CABLES — TeleGeography real-world 
 
 if (map.includes(oldCableLayers)) {
   map = map.replace(oldCableLayers, newCableLayers);
-  console.log('[OsirisMap.tsx] ✓ Upgraded cable rendering to 3-layer glow stack');
+  console.log('[HorusMap.tsx] ✓ Upgraded cable rendering to 3-layer glow stack');
 } else {
-  console.log('[OsirisMap.tsx] ✗ Could not find old cable layers to replace');
+  console.log('[HorusMap.tsx] ✗ Could not find old cable layers to replace');
 }
 
 // 2b. Fix the visibility toggle to include the new halo layer
@@ -100,7 +100,7 @@ const newVis = "setVis(['submarine-cables-halo', 'submarine-cables-glow', 'subma
 
 if (map.includes(oldVis)) {
   map = map.replace(oldVis, newVis);
-  console.log('[OsirisMap.tsx] ✓ Fixed visibility toggle for 3 cable layers');
+  console.log('[HorusMap.tsx] ✓ Fixed visibility toggle for 3 cable layers');
 }
 
 // 2c. Add click handler for submarine cables (with cable name popup)
@@ -109,7 +109,7 @@ if (map.includes(hoverAnchor) && !map.includes('submarine-cables-line')) {
   // Add cable layers to hover list
   const newHover = hoverAnchor.replace("'sdk-intel-glow']", "'sdk-intel-glow','submarine-cables-line','submarine-cables-glow']");
   map = map.replace(hoverAnchor, newHover);
-  console.log('[OsirisMap.tsx] ✓ Added cable hover cursors');
+  console.log('[HorusMap.tsx] ✓ Added cable hover cursors');
 }
 
 // 2d. Add cable click popup
@@ -145,11 +145,11 @@ if (!map.includes("'submarine-cables-line', e =>")) {
   const insertBefore = "    // ── Generic hover for clickables ──";
   if (map.includes(insertBefore)) {
     map = map.replace(insertBefore, cablePopup + '\n' + insertBefore);
-    console.log('[OsirisMap.tsx] ✓ Added submarine cable click popup');
+    console.log('[HorusMap.tsx] ✓ Added submarine cable click popup');
   }
 }
 
-fs.writeFileSync('src/components/OsirisMap.tsx', map);
+fs.writeFileSync('src/components/HorusMap.tsx', map);
 
 // ═══════════════════════════════════════════════════════
 // 3. PATCH LayerPanel.tsx — Exclude cables from entity total
@@ -169,5 +169,5 @@ if (panel.includes(oldTotal)) {
 fs.writeFileSync('src/components/LayerPanel.tsx', panel);
 
 console.log('\n══════════════════════════════════════');
-console.log('  OSIRIS v5 Upgrade Complete');
+console.log('  HORUS v5 Upgrade Complete');
 console.log('══════════════════════════════════════');

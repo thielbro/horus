@@ -1,4 +1,4 @@
-# OSIRIS Code Review — Commit `03c0485`
+# HORUS Code Review — Commit `03c0485`
 **feat(intel): on-the-go compile framework (Phase 1)**
 
 **Scope:** Stability, Functionality, Performance  

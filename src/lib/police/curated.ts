@@ -3,7 +3,7 @@ import type { CuratedPoliceDataset, PoliceStation } from './types';
 import { NZ_POLICE } from './newzealand';
 
 /**
- * OSIRIS — curated police-station database.
+ * HORUS — curated police-station database.
  *
  * Authoritative, owned datasets that replace live OpenStreetMap results inside
  * their coverage. Add a country by appending its dataset here. The `/api/police`

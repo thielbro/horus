@@ -41,7 +41,7 @@ let seeding = false;
 
 export function registerFeed(feed: FeedDef): void {
   if (!feeds.has(feed.id) && feeds.size >= MAX_REGISTRY_FEEDS) {
-    console.warn('[OSIRIS] Registry feed limit reached; ignoring feed', feed.id);
+    console.warn('[HORUS] Registry feed limit reached; ignoring feed', feed.id);
     return;
   }
   feeds.set(feed.id, feed);

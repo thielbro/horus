@@ -41,7 +41,7 @@ export default function GlobalStatusBar() {
           setCyber(await cyberRes.value.json());
         }
       } catch (e) {
-        if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
+        if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e);
       }
     };
     fetchData();

@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  OSIRIS — AI Intelligence Engine
+ *  HORUS — AI Intelligence Engine
  *  Gemini 2.0 Flash integration for real-time intelligence analysis
  *  Designed to correlate multi-domain feeds into actionable briefings
  * ═══════════════════════════════════════════════════════════════
@@ -123,7 +123,7 @@ export interface IntelligenceContext {
    System Prompt — Palantir-grade analyst persona
    ───────────────────────────────────────────────────────────── */
 
-const SYSTEM_PROMPT = `You are OSIRIS Intelligence Analyst — a senior, elite intelligence analyst embedded within the OSIRIS Global Intelligence Platform. You operate at the level of a Palantir Forward Deployed Engineer crossed with a CIA PDB (Presidential Daily Brief) analyst.
+const SYSTEM_PROMPT = `You are HORUS Intelligence Analyst — a senior, elite intelligence analyst embedded within the HORUS Global Intelligence Platform. You operate at the level of a Palantir Forward Deployed Engineer crossed with a CIA PDB (Presidential Daily Brief) analyst.
 
 ## YOUR ROLE
 - You correlate data across multiple intelligence feeds: seismic monitoring, OSINT news streams, global threat events, and cyber vulnerability databases
@@ -153,11 +153,11 @@ const SYSTEM_PROMPT = `You are OSIRIS Intelligence Analyst — a senior, elite i
 - Flag when events may be connected vs. coincidental
 - You are an analyst, not a policymaker — present options, not directives
 
-You have access to the live intelligence context of the OSIRIS platform. Analyze it with precision.`;
+You have access to the live intelligence context of the HORUS platform. Analyze it with precision.`;
 
-const BRIEFING_PROMPT = `Generate a comprehensive OSIRIS Daily Intelligence Briefing based on the current operational data. Structure it as follows:
+const BRIEFING_PROMPT = `Generate a comprehensive HORUS Daily Intelligence Briefing based on the current operational data. Structure it as follows:
 
-## OSIRIS INTELLIGENCE BRIEFING
+## HORUS INTELLIGENCE BRIEFING
 **Classification:** OPEN SOURCE INTELLIGENCE (OSINT)
 **DTG:** [Current timestamp]
 
@@ -247,13 +247,13 @@ export function generateLocalAnalysis(context: IntelligenceContext, userQuery: s
   const severities = countBySeverity(context.threats);
   const topItems = formatTopItems(context);
 
-  return `## LOCAL OSIRIS ASSESSMENT
+  return `## LOCAL HORUS ASSESSMENT
 **Mode:** deterministic fallback
 **Reason:** ${reason}
 **Analyst query:** ${clip(userQuery, FIELD_LIMITS.title)}
 
 ### BLUF
-Gemini analysis is unavailable, so this response is limited to direct correlation of the submitted OSIRIS context. Current input contains ${context.threats.length} threat events, ${context.earthquakes.length} seismic events, ${context.news.length} OSINT items, and ${context.cyberAlerts.length} cyber alerts.
+Gemini analysis is unavailable, so this response is limited to direct correlation of the submitted HORUS context. Current input contains ${context.threats.length} threat events, ${context.earthquakes.length} seismic events, ${context.news.length} OSINT items, and ${context.cyberAlerts.length} cyber alerts.
 
 ### Priority Signals
 ${topItems.join('\n')}
@@ -277,14 +277,14 @@ export function generateLocalBriefing(context: IntelligenceContext, reason: stri
   const severities = countBySeverity(context.threats);
   const topItems = formatTopItems(context);
 
-  return `## OSIRIS INTELLIGENCE BRIEFING
+  return `## HORUS INTELLIGENCE BRIEFING
 **Classification:** OPEN SOURCE INTELLIGENCE (OSINT)
 **Mode:** deterministic fallback
 **Reason:** ${reason}
 **DTG:** ${context.timestamp || new Date().toISOString()}
 
 ### I. Executive Summary
-Gemini briefing generation is unavailable, so this is a bounded local briefing from the current OSIRIS context. The request includes ${context.threats.length} threat events, ${context.earthquakes.length} seismic events, ${context.news.length} OSINT items, and ${context.cyberAlerts.length} cyber alerts.
+Gemini briefing generation is unavailable, so this is a bounded local briefing from the current HORUS context. The request includes ${context.threats.length} threat events, ${context.earthquakes.length} seismic events, ${context.news.length} OSINT items, and ${context.cyberAlerts.length} cyber alerts.
 
 ### II. Priority Intelligence Requirements
 ${topItems.join('\n')}

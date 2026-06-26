@@ -5,7 +5,7 @@ import { parseCsvRows, releaseResponseBody, safeAbortTimeout } from '@/lib/http-
 export const dynamic = 'force-dynamic';
 
 /**
- * OSIRIS — Active Fire & Wildfire Tracking
+ * HORUS — Active Fire & Wildfire Tracking
  * Multi-source: NASA FIRMS Open Data (primary for global fires), NASA EONET (volcanoes)
  */
 
@@ -24,7 +24,7 @@ export async function GET() {
       try {
         const res = await fetch(url, {
           signal: safeAbortTimeout(15000),
-          headers: { 'User-Agent': 'OSIRIS-Intelligence-Platform/3.5' },
+          headers: { 'User-Agent': 'HORUS-Intelligence-Platform/3.5' },
         });
         if (!res.ok) {
           await releaseResponseBody(res);
@@ -77,7 +77,7 @@ export async function GET() {
       } else {
         await releaseResponseBody(volcRes);
       }
-    } catch (e) { console.warn('[OSIRIS] Suppressed EONET error:', e instanceof Error ? e.message : e); }
+    } catch (e) { console.warn('[HORUS] Suppressed EONET error:', e instanceof Error ? e.message : e); }
 
     return NextResponse.json({
       fires,

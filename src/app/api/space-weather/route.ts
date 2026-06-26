@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { parseKpIndex, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Space Weather API
+ * HORUS — Space Weather API
  * Fetches real-time solar activity from NOAA Space Weather Prediction Center
  * FREE — No API key required
  * Data: Kp index (geomagnetic), solar flares, CME alerts

@@ -1,9 +1,9 @@
-// Generates desktop app icons from the OSIRIS brand mark.
+// Generates desktop app icons from the HORUS brand mark.
 //
 // electron-builder picks up `${buildResources}/icon.ico` (buildResources = desktop/build)
-// for the NSIS installer + the packaged OSIRIS.exe, and `icon.png` for Linux packages.
+// for the NSIS installer + the packaged HORUS.exe, and `icon.png` for Linux packages.
 // We assemble a multi-resolution PNG-in-ICO (Vista+) and a 512px PNG from
-// public/osiris-icon.png using sharp — no extra dependency.
+// public/horus-icon.png using sharp — no extra dependency.
 //
 // Run:  node scripts/make-icon.js   (re-run if the source art changes)
 
@@ -12,7 +12,7 @@ const path = require('path');
 const sharp = require('sharp');
 
 const root = path.join(__dirname, '..');
-const src = path.join(root, 'public', 'osiris-icon.png');
+const src = path.join(root, 'public', 'horus-icon.png');
 const outDir = path.join(root, 'desktop', 'build');
 const icoOut = path.join(outDir, 'icon.ico');
 const pngOut = path.join(outDir, 'icon.png');

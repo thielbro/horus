@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Ukraine Frontline API
+ * HORUS — Ukraine Frontline API
  * Fetches live warfront GeoJSON from DeepState Map
  */
 

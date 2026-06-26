@@ -1,5 +1,5 @@
 /**
- * OSIRIS v5.1 — Final Senior Engineer Refinements (Reconstructed)
+ * HORUS v5.1 — Final Senior Engineer Refinements (Reconstructed)
  * ═════════════════════════════════════════════════
  * 
  * 1. Use TeleGeography's own cable colors (from data) for rendering
@@ -13,9 +13,9 @@
 const fs = require('fs');
 
 // ═══════════════════════════════════════════════════════
-// 1. UPGRADE OsirisMap.tsx — Full cable rendering overhaul
+// 1. UPGRADE HorusMap.tsx — Full cable rendering overhaul
 // ═══════════════════════════════════════════════════════
-let map = fs.readFileSync('src/components/OsirisMap.tsx', 'utf8');
+let map = fs.readFileSync('src/components/HorusMap.tsx', 'utf8');
 
 // 1a. Replace cable rendering to use each cable's own TeleGeography color
 const oldCableLayers = `// ══ SUBMARINE CABLES — TeleGeography real-world data ══
@@ -82,9 +82,9 @@ const newCableLayers = `// ══ SUBMARINE CABLES — TeleGeography real-world 
 
 if (map.includes(oldCableLayers)) {
   map = map.replace(oldCableLayers, newCableLayers);
-  console.log('[OsirisMap.tsx] ✓ Upgraded cable rendering to color-coded 4-layer stack with labels');
+  console.log('[HorusMap.tsx] ✓ Upgraded cable rendering to color-coded 4-layer stack with labels');
 } else {
-  console.log('[OsirisMap.tsx] ✗ Could not find old cable layers to replace');
+  console.log('[HorusMap.tsx] ✗ Could not find old cable layers to replace');
 }
 
 // 1b. Add label layer to visibility toggle
@@ -92,7 +92,7 @@ const oldVis = "setVis(['submarine-cables-halo', 'submarine-cables-glow', 'subma
 const newVis = "setVis(['submarine-cables-halo', 'submarine-cables-glow', 'submarine-cables-line', 'submarine-cables-label'], activeLayers.cables);";
 if (map.includes(oldVis)) {
   map = map.replace(oldVis, newVis);
-  console.log('[OsirisMap.tsx] ✓ Added label layer to visibility toggle');
+  console.log('[HorusMap.tsx] ✓ Added label layer to visibility toggle');
 }
 
 // 1c. Upgrade cable popup to deep-link to TeleGeography
@@ -125,7 +125,7 @@ if (map.includes(oldPopup)) {
     );
   }
   
-  console.log('[OsirisMap.tsx] ✓ Upgraded cable popup: all 3 layers clickable, deep-linked to TeleGeography');
+  console.log('[HorusMap.tsx] ✓ Upgraded cable popup: all 3 layers clickable, deep-linked to TeleGeography');
 }
 
 // 1d. Add cable layers to hover cursor list
@@ -135,10 +135,10 @@ if (map.includes(hoverListPattern) && !map.includes("'submarine-cables-line','su
     hoverListPattern,
     "'scan-targets-dots','submarine-cables-line','submarine-cables-glow','submarine-cables-halo','sdk-sea','sdk-sea-glow'"
   );
-  console.log('[OsirisMap.tsx] ✓ Added cable layers to hover cursor list');
+  console.log('[HorusMap.tsx] ✓ Added cable layers to hover cursor list');
 }
 
-fs.writeFileSync('src/components/OsirisMap.tsx', map);
+fs.writeFileSync('src/components/HorusMap.tsx', map);
 
 // ═══════════════════════════════════════════════════════
 // 2. ENRICH cables.json with segment counts
@@ -168,6 +168,6 @@ try {
 
 console.log(`
 ══════════════════════════════════════
-  OSIRIS v5.1 Final Refinements Done
+  HORUS v5.1 Final Refinements Done
 ══════════════════════════════════════
 `);

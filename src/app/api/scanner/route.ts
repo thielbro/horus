@@ -3,7 +3,7 @@ import { validateHost, isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Scanner Proxy (Hardened)
+ * HORUS — Scanner Proxy (Hardened)
  * Rate-limited, target-validated, scope-restricted
  */
 
@@ -105,7 +105,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       error: 'Scan type not available',
       detail: scanConfig?.local
-        ? `"${scanType}" is only available in the OSIRIS desktop app (local scanner).`
+        ? `"${scanType}" is only available in the HORUS desktop app (local scanner).`
         : `"${scanType}" is restricted. Available: ${available.join(', ')}`,
       available_scans: available,
     }, { status: 403 });

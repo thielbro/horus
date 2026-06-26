@@ -2,7 +2,7 @@ import { runOverpassLayer, type BBox } from '@/lib/overpass';
 import { curatedPoliceWithin, isWithinCuratedCoverage } from '@/lib/police/curated';
 
 /**
- * OSIRIS — Police Station Locations
+ * HORUS — Police Station Locations
  *
  * Counter-surveillance intel: maps the locations of police stations. Curated,
  * authoritative datasets (see src/lib/police/) are served wherever we have them
@@ -23,7 +23,7 @@ export function GET(request: Request) {
     request,
     bucket: 'police',
     defaults: DEFAULTS,
-    userAgent: 'OSIRIS-map/1.0 (police-station location layer; OpenStreetMap data)',
+    userAgent: 'HORUS-map/1.0 (police-station location layer; OpenStreetMap data)',
     clausesFor: (bbox) => `node["amenity"="police"](${bbox});`,
     mapNode: (el) => {
       const lat = el.lat as number;

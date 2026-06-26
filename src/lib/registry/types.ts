@@ -1,11 +1,11 @@
-// OSIRIS layer/source registry — internal types.
+// HORUS layer/source registry — internal types.
 //
 // This is the declarative model that replaces the three hardcoded copies of the layer
-// list (LayerPanel.getLayerGroups, OsirisMap addLayer/setGeo, page.tsx fetch wiring).
+// list (LayerPanel.getLayerGroups, HorusMap addLayer/setGeo, page.tsx fetch wiring).
 // It is migrated in via the strangler pattern: each step moves one consumer onto the
 // registry with zero visible change. Feed/render fields are added in later steps; this
 // first cut carries only the metadata the sidebar needs, and is designed to converge
-// with the @osiris/plugin-sdk LayerDef so builtins and plugins share one contract.
+// with the @horus/plugin-sdk LayerDef so builtins and plugins share one contract.
 
 export type ThemeMode = 'core' | 'ghost';
 
@@ -29,7 +29,7 @@ export type RegistryOrigin = 'builtin' | 'custom' | 'plugin';
 
 /**
  * Click behaviour for a layer's features. Builtins still wire clicks imperatively in
- * OsirisMap; dynamic (custom/plugin) layers declare interaction here and the map wires it
+ * HorusMap; dynamic (custom/plugin) layers declare interaction here and the map wires it
  * generically. `props` is the clicked feature's GeoJSON properties.
  */
 export type LayerInteraction =

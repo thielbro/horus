@@ -9,7 +9,7 @@ const listeners = new Set<() => void>();
 export function bumpRegistry(): void {
   version++;
   listeners.forEach((l) => {
-    try { l(); } catch (err) { console.error('[OSIRIS] Registry listener failed', err); }
+    try { l(); } catch (err) { console.error('[HORUS] Registry listener failed', err); }
   });
 }
 

@@ -105,11 +105,11 @@ test('workspace restore filters against the live registry after bootstrap', () =
 
 test('workspace camera restore is gated on map readiness and honors the saved zoom', () => {
   const page = file('src/app/page.tsx');
-  const map = file('src/components/OsirisMap.tsx');
+  const map = file('src/components/HorusMap.tsx');
 
   // page hands the exact saved zoom to the fly-to mechanism.
   assert.match(page, /setFlyToLocation\(\{ lat: snap\.view\.latitude, lng: snap\.view\.longitude, zoom: snap\.view\.zoom, ts: Date\.now\(\) \}\)/);
-  // OsirisMap only flies once mapReady is true, and uses the provided zoom when present.
+  // HorusMap only flies once mapReady is true, and uses the provided zoom when present.
   assert.match(map, /if \(!mapReady \|\| !mapRef\.current \|\| !flyToLocation\) return;/);
   assert.match(map, /zoom: flyToLocation\.zoom \?\? 8/);
 });

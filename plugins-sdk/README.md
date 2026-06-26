@@ -1,6 +1,6 @@
-# @osiris/plugin-sdk
+# @horus/plugin-sdk
 
-The contract every OSIRIS plugin is written against. Import it as `@osiris/plugin-sdk`.
+The contract every HORUS plugin is written against. Import it as `@horus/plugin-sdk`.
 
 > **Status:** the interface in [`index.ts`](./index.ts) is locked. The runtime helpers
 > (`definePlugin`, `point`, `line`, `featureCollection`, `colors`) work today. The
@@ -39,7 +39,7 @@ feed by id.
 ## Minimal plugin — client only, off a builtin feed
 
 ```tsx
-import { definePlugin, point } from '@osiris/plugin-sdk';
+import { definePlugin, point } from '@horus/plugin-sdk';
 
 export default definePlugin({
   id: 'mil-ring', name: 'Military Highlight', version: '1.0.0', sdk: 1,
@@ -65,7 +65,7 @@ export default definePlugin({
 
 ```ts
 // server.ts
-import { definePluginServer } from '@osiris/plugin-sdk';
+import { definePluginServer } from '@horus/plugin-sdk';
 
 export const server = definePluginServer({
   activate(ctx) {
@@ -83,7 +83,7 @@ export const server = definePluginServer({
 
 ```tsx
 // index.ts
-import { definePlugin, point } from '@osiris/plugin-sdk';
+import { definePlugin, point } from '@horus/plugin-sdk';
 import ShipPanel from './ShipPanel';
 
 export default definePlugin({

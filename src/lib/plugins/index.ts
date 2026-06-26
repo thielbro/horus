@@ -24,16 +24,16 @@ export type { CustomSourceSpec } from '@/lib/registry';
 import { bootstrapPlugins } from './loader';
 import { bootstrapCustomSources } from './customSources';
 
-/** Minimal in-app SDK exposed on `window.OsirisSDK` so editor plugins can author without
- *  resolving the `@osiris/plugin-sdk` bare import (which a blob module can't resolve). */
+/** Minimal in-app SDK exposed on `window.HorusSDK` so editor plugins can author without
+ *  resolving the `@horus/plugin-sdk` bare import (which a blob module can't resolve). */
 function installSdkGlobal() {
-  if (typeof window === 'undefined' || (window as any).OsirisSDK) return;
+  if (typeof window === 'undefined' || (window as any).HorusSDK) return;
   const point = (lng: number, lat: number, props: Record<string, unknown> = {}) =>
     ({ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: props });
   const line = (coords: Array<[number, number]>, props: Record<string, unknown> = {}) =>
     ({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: props });
   const featureCollection = (features: unknown[]) => ({ type: 'FeatureCollection', features });
-  (window as any).OsirisSDK = {
+  (window as any).HorusSDK = {
     SDK_VERSION: 1,
     definePlugin: (def: unknown) => def,
     point, line, featureCollection,
@@ -54,7 +54,7 @@ export async function bootstrapExtensions(): Promise<void> {
       await bootstrapPlugins();
       started = true;
     } catch (err) {
-      console.error('[OSIRIS] extension bootstrap failed', err);
+      console.error('[HORUS] extension bootstrap failed', err);
       throw err;
     }
   })().finally(() => {

@@ -14,7 +14,7 @@ let seeding = false;
 
 export function registerGroup(group: RegistryGroup): void {
   if (!groups.has(group.id) && groups.size >= MAX_REGISTRY_GROUPS) {
-    console.warn('[OSIRIS] Registry group limit reached; ignoring group', group.id);
+    console.warn('[HORUS] Registry group limit reached; ignoring group', group.id);
     return;
   }
   groups.set(group.id, group);
@@ -22,7 +22,7 @@ export function registerGroup(group: RegistryGroup): void {
 }
 export function registerLayer(layer: RegistryLayer): void {
   if (!layers.has(layer.id) && layers.size >= MAX_REGISTRY_LAYERS) {
-    console.warn('[OSIRIS] Registry layer limit reached; ignoring layer', layer.id);
+    console.warn('[HORUS] Registry layer limit reached; ignoring layer', layer.id);
     return;
   }
   layers.set(layer.id, layer);

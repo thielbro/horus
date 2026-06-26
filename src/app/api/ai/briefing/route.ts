@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  OSIRIS — AI Intelligence Briefing Endpoint
+ *  HORUS — AI Intelligence Briefing Endpoint
  *  POST /api/ai/briefing
  *  Generates structured threat briefings via Gemini
  * ═══════════════════════════════════════════════════════════════
@@ -28,9 +28,9 @@ interface RateLimitEntry {
 
 // Map lives on globalThis so the single (HMR-guarded) cleanup timer always operates on
 // the live map, not a stale module-local copy left behind by a dev hot reload.
-const __briefingStore = globalThis as unknown as { __osirisBriefingRL?: Map<string, RateLimitEntry> };
-if (!__briefingStore.__osirisBriefingRL) __briefingStore.__osirisBriefingRL = new Map<string, RateLimitEntry>();
-const rateLimitMap = __briefingStore.__osirisBriefingRL;
+const __briefingStore = globalThis as unknown as { __horusBriefingRL?: Map<string, RateLimitEntry> };
+if (!__briefingStore.__horusBriefingRL) __briefingStore.__horusBriefingRL = new Map<string, RateLimitEntry>();
+const rateLimitMap = __briefingStore.__horusBriefingRL;
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const MAX_RATE_LIMIT_ENTRIES = 10_000;
@@ -63,9 +63,9 @@ function checkRateLimit(ip: string): { allowed: boolean; remaining: number; rese
 
 // Guard against duplicate timers across dev hot-reloads (the module is re-imported on
 // every HMR cycle; a bare module-scope setInterval would stack up a new timer each time).
-const __briefingTimers = globalThis as unknown as { __osirisBriefingRLCleanup?: boolean };
-if (!__briefingTimers.__osirisBriefingRLCleanup) {
-  __briefingTimers.__osirisBriefingRLCleanup = true;
+const __briefingTimers = globalThis as unknown as { __horusBriefingRLCleanup?: boolean };
+if (!__briefingTimers.__horusBriefingRLCleanup) {
+  __briefingTimers.__horusBriefingRLCleanup = true;
   setInterval(() => {
     pruneRateLimitMap(Date.now());
   }, 120_000);
@@ -179,7 +179,7 @@ export async function POST(
         {
           headers: {
             'X-RateLimit-Remaining': String(rateCheck.remaining),
-            'X-OSIRIS-AI-Fallback': 'local',
+            'X-HORUS-AI-Fallback': 'local',
           },
         }
       );
@@ -233,7 +233,7 @@ export async function POST(
       );
     }
 
-    console.error('[OSIRIS AI] Briefing error:', message);
+    console.error('[HORUS AI] Briefing error:', message);
     return NextResponse.json(
       {
         briefing: generateLocalBriefing(body.context, message),
@@ -242,7 +242,7 @@ export async function POST(
       {
         headers: {
           'X-RateLimit-Remaining': String(rateCheck.remaining),
-          'X-OSIRIS-AI-Fallback': 'local',
+          'X-HORUS-AI-Fallback': 'local',
         },
       }
     );

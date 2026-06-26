@@ -68,7 +68,7 @@ export function useFeedEngine(
     void Promise.resolve(fetchEndpoint(url, transform, { signal: controller.signal }))
       .catch((err) => {
         if (!(err instanceof DOMException && err.name === 'AbortError')) {
-          console.error('[OSIRIS] Registry feed fetch failed', { url, err });
+          console.error('[HORUS] Registry feed fetch failed', { url, err });
         }
       })
       .finally(() => controllersRef.current?.delete(controller));

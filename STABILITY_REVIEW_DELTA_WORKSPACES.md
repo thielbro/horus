@@ -1,4 +1,4 @@
-# OSIRIS Code Review — Delta Pass (Saved Workspaces / Phase 3)
+# HORUS Code Review — Delta Pass (Saved Workspaces / Phase 3)
 
 > **Scope:** Stability and performance only. Security is explicitly out of scope.  
 > **Focus:** Changes since `STABILITY_REVIEW_DELTA_EXTENSIONS.md` — commit `5ba7ab0` (saved workspaces / layouts, Phase 3).  
@@ -29,7 +29,7 @@ All previously identified Critical and High issues from `STABILITY_REVIEW_DELTA_
 
 - ✅ **C1** — `customSources.ts` `upsertCustomSource` now validates and registers first, then persists. Rollback logic (`rollbackLiveRegistry`) restores the previous record if the new registration fails.
 - ✅ **C2** — `persist()` in `customSources.ts` writes the full `specs` array (including error records) via `stripRuntimeFields`, so failed sources are no longer silently dropped from settings.
-- ✅ **C3** — `OsirisMap.tsx` `scan-targets` source now guarded: `if (src) src.setData(...)`.
+- ✅ **C3** — `HorusMap.tsx` `scan-targets` source now guarded: `if (src) src.setData(...)`.
 - ✅ **C4** — `ExtensionsSettings.tsx` `install` is wrapped in `try/catch` with `setBusy(false)` in `finally`.
 - ✅ **H1** — `src/lib/plugins/index.ts` sets `started = true` AFTER `await bootstrapPlugins()` completes inside the `try` block.
 - ✅ **H2** — `src/lib/plugins/loader.ts` sets `bootstrapped = true` after successful completion.
@@ -37,7 +37,7 @@ All previously identified Critical and High issues from `STABILITY_REVIEW_DELTA_
 - ✅ **H7** — `src/lib/registry/engine.ts` `runFetch` catches errors with `.catch()` and logs to console.
 - ✅ **H8** — Core feed timer churn fixed: `getFeedSignature` diffing prevents interval recreation on every `registryVersion` bump. Intervals only clear/recreate when the feed definition actually changes.
 - ✅ **H9** — Lazy polling stale intervals fixed: `lazySignaturesRef` tracks feed signatures and clears/recreates intervals when the URL/interval/transform changes.
-- ✅ **H11** — Dynamic layer cleanup on unmount: `OsirisMap.tsx` unmount effect iterates `dynState.current` and calls `teardownEntry` for all dynamic layers, removing style layers, sources, and interaction handlers.
+- ✅ **H11** — Dynamic layer cleanup on unmount: `HorusMap.tsx` unmount effect iterates `dynState.current` and calls `teardownEntry` for all dynamic layers, removing style layers, sources, and interaction handlers.
 - ✅ **H12** — `document.body.className` overwrite fixed: page.tsx uses `classList.add/remove('theme-ghost')`.
 - ✅ **H13** — `conflict_zones` effect missing dependency was addressed in the registry migration.
 - ✅ **H14** — SDK effect stale dependency was addressed in the registry migration.
@@ -116,7 +116,7 @@ A targeted grep sweep for the systemic patterns flagged in previous reviews foun
 2. **Missing `AbortController`** — All frontend fetch calls in `page.tsx` use per-request `AbortController` with proper cleanup.
 3. **Unclosed `setInterval`** — All intervals in the new workspace code are either inside `useEffect` with cleanup (workspace notice auto-dismiss) or are React state-driven.
 4. **Missing `res.ok` guards** — All frontend fetches in `page.tsx` now check `r.ok` before calling `.json()`.
-5. **JSON.parse without try/catch** — All `JSON.parse` calls in `OsirisMap.tsx` popups are wrapped in `try/catch` with default empty arrays.
+5. **JSON.parse without try/catch** — All `JSON.parse` calls in `HorusMap.tsx` popups are wrapped in `try/catch` with default empty arrays.
 6. **Inline JSX arrow functions** — `page.tsx` still has some inline arrows (pre-existing), but the new workspace code in `WorkspacesSettings.tsx` keeps them minimal and within a small component.
 
 ---
@@ -129,8 +129,8 @@ A targeted grep sweep for the systemic patterns flagged in previous reviews foun
 | 2 | **Bounded workspaces** — `MAX_WORKSPACES = 50` prevents unbounded settings growth. | `WorkspacesSettings.tsx:15` |
 | 3 | **Layer-drop reporting** — `restoreActiveLayers` returns `dropped` ids so the UI can warn about missing extension layers. | `workspaces.ts:111–136` |
 | 4 | **Auto-dismiss notice** — `workspaceNotice` has a 6-second timeout with proper cleanup. | `page.tsx:288–292` |
-| 5 | **Workspace camera restore gated** — `flyTo` effect only runs when `mapReady` is true, so mid-load restores are safe. | `OsirisMap.tsx:1271–1278` |
-| 6 | **Saved zoom honored** — `flyToLocation.zoom ?? 8` preserves the workspace zoom; falls back only when absent. | `OsirisMap.tsx:1275` |
+| 5 | **Workspace camera restore gated** — `flyTo` effect only runs when `mapReady` is true, so mid-load restores are safe. | `HorusMap.tsx:1271–1278` |
+| 6 | **Saved zoom honored** — `flyToLocation.zoom ?? 8` preserves the workspace zoom; falls back only when absent. | `HorusMap.tsx:1275` |
 | 7 | **Virtual toggle preservation** — `applyWorkspace` unions `DEFAULT_ACTIVE_LAYERS` with live registry, so virtual toggles (`cables`, `sdk_air`, `sdk_naval`) are never dropped. | `page.tsx:256` |
 | 8 | **Comprehensive test coverage** — `tests/workspaces.test.mjs` covers normalization, restore keep/drop, live registry filtering, and camera gating. | `tests/workspaces.test.mjs` |
 | 9 | **Pure workspace model** — `workspaces.ts` has no React or path aliases, so it's testable directly from Node. | `workspaces.ts` |

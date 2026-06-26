@@ -1,9 +1,9 @@
 /**
- * OSIRIS — RECON Scanner Backend (osiris-scanner)
+ * HORUS — RECON Scanner Backend (horus-scanner)
  *
  * The Next.js app ships only a hardened *proxy* at /api/scanner. This is the
  * backend that proxy forwards to (SCANNER_URL, default http://scanner:7700).
- * The app's SCANNER_KEY must equal this service's OSIRIS_KEY.
+ * The app's SCANNER_KEY must equal this service's HORUS_KEY.
  *
  * Design follows the proxy's defensive posture (see src/app/api/scanner/route.ts
  * and src/lib/ssrf-guard.ts):
@@ -38,7 +38,7 @@ const dns = require('node:dns/promises');
 
 const app = express();
 const PORT = process.env.PORT || process.env.SCANNER_PORT || 7700;
-const OSIRIS_KEY = process.env.OSIRIS_KEY || '';
+const HORUS_KEY = process.env.HORUS_KEY || '';
 
 // ════════════════════════════════════════════════════
 // §1 — TARGET VALIDATION (mirrors src/lib/ssrf-guard.ts)
@@ -255,7 +255,7 @@ async function subdomains(domain) {
   try {
     const res = await fetch(`https://crt.sh/?q=${encodeURIComponent('%.' + domain)}&output=json`, {
       signal: withTimeout(14000),
-      headers: { 'User-Agent': 'OSIRIS-scanner/1.0' },
+      headers: { 'User-Agent': 'HORUS-scanner/1.0' },
     });
     if (!res.ok) return { domain, subdomains: [], count: 0, error: `crt.sh ${res.status}` };
     const rows = await res.json();
@@ -355,7 +355,7 @@ async function whois(domain) {
 // A scan handler: validates key + target, runs `fn(validated)`.
 function scan(needsIp, fn) {
   return async (req, res) => {
-    if (!OSIRIS_KEY || req.query.key !== OSIRIS_KEY) {
+    if (!HORUS_KEY || req.query.key !== HORUS_KEY) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     const v = await validateTarget(req.query.target);
@@ -413,9 +413,9 @@ app.get('/scan/geoloc', scan(true, (v) => geoloc(v.ip)));
 app.get('/scan/vuln', scan(true, (v) => vulnScan(v.ip, v.host)));
 app.get('/scan/whois', scan(false, (v) => whois(v.host)));
 
-app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'osiris-scanner', configured: !!OSIRIS_KEY }));
+app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'horus-scanner', configured: !!HORUS_KEY }));
 app.get('/', (_req, res) => res.json({
-  service: 'osiris-scanner',
+  service: 'horus-scanner',
   endpoints: ['/scan/quick', '/scan/ports', '/scan/deep', '/scan/ssl', '/scan/headers', '/scan/tech', '/scan/subdomains', '/scan/rdns', '/scan/geoloc', '/scan/vuln', '/scan/whois'],
 }));
 
@@ -423,8 +423,8 @@ app.get('/', (_req, res) => res.json({
 // When require()'d by a test, we just expose the internals below without opening a socket.
 if (require.main === module) {
   const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[SCANNER] OSIRIS RECON backend on port ${PORT}`);
-    if (!OSIRIS_KEY) console.warn('[SCANNER] WARNING: OSIRIS_KEY not set — all requests will be rejected. Set it (and the app SCANNER_KEY to match).');
+    console.log(`[SCANNER] HORUS RECON backend on port ${PORT}`);
+    if (!HORUS_KEY) console.warn('[SCANNER] WARNING: HORUS_KEY not set — all requests will be rejected. Set it (and the app SCANNER_KEY to match).');
   });
 
   const shutdown = (signal) => {

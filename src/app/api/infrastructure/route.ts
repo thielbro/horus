@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Global Infrastructure API
+ * HORUS — Global Infrastructure API
  * Tracks critical global infrastructure: Nuclear Power Plants worldwide
  * Comprehensive coverage including all Russian, Chinese, and strategically important facilities
  */

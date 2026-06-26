@@ -1,8 +1,8 @@
 {
-  "name": "osiris-scanner",
+  "name": "horus-scanner",
   "version": "1.0.0",
   "private": true,
-  "description": "OSIRIS RECON scanner backend — bounded TCP-connect port scan + recon endpoints behind the hardened /api/scanner proxy",
+  "description": "HORUS RECON scanner backend — bounded TCP-connect port scan + recon endpoints behind the hardened /api/scanner proxy",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

@@ -10,7 +10,7 @@ const PROVIDERS = new Map<string, IntelProvider>();
 
 export function registerProvider(provider: IntelProvider): void {
   if (PROVIDERS.has(provider.kind)) {
-    console.warn(`[OSIRIS] Intel provider kind "${provider.kind}" already registered; overwriting`);
+    console.warn(`[HORUS] Intel provider kind "${provider.kind}" already registered; overwriting`);
   }
   PROVIDERS.set(provider.kind, provider);
 }

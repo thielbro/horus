@@ -1,4 +1,4 @@
-// Trusted in-process OSIRIS plugin example.
+// Trusted in-process HORUS plugin example.
 // Paste this into Settings -> Extensions -> Plugins, or load it as a .js file.
 const plugin = {
   id: 'dogfood-local-incidents',
@@ -6,7 +6,7 @@ const plugin = {
   version: '1.0.0',
   sdk: 1,
   activate(ctx) {
-    const point = window.OsirisSDK?.point ?? ((lng, lat, props = {}) => ({
+    const point = window.HorusSDK?.point ?? ((lng, lat, props = {}) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [lng, lat] },
       properties: props,

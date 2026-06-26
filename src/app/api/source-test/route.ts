@@ -3,7 +3,7 @@ import { safeFetch, getClientIp, isRateLimited } from '@/lib/ssrf-guard';
 import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Source Tester
+ * HORUS — Source Tester
  *
  * Backs the "Test source" button in the Surveillance panel. Fetches a user-supplied feed URL
  * server-side (so there's no browser CORS wall) behind the SSRF guard, then reports whether it
@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   let res: Response;
   try {
     const init = {
-      headers: { 'User-Agent': 'OSIRIS-map/1.0 (source tester)' },
+      headers: { 'User-Agent': 'HORUS-map/1.0 (source tester)' },
       signal: safeAbortTimeout(12000),
     };
     // Same-origin builtin endpoints are our own APIs — fetch them directly. Only external

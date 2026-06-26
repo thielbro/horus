@@ -1,6 +1,6 @@
 'use client';
 
-// OSIRIS — dedicated Surveillance menu.
+// HORUS — dedicated Surveillance menu.
 //
 // Splits surveillance out of the cramped 80px layer rail into its own panel: cameras toggled
 // per continent (each loads its own feed, so no continent starves another), counter-surveillance
@@ -135,7 +135,7 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
   const runAddressIntel = () => {
     const q = addrQuery.trim();
     if (!q) return;
-    (window as unknown as { openOsirisDossier?: (r: { kind: string; id: string; label: string }) => void }).openOsirisDossier?.({ kind: 'address', id: q, label: q });
+    (window as unknown as { openHorusDossier?: (r: { kind: string; id: string; label: string }) => void }).openHorusDossier?.({ kind: 'address', id: q, label: q });
   };
 
   const toggle = (key: string) => setActiveLayers((prev: any) => ({ ...prev, [key]: !prev[key] }));

@@ -5,9 +5,9 @@ import { safeAbortTimeout } from '@/lib/http-utils';
 export const dynamic = 'force-dynamic';
 
 /**
- * Thin proxy to the OSIRIS Intelligence Layer (osiris-intel).
+ * Thin proxy to the HORUS Intelligence Layer (horus-intel).
  *
- * In Docker: fetches from http://osiris-intel:4000/resolve
+ * In Docker: fetches from http://horus-intel:4000/resolve
  * In dev:    fetches from http://localhost:4000/resolve
  *
  * All intelligence logic lives in the intel container — this route
@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 
 const INTEL_URL = process.env.INTEL_URL || (
   process.env.NODE_ENV === 'production'
-    ? 'http://osiris-intel:4000'
+    ? 'http://horus-intel:4000'
     : 'http://localhost:4000'
 );
 
@@ -67,7 +67,7 @@ export async function GET(req: Request) {
       headers: { 'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=7200' },
     });
   } catch (e) {
-    console.error('[OSIRIS] Intel proxy error:', e instanceof Error ? e.message : e);
+    console.error('[HORUS] Intel proxy error:', e instanceof Error ? e.message : e);
     return NextResponse.json(
       { error: 'Intelligence layer unavailable', nodes: [], links: [] },
       { status: 502 },

@@ -1,7 +1,7 @@
 import { runOverpassLayer, type BBox } from '@/lib/overpass';
 
 /**
- * OSIRIS — Flock / ALPR Camera Locations (OpenStreetMap / DeFlock)
+ * HORUS — Flock / ALPR Camera Locations (OpenStreetMap / DeFlock)
  *
  * Maps automated license-plate reader (ALPR) cameras — Flock Safety and similar — tagged in
  * OSM with the DeFlock convention (`man_made=surveillance` + `surveillance:type=ALPR`).
@@ -19,7 +19,7 @@ export function GET(request: Request) {
     request,
     bucket: 'flock',
     defaults: DEFAULTS,
-    userAgent: 'OSIRIS-map/1.0 (ALPR/Flock location layer; OpenStreetMap/DeFlock data)',
+    userAgent: 'HORUS-map/1.0 (ALPR/Flock location layer; OpenStreetMap/DeFlock data)',
     clausesFor: (bbox) =>
       `node["man_made"="surveillance"]["surveillance:type"="ALPR"](${bbox});\n  node["man_made"="surveillance"]["camera:type"="ALPR"](${bbox});`,
     mapNode: (el) => {

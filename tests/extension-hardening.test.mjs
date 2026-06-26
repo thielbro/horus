@@ -185,8 +185,8 @@ test('plugin contexts abort outstanding fetches and report local storage/dispose
   assert.match(context, /new AbortController\(\)/);
   assert.match(context, /fetchControllers\.forEach\(\(controller\) => controller\.abort\(\)\)/);
   assert.match(context, /signal:\s*controller\.signal/);
-  assert.match(context, /console\.warn\(`\[OSIRIS plugin:\$\{pluginId\}\] settings/);
-  assert.match(context, /console\.error\(`\[OSIRIS plugin:\$\{pluginId\}\] dispose failed/);
+  assert.match(context, /console\.warn\(`\[HORUS plugin:\$\{pluginId\}\] settings/);
+  assert.match(context, /console\.error\(`\[HORUS plugin:\$\{pluginId\}\] dispose failed/);
 });
 
 test('extension settings harden export and raw source import edge cases', () => {

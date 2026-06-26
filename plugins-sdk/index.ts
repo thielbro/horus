@@ -1,7 +1,7 @@
 /**
- * @osiris/plugin-sdk — v1
+ * @horus/plugin-sdk — v1
  *
- * The contract every OSIRIS plugin is written against. Plugins are TRUSTED,
+ * The contract every HORUS plugin is written against. Plugins are TRUSTED,
  * in-process extensions (authored by the operator / their agents — never published),
  * so transforms and React components run directly in the host. There is no sandbox,
  * permission model, or IPC marshaling.
@@ -15,7 +15,7 @@
  *
  * STATUS: This file is the locked interface. The runtime helpers below
  * (definePlugin, point, line, featureCollection, colors) are real and usable today.
- * The host-provided services (OsirisContext.*) are typed here but only become live
+ * The host-provided services (HorusContext.*) are typed here but only become live
  * once the registry engine (Phase 2) is implemented.
  */
 
@@ -44,13 +44,13 @@ export interface PluginDefinition {
   sdk?: number;
   /** Other plugin ids to activate before this one. */
   dependsOn?: string[];
-  activate(ctx: OsirisContext): void | Promise<void>;
+  activate(ctx: HorusContext): void | Promise<void>;
   /** Optional — the host auto-disposes everything registered via ctx by plugin id. */
-  deactivate?(ctx: OsirisContext): void | Promise<void>;
+  deactivate?(ctx: HorusContext): void | Promise<void>;
 }
 
 /** The renderer-side API surface handed to a plugin's `activate`. */
-export interface OsirisContext {
+export interface HorusContext {
   readonly plugin: Readonly<{ id: string; name: string; version: string }>;
 
   // ── registration (each returns a Disposable; also auto-cleaned on disable/reload) ──
@@ -69,8 +69,8 @@ export interface OsirisContext {
   readonly ui: UiApi;
   readonly log: Logger;
   /** Client-side fetch. For CORS-blocked or key-bearing feeds, use a server feed instead. */
-  fetch(url: string, init?: OsirisFetchInit): Promise<Response>;
-  on<E extends keyof OsirisEvents>(event: E, handler: (payload: OsirisEvents[E]) => void): Disposable;
+  fetch(url: string, init?: HorusFetchInit): Promise<Response>;
+  on<E extends keyof HorusEvents>(event: E, handler: (payload: HorusEvents[E]) => void): Disposable;
 }
 
 export interface Disposable {
@@ -198,7 +198,7 @@ export interface PanelDef {
 }
 
 export interface PanelProps {
-  ctx: OsirisContext;
+  ctx: HorusContext;
   close(): void;
 }
 
@@ -231,7 +231,7 @@ export interface CommandDef {
   id: string;
   title: string;
   shortcut?: string;
-  run(ctx: OsirisContext): void;
+  run(ctx: HorusContext): void;
 }
 
 export interface GroupDef {
@@ -273,7 +273,7 @@ export interface SettingsApi {
 export interface SettingsSection {
   id: string;
   title: string;
-  component: ComponentType<{ ctx: OsirisContext }>;
+  component: ComponentType<{ ctx: HorusContext }>;
 }
 
 export interface MapApi {
@@ -309,7 +309,7 @@ export interface CameraEntity {
   [key: string]: unknown;
 }
 
-export interface OsirisEvents {
+export interface HorusEvents {
   ready: void;
   dataUpdate: { buckets: string[]; snapshot: DataSnapshot };
   layerToggle: { layerId: string; active: boolean };
@@ -325,7 +325,7 @@ export interface Logger {
   error(msg: string, ...args: unknown[]): void;
 }
 
-export type OsirisFetchInit = RequestInit;
+export type HorusFetchInit = RequestInit;
 
 /* ────────────────────────────────────────────────────────────────────────── *
  * Server entry (server.ts) — runs in Node / the embedded Next server

@@ -4,7 +4,7 @@ import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 export const dynamic = 'force-dynamic';
 
 /**
- * OSIRIS — Internet Outage Detection (IODA)
+ * HORUS — Internet Outage Detection (IODA)
  * Source: Georgia Tech IODA — completely free, no auth required
  * https://api.ioda.inetintel.cc.gatech.edu/v2/
  */
@@ -34,10 +34,10 @@ export async function GET() {
     const res = await fetch(url, {
       signal: safeAbortTimeout(12000),
       cache: 'no-store',
-      headers: { 'User-Agent': 'OSIRIS/4.2', 'Accept': 'application/json' },
+      headers: { 'User-Agent': 'HORUS/4.2', 'Accept': 'application/json' },
     });
 
-    console.log('[OSIRIS] IODA response status:', res.status);
+    console.log('[HORUS] IODA response status:', res.status);
 
     if (!res.ok) {
       // Fallback: return empty but valid response
@@ -83,7 +83,7 @@ export async function GET() {
       headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
     });
   } catch (error) {
-    console.error('[OSIRIS] IODA fetch error:', error);
+    console.error('[HORUS] IODA fetch error:', error);
     return NextResponse.json({ outages: [], total: 0, error: 'IODA unavailable' }, { status: 500 });
   }
 }

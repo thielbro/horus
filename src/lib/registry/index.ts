@@ -1,4 +1,4 @@
-// OSIRIS layer/source registry — public barrel. The declarative source of truth for
+// HORUS layer/source registry — public barrel. The declarative source of truth for
 // groups, layers, feeds and (incrementally) map rendering. Builtins are seeded by the
 // store/feeds modules on import; plugins register here too.
 

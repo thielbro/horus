@@ -38,7 +38,7 @@ function getPath(obj: any, path?: string): any {
 }
 const asArray = (v: any, sourceId: string, jsonPath?: string): any[] => {
   if (Array.isArray(v)) return v;
-  console.warn('[OSIRIS] Custom source jsonPath did not resolve to an array', { sourceId, jsonPath });
+  console.warn('[HORUS] Custom source jsonPath did not resolve to an array', { sourceId, jsonPath });
   return [];
 };
 

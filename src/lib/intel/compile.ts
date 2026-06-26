@@ -22,7 +22,7 @@ export { providerKinds };
 
 const INTEL_URL =
   process.env.INTEL_URL ||
-  (process.env.NODE_ENV === 'production' ? 'http://osiris-intel:4000' : 'http://localhost:4000');
+  (process.env.NODE_ENV === 'production' ? 'http://horus-intel:4000' : 'http://localhost:4000');
 
 const RESOLVE_TYPES = new Set(['aircraft', 'vessel', 'company', 'person', 'ip', 'country']);
 

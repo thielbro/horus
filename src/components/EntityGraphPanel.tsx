@@ -295,8 +295,8 @@ function EntityGraphPanel({ entity, onClose }: Props) {
         {/* HEADER */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-primary)] bg-[var(--gold-primary)]/5 relative z-20">
           <div className="flex items-center gap-3">
-            <div className="w-1.5 h-1.5 bg-[var(--gold-primary)] animate-osiris-pulse shadow-[0_0_8px_var(--gold-primary)]" />
-            <span className="text-[12px] font-mono font-bold tracking-[0.2em] text-[var(--gold-primary)]">[ OSIRIS // ENTITY INTEL ]</span>
+            <div className="w-1.5 h-1.5 bg-[var(--gold-primary)] animate-horus-pulse shadow-[0_0_8px_var(--gold-primary)]" />
+            <span className="text-[12px] font-mono font-bold tracking-[0.2em] text-[var(--gold-primary)]">[ HORUS // ENTITY INTEL ]</span>
             {loading && <Loader2 className="w-3.5 h-3.5 text-[var(--gold-primary)] animate-spin" />}
           </div>
           <div className="flex items-center gap-2">
@@ -318,7 +318,7 @@ function EntityGraphPanel({ entity, onClose }: Props) {
           </div>
         ) : (
           <div className="px-6 py-3 border-b border-[var(--border-primary)] flex items-center gap-3 bg-black/20 relative z-20">
-            <Network className="w-4 h-4 text-[var(--gold-primary)]/50 animate-osiris-pulse" />
+            <Network className="w-4 h-4 text-[var(--gold-primary)]/50 animate-horus-pulse" />
             <span className="text-xs font-mono text-[var(--gold-primary)]/50 tracking-widest uppercase truncate typewriter">[ AWAITING TARGET LOCK ]</span>
           </div>
         )}
@@ -362,7 +362,7 @@ function EntityGraphPanel({ entity, onClose }: Props) {
             >
               <div className="flex items-center justify-between mb-3 border-b border-[var(--border-secondary)] pb-2">
                 <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-[var(--gold-primary)] animate-osiris-pulse shadow-[0_0_8px_var(--gold-primary)]" />
+                  <div className="w-1.5 h-1.5 bg-[var(--gold-primary)] animate-horus-pulse shadow-[0_0_8px_var(--gold-primary)]" />
                   {(() => { const I = TYPE_ICONS[selectedNode.type] || Globe; return <I className="w-4 h-4" style={{ color: TYPE_COLORS[selectedNode.type] }} />; })()}
                   <span className="text-[13px] font-mono font-bold text-white tracking-[0.1em] uppercase">{selectedNode.label}</span>
                 </div>

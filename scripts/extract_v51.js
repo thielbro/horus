@@ -1,7 +1,7 @@
 const fs = require('fs');
-const transcriptPath = process.argv[2] || process.env.OSIRIS_TRANSCRIPT_JSONL;
+const transcriptPath = process.argv[2] || process.env.HORUS_TRANSCRIPT_JSONL;
 if (!transcriptPath) {
-  throw new Error('Usage: node scripts/extract_v51.js <transcript.jsonl> or set OSIRIS_TRANSCRIPT_JSONL');
+  throw new Error('Usage: node scripts/extract_v51.js <transcript.jsonl> or set HORUS_TRANSCRIPT_JSONL');
 }
 const data = fs.readFileSync(transcriptPath, 'utf8');
 const lines = data.split('\n');

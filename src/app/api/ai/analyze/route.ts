@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  OSIRIS — AI Intelligence Analysis Endpoint
+ *  HORUS — AI Intelligence Analysis Endpoint
  *  POST /api/ai/analyze
  *  Rate-limited, multi-key Gemini integration
  * ═══════════════════════════════════════════════════════════════
@@ -28,9 +28,9 @@ interface RateLimitEntry {
 
 // Map lives on globalThis so the single (HMR-guarded) cleanup timer always operates on
 // the live map, not a stale module-local copy left behind by a dev hot reload.
-const __analyzeStore = globalThis as unknown as { __osirisAnalyzeRL?: Map<string, RateLimitEntry> };
-if (!__analyzeStore.__osirisAnalyzeRL) __analyzeStore.__osirisAnalyzeRL = new Map<string, RateLimitEntry>();
-const rateLimitMap = __analyzeStore.__osirisAnalyzeRL;
+const __analyzeStore = globalThis as unknown as { __horusAnalyzeRL?: Map<string, RateLimitEntry> };
+if (!__analyzeStore.__horusAnalyzeRL) __analyzeStore.__horusAnalyzeRL = new Map<string, RateLimitEntry>();
+const rateLimitMap = __analyzeStore.__horusAnalyzeRL;
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const MAX_RATE_LIMIT_ENTRIES = 10_000;
@@ -63,9 +63,9 @@ function checkRateLimit(ip: string): { allowed: boolean; remaining: number; rese
 
 // Periodic cleanup to prevent memory leaks.
 // Guarded so dev hot-reloads (which re-import this module) don't stack duplicate timers.
-const __analyzeTimers = globalThis as unknown as { __osirisAnalyzeRLCleanup?: boolean };
-if (!__analyzeTimers.__osirisAnalyzeRLCleanup) {
-  __analyzeTimers.__osirisAnalyzeRLCleanup = true;
+const __analyzeTimers = globalThis as unknown as { __horusAnalyzeRLCleanup?: boolean };
+if (!__analyzeTimers.__horusAnalyzeRLCleanup) {
+  __analyzeTimers.__horusAnalyzeRLCleanup = true;
   setInterval(() => {
     pruneRateLimitMap(Date.now());
   }, 120_000);
@@ -198,7 +198,7 @@ export async function POST(
         {
           headers: {
             'X-RateLimit-Remaining': String(rateCheck.remaining),
-            'X-OSIRIS-AI-Fallback': 'local',
+            'X-HORUS-AI-Fallback': 'local',
           },
         }
       );
@@ -255,7 +255,7 @@ export async function POST(
       );
     }
 
-    console.error('[OSIRIS AI] Analysis error:', message);
+    console.error('[HORUS AI] Analysis error:', message);
     return NextResponse.json(
       {
         analysis: generateLocalAnalysis(body.context, body.query.trim(), message),
@@ -265,7 +265,7 @@ export async function POST(
       {
         headers: {
           'X-RateLimit-Remaining': String(rateCheck.remaining),
-          'X-OSIRIS-AI-Fallback': 'local',
+          'X-HORUS-AI-Fallback': 'local',
         },
       }
     );

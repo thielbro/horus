@@ -4,7 +4,7 @@ import { stealthFetch } from '@/lib/stealthFetch';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Flight Data API
+ * HORUS — Flight Data API
  * Fetches real-time aircraft positions from adsb.lol (no API key required)
  * Covers 6 global regions for maximum coverage
  */

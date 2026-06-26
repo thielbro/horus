@@ -1,6 +1,6 @@
-# OSIRIS Extensions
+# HORUS Extensions
 
-OSIRIS extensions are trusted, in-process customizations for a single operator. They are not sandboxed and should only contain code you authored or explicitly trust.
+HORUS extensions are trusted, in-process customizations for a single operator. They are not sandboxed and should only contain code you authored or explicitly trust.
 
 ## Bundle Format
 
@@ -19,7 +19,7 @@ Invalid bundle items are skipped and reported in Settings. Valid items still imp
 ## Examples
 
 - `docs/extensions/example-bundle.json` imports a no-code custom source backed by `public/examples/extensions/incidents.json`.
-- `docs/extensions/hello-osiris-plugin.js` registers a group, endpoint feed, layer, and popup interaction against the same static feed.
+- `docs/extensions/hello-horus-plugin.js` registers a group, endpoint feed, layer, and popup interaction against the same static feed.
 
 ## Verification
 

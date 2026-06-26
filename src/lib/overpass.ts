@@ -3,7 +3,7 @@ import { getClientIp, isRateLimited } from '@/lib/ssrf-guard';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — shared OpenStreetMap / Overpass layer helper.
+ * HORUS — shared OpenStreetMap / Overpass layer helper.
  *
  * Powers the counter-surveillance point layers (police stations, Flock/ALPR cameras,
  * mass-surveillance tech). Each route supplies its own tag clauses + node→record mapper;

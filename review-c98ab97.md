@@ -1,4 +1,4 @@
-# OSIRIS Code Review — Commit `c98ab97`
+# HORUS Code Review — Commit `c98ab97`
 **feat(intel): Dossier UI + address-intel map overlay (Phase 2b)**
 
 **Scope:** Stability, Functionality, Performance  
@@ -70,11 +70,11 @@ Phase 2b delivers a polished user-facing dossier panel and map overlay. The feat
 ## High Issues
 
 ### 6. Unbatched `setGeo` calls trigger 4 redundant map style updates
-- **File:** `src/components/OsirisMap.tsx` (lines ~1359–1379)
+- **File:** `src/components/HorusMap.tsx` (lines ~1359–1379)
 - **Issue:** The dossier overlay effect calls `setGeo` four times synchronously (`dossier-pin`, `dossier-radius`, `dossier-nearby`, `dossier-sightlines`). Each call hits `GeoJSONSource.setData()`, which triggers a separate MapLibre style re-evaluation and re-render. With 40+ nearby items and 64+ polygon points, this wastes frame budget and can cause visual tearing (intermediate frames showing only the pin, or only the radius).
 - **Fix:** Batch the updates into a single `requestAnimationFrame` or use a combined GeoJSON source with `filter`/`match` layer expressions so only one `setData` is needed.
 
-### 7. Global `window.openOsirisDossier` bypasses React reactivity and creates race surface
+### 7. Global `window.openHorusDossier` bypasses React reactivity and creates race surface
 - **File:** `src/app/page.tsx` (lines ~609–614)
 - **Issue:** Assigning a handler to `window` bypasses React's state flow. While the three `setState` calls inside the handler are batched by React 18, there is no guard against rapid re-entry. A caller can invoke the global function while the previous dossier stream is still in flight, and the stale SSE `done` callback can overwrite the new overlay state.
 - **Fix:** Replace the global with a React context or a typed event emitter. At minimum, add a `dossierRequestIdRef` that increments on each open and have `onDossierLoaded` validate it before applying state.
@@ -145,7 +145,7 @@ Phase 2b delivers a polished user-facing dossier panel and map overlay. The feat
 - **Fix:** Cap both at the same limit (e.g., 30 for the panel, 50 for the map), or document the divergence explicitly in a comment.
 
 ### 17. Popup HTML string interpolation lacks escaping, risking broken DOM
-- **File:** `src/components/OsirisMap.tsx` (lines ~510–513)
+- **File:** `src/components/HorusMap.tsx` (lines ~510–513)
 - **Issue:** `p.name`, `p.osmUrl`, and `p.distanceM` are interpolated directly into raw HTML strings. If `name` contains `"`, `<`, or `&`, the popup attribute or tag structure breaks and the link may become unclickable. (Security/XSS is out of scope, but DOM stability is affected.)
 - **Fix:** Add a minimal `escapeHtml` utility:
   ```typescript
@@ -159,7 +159,7 @@ Phase 2b delivers a polished user-facing dossier panel and map overlay. The feat
 
 ### 19. Architecture anti-pattern: global mutable state in SurveillancePanel
 - **File:** `src/components/SurveillancePanel.tsx` (line ~137)
-- **Issue:** `window.openOsirisDossier` is a global function attached to `window`, bypassing React props/context entirely. This is brittle, untestable, and creates an implicit cross-component contract.
+- **Issue:** `window.openHorusDossier` is a global function attached to `window`, bypassing React props/context entirely. This is brittle, untestable, and creates an implicit cross-component contract.
 - **Fix:** Lift the dossier open state into a React context or a prop-driven callback chain.
 
 ### 20. Missing `reader.releaseLock()` in DossierPanel
@@ -188,8 +188,8 @@ Phase 2b delivers a polished user-facing dossier panel and map overlay. The feat
 
 | # | File | Line(s) | Issue | Suggested Fix |
 |---|------|---------|-------|---------------|
-| 24 | `src/components/OsirisMap.tsx` | ~508–509 | Color logic duplicated between registry style expressions and popup handler. A palette change requires editing both sites. | Extract a `DOSSIER_KIND_COLOR` record into a shared constants file. |
-| 25 | `src/components/OsirisMap.tsx` | ~1229–1265 | Dossier layers not included in `setVis` visibility effect. They are always present in the map style and hidden only by setting GeoJSON sources to empty arrays. | Add explicit visibility guard in `setVis`. |
+| 24 | `src/components/HorusMap.tsx` | ~508–509 | Color logic duplicated between registry style expressions and popup handler. A palette change requires editing both sites. | Extract a `DOSSIER_KIND_COLOR` record into a shared constants file. |
+| 25 | `src/components/HorusMap.tsx` | ~1229–1265 | Dossier layers not included in `setVis` visibility effect. They are always present in the map style and hidden only by setting GeoJSON sources to empty arrays. | Add explicit visibility guard in `setVis`. |
 | 26 | `src/components/DossierPanel.tsx` | ~292 | Ineffective `memo()`. `open` toggles on every panel show/hide, and `target` changes on every selection. React almost always re-renders. | Remove `memo` unless you add a custom comparator that only compares `target.id`/`kind`/`lat`/`lng`. |
 | 27 | `src/components/DossierPanel.tsx` | ~163 | Missing image error handling. No `onError` handler on `<img>` tags. | Add `onError` to fallback to a placeholder or hide the broken image. |
 | 28 | `src/components/DossierPanel.tsx` | ~163 | Non-descriptive `alt` text. `alt="street-level"` is identical for every image. | Use `alt={\`Street view from ${m.source} — ${i + 1}\`}`. |
@@ -202,9 +202,9 @@ Phase 2b delivers a polished user-facing dossier panel and map overlay. The feat
 - **`bboxOfPoints` empty-array fix** — returns `null` instead of garbage, preventing downstream crashes.
 - **Antimeridian handling added to `bboxOfPoints`** — correctly detects and wraps longitude ranges across the dateline.
 - **`circlePolygon` added** — enables the radius ring visualization without a Turf dependency.
-- **`OsirisMap` is correctly wrapped with `memo`** — prevents unnecessary re-renders when `page.tsx` `mapView` state changes and `dossierOverlay` is stable.
+- **`HorusMap` is correctly wrapped with `memo`** — prevents unnecessary re-renders when `page.tsx` `mapView` state changes and `dossierOverlay` is stable.
 - **`onDossierLoaded` and `closeDossier` use `useCallback` with stable setter deps** — so `DossierPanel` does not receive new function references on every parent render.
-- **`closeDossier` correctly nulls `dossierOverlay`** — which triggers the cleanup effect in `OsirisMap` and empties all four GeoJSON sources.
+- **`closeDossier` correctly nulls `dossierOverlay`** — which triggers the cleanup effect in `HorusMap` and empties all four GeoJSON sources.
 - **`setGeo` safely checks `if (src) src.setData(...)`** — so missing sources do not throw.
 - **Dossier registry layer (`builtins.ts`) is clean** — well-formed Mapbox GL JS expressions, `headless: true` correctly signals no React UI component is required.
 
@@ -221,7 +221,7 @@ Phase 2b delivers a polished user-facing dossier panel and map overlay. The feat
 
 ### Sprint 2 (high impact)
 6. Batch `setGeo` calls into a single map update (High #6).
-7. Replace `window.openOsirisDossier` with a React context or request-id guard (High #7).
+7. Replace `window.openHorusDossier` with a React context or request-id guard (High #7).
 8. Fix stale `useEffect` closure in DossierPanel (High #8).
 9. Memoize `renderMarkdown` (High #9).
 10. Memoize `nearby` computation with `useMemo` (High #10).

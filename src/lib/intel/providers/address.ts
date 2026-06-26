@@ -69,7 +69,7 @@ async function fetchNearby(lat: number, lng: number, radiusM: number, signal?: A
     `);\nout body 400;`;
   const res = await fetch(OVERPASS, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'OSIRIS-map/1.0 (address intel; OpenStreetMap data)' },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'HORUS-map/1.0 (address intel; OpenStreetMap data)' },
     body: 'data=' + encodeURIComponent(query),
     signal: safeAbortAny([signal, safeAbortTimeout(OVERPASS_TIMEOUT_MS)]),
   });
@@ -305,7 +305,7 @@ export const addressProvider: IntelProvider = {
         {
           role: 'system',
           content:
-            'You are OSIRIS, an OSINT counter-surveillance analyst. You are given structured public facts about a LOCATION (never a person). ' +
+            'You are HORUS, an OSINT counter-surveillance analyst. You are given structured public facts about a LOCATION (never a person). ' +
             'Write a concise markdown assessment (4-8 sentences) covering: what the location is / who occupies it (from web results, clearly hedged), and its SURVEILLANCE EXPOSURE — what cameras, ALPR readers, and police can observe it. ' +
             'Use ONLY the provided facts. Never invent occupants, names, or devices. Frame this as public-infrastructure awareness ("what can observe this spot").',
         },

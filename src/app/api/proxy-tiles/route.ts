@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const response = await fetch(targetUrl.toString(), {
       headers: {
         'Accept': '*/*',
-        'User-Agent': 'Osiris-Tile-Proxy/1.0',
+        'User-Agent': 'Horus-Tile-Proxy/1.0',
       },
       signal: safeAbortTimeout(10000),
       // Using Next.js fetch cache options to heavily cache tiles locally

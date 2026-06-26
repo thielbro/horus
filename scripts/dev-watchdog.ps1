@@ -1,7 +1,7 @@
 # dev-watchdog.ps1 — run `next dev` with a hard process-count kill-switch.
 #
 # This is the DEFAULT `npm run dev` (the raw, unguarded server is `npm run dev:raw`).
-# OSIRIS once made Turbopack's dev server spawn node.exe workers without bound (a
+# HORUS once made Turbopack's dev server spawn node.exe workers without bound (a
 # deprecated `middleware.ts`, since migrated to `proxy.ts`). This script guards against
 # any regression: it starts `next dev` and watches the live node process count for the
 # WHOLE lifetime of the server; if the count ever blows past the threshold it kills the

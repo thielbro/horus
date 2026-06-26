@@ -1,4 +1,4 @@
-# Osiris Global Intelligence Platform
+# Horus Global Intelligence Platform
 # https://osirisai.live
 
 User-agent: *

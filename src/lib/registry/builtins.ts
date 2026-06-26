@@ -8,7 +8,7 @@ const flightCom = (t: ThemeMode) => (t === 'ghost' ? PHANTOM_PURPLE : '#00E5FF')
 const flightPriv = (t: ThemeMode) => (t === 'ghost' ? GHOST_PRIV : '#FFD700');
 const flightGov = (t: ThemeMode) => (t === 'ghost' ? GHOST_GOV : '#FF9500');
 
-// Ghost-mode recolors for surveillance layers (in-place recolor handled live by OsirisMap).
+// Ghost-mode recolors for surveillance layers (in-place recolor handled live by HorusMap).
 const cameraColor = (t: ThemeMode) => (t === 'ghost' ? '#B388FF' : '#00E676');
 const surveillanceColor = (t: ThemeMode) => (t === 'ghost' ? '#FF80AB' : '#FFAB00');
 
@@ -37,7 +37,7 @@ const osmPointStyle = (prefix: string, source: string, color: string): StyleLaye
   { id: `${prefix}-label`, source, type: 'symbol', minzoom: 12, layout: { 'text-field': ['get', 'name'], 'text-size': 9, 'text-font': ['Open Sans Regular'], 'text-offset': [0, 1.4], 'text-max-width': 12, 'text-allow-overlap': false }, paint: { 'text-color': color, 'text-halo-color': '#000000', 'text-halo-width': 1.5, 'text-opacity': 0.75 } },
 ]);
 
-// Cap on malware nodes woven into the botnet mesh (stability — mirrors OsirisMap's constant).
+// Cap on malware nodes woven into the botnet mesh (stability — mirrors HorusMap's constant).
 const MAX_MESH_NODES = 750;
 const SOLAR_TERMINATOR_TTL_MS = 60_000;
 let solarTerminatorCache: { at: number; points: [number, number][] } | null = null;
@@ -45,7 +45,7 @@ let solarTerminatorCache: { at: number; points: [number, number][] } | null = nu
 // SEA-domain submarine-cable background arcs to drop (light blue noise from the source map).
 const SDK_IGNORED_CABLE_COLORS = new Set(['#9BB5CC', '#A0B8CD', '#8EABC2', '#9bb5cc', '#a0b8cd', '#8eabc2']);
 
-// Day/night terminator polygon (current UTC time). Re-run on OsirisMap's 5-min interval.
+// Day/night terminator polygon (current UTC time). Re-run on HorusMap's 5-min interval.
 function computeSolarTerminatorRaw(): [number, number][] {
   const now = new Date();
   const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
@@ -76,7 +76,7 @@ function computeSolarTerminator(): [number, number][] {
   return points;
 }
 
-// Always-on conflict-zone warning markers (verbatim from OsirisMap; no data source / no toggle).
+// Always-on conflict-zone warning markers (verbatim from HorusMap; no data source / no toggle).
 const CONFLICT_ZONES = [
   { label: 'UKRAINE WAR', severity: 'war', lat: 48.5, lng: 31.2, description: 'Live reporting: Ongoing Russian invasion of Ukraine and active frontlines.', sourceUrl: 'https://liveuamap.com/' },
   { label: 'GAZA CONFLICT', severity: 'war', lat: 31.35, lng: 34.35, description: 'Live reporting: Active military operations and humanitarian crisis in Gaza.', sourceUrl: 'https://israelpalestine.liveuamap.com/' },
@@ -93,7 +93,7 @@ const CONFLICT_ZONES = [
   { label: 'RED SEA THREAT', severity: 'high', lat: 16.0, lng: 40.0, description: 'Houthi anti-ship missile and drone attacks on maritime traffic.', sourceUrl: 'https://yemen.liveuamap.com/' },
 ];
 
-// Flight features with optional decimation (verbatim from OsirisMap's toFeatures helper).
+// Flight features with optional decimation (verbatim from HorusMap's toFeatures helper).
 function flightFeatures(arr: any[], decimate = 1) {
   let filtered = arr || [];
   if (decimate > 1) filtered = filtered.filter((_: any, i: number) => i % decimate === 0);
@@ -110,7 +110,7 @@ const flightLayout = (icon: string) => ({
 });
 
 export const BUILTIN_GROUPS: RegistryGroup[] = [
-  { id: 'SDK', label: 'SDK', fullLabel: 'OSIRIS SDK', color: '#1565C0', order: 0 },
+  { id: 'SDK', label: 'SDK', fullLabel: 'HORUS SDK', color: '#1565C0', order: 0 },
   { id: 'AVIATION', label: 'AVIATION', fullLabel: 'AVIATION', color: flightCom, order: 1 },
   { id: 'MARITIME', label: 'MARITIME', fullLabel: 'MARITIME & SPACE', color: '#26C6DA', order: 2 },
   { id: 'SURVEIL', label: 'SURVEIL', fullLabel: 'SURVEILLANCE', color: '#7E57C2', order: 3 },
@@ -184,7 +184,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   // ── MARITIME ──
   {
     id: 'maritime', label: 'Maritime / Naval', group: 'MARITIME', icon: 'Ship', color: '#26C6DA', countBuckets: ['maritime_ships', 'maritime_ports', 'maritime_chokepoints'],
-    // ship-dots / ship-label style layers stay raw in OsirisMap init — they sit after the
+    // ship-dots / ship-label style layers stay raw in HorusMap init — they sit after the
     // SDK mesh lines in z-order, so they can't be added at the maritime/choke init position.
     styleLayers: [
       { id: 'maritime-glow', source: 'maritime', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,6, 5,12, 10,20], 'circle-color': ['match', ['get','type'], 'naval','#D32F2F', 'energy','#E65100', '#26C6DA'], 'circle-opacity': 0.08, 'circle-blur': 1 } },
@@ -390,8 +390,8 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   // ── DISPLAY ──
   {
     id: 'day_night', label: 'Day / Night Cycle', group: 'DISPLAY', icon: 'Sun', color: '#448AFF', countBuckets: [],
-    // day-night-fill is theme-static (recolored live by OsirisMap's setPaint effect); the
-    // terminator polygon is recomputed by OsirisMap's 5-min interval re-invoking the binding.
+    // day-night-fill is theme-static (recolored live by HorusMap's setPaint effect); the
+    // terminator polygon is recomputed by HorusMap's 5-min interval re-invoking the binding.
     styleLayers: [
       { id: 'day-night-fill', source: 'day-night', type: 'fill', paint: (t) => ({ 'fill-color': t === 'ghost' ? '#0D0030' : '#000022', 'fill-opacity': 0.35 }) },
     ],
@@ -403,7 +403,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   // ── HEADLESS (no sidebar toggle; registered + rendered by the map engine) ──
   {
     id: 'conflict_zones', label: 'Conflict Zones', group: 'THREAT', icon: 'AlertTriangle', color: '#D32F2F', headless: true,
-    // Always-on: binding ignores `active`. Uses warn-icon* images created in OsirisMap init.
+    // Always-on: binding ignores `active`. Uses warn-icon* images created in HorusMap init.
     styleLayers: [
       {
         id: 'conflict-icons', source: 'conflict-zones', type: 'symbol',
@@ -440,7 +440,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   },
   {
     id: 'ip_sweep', label: 'IP Sweep', group: 'NETWORK', icon: 'Radar', color: '#FF3D3D', headless: true,
-    // Style only — features pushed imperatively (batched reveal animation) by OsirisMap.
+    // Style only — features pushed imperatively (batched reveal animation) by HorusMap.
     styleLayers: [
       { id: 'sweep-connections', source: 'ip-sweep-connections', type: 'line', paint: { 'line-color': ['get', 'color'], 'line-width': 1, 'line-opacity': 0.3, 'line-dasharray': [2, 4] } },
       { id: 'sweep-pulse-ring', source: 'ip-sweep-pulse', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 8,40, 12,80, 16,160], 'circle-color': 'transparent', 'circle-opacity': 0.6, 'circle-stroke-width': 2, 'circle-stroke-color': '#FF3D3D', 'circle-stroke-opacity': 0.4 } },
@@ -451,7 +451,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   },
   {
     id: 'scan_targets', label: 'Scan Targets', group: 'NETWORK', icon: 'Crosshair', color: '#D32F2F', headless: true,
-    // Style only — features pushed imperatively by OsirisMap.
+    // Style only — features pushed imperatively by HorusMap.
     styleLayers: [
       { id: 'scan-targets-glow', source: 'scan-targets', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,12, 5,25, 10,40], 'circle-color': '#D32F2F', 'circle-opacity': 0.15, 'circle-blur': 1 } },
       { id: 'scan-targets-dots', source: 'scan-targets', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 5,8, 10,12], 'circle-color': '#D32F2F', 'circle-opacity': 0.9, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#ECEFF1', 'circle-stroke-opacity': 0.7 } },
@@ -460,7 +460,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   },
   {
     // Address-intel overlay — pin, radius ring, nearby surveillance, and sightlines from each
-    // device to the pin. Style only; features pushed imperatively by OsirisMap from the dossier.
+    // device to the pin. Style only; features pushed imperatively by HorusMap from the dossier.
     id: 'dossier', label: 'Dossier Overlay', group: 'SURVEIL', icon: 'MapPin', color: '#D4AF37', headless: true,
     styleLayers: [
       { id: 'dossier-radius-fill', source: 'dossier-radius', type: 'fill', paint: { 'fill-color': '#00E676', 'fill-opacity': 0.05 } },
@@ -473,7 +473,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
     ],
   },
   {
-    // Live user position (GPS). Style only; features pushed imperatively by OsirisMap from
+    // Live user position (GPS). Style only; features pushed imperatively by HorusMap from
     // LocationTracker. Cyan to distinguish from the gold dossier pin.
     id: 'user_position', label: 'My Location', group: 'SURVEIL', icon: 'Navigation', color: '#00E5FF', headless: true,
     styleLayers: [
@@ -485,7 +485,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   },
   {
     // Route-exposure overlay — the route line, its surveillance corridor (buffer fill), and the
-    // cameras/ALPR/police within it. Style only; features pushed imperatively by OsirisMap from
+    // cameras/ALPR/police within it. Style only; features pushed imperatively by HorusMap from
     // the route dossier. Cyan route line distinguishes it from the gold address dossier.
     id: 'route', label: 'Route Exposure', group: 'SURVEIL', icon: 'Navigation', color: '#00E5FF', headless: true,
     styleLayers: [

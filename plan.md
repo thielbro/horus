@@ -1,7 +1,7 @@
-# OSIRIS Final Code Review Plan
+# HORUS Final Code Review Plan
 
 ## Project Overview
-- **Name**: osiris-native-desktop (OSIRIS)
+- **Name**: horus-native-desktop (HORUS)
 - **Tech Stack**: Next.js 16.2.6, React 19.2.4, TypeScript 5, Electron 42.4.1, Tailwind CSS v4, MapLibre GL, Framer Motion, WebSocket
 - **Total LOC**: ~12,600 lines across main app, desktop, intel, scanner, plugins-sdk
 - **Scope**: Stability, functionality, and performance ONLY. Security is NOT the focus.
@@ -9,7 +9,7 @@
 ## Review Domains (5 parallel agents)
 
 ### Agent 1: Frontend Main App + Map Components
-Files: src/app/page.tsx, src/app/layout.tsx, src/components/OsirisMap.tsx, src/components/LayerPanel.tsx, src/components/SearchBar.tsx, src/components/ScaleBar.tsx, src/components/ViewPresets.tsx, src/components/GlobalStatusBar.tsx, src/components/ErrorBoundary.tsx
+Files: src/app/page.tsx, src/app/layout.tsx, src/components/HorusMap.tsx, src/components/LayerPanel.tsx, src/components/SearchBar.tsx, src/components/ScaleBar.tsx, src/components/ViewPresets.tsx, src/components/GlobalStatusBar.tsx, src/components/ErrorBoundary.tsx
 Focus: React 19 + Next.js 16 compatibility, map rendering performance, state management, error boundaries, memoization, event listener leaks, re-render cascades.
 
 ### Agent 2: Frontend OSINT + Intelligence Components

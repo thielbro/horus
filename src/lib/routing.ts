@@ -7,7 +7,7 @@
 import { safeAbortTimeout, safeAbortAny, releaseResponseBody } from '@/lib/http-utils';
 
 const DEFAULT_ROUTING_URL = 'https://router.project-osrm.org';
-const UA = 'OSIRIS-map/1.0 (route exposure; OpenStreetMap/OSRM)';
+const UA = 'HORUS-map/1.0 (route exposure; OpenStreetMap/OSRM)';
 const ROUTE_TIMEOUT_MS = 15_000;
 
 export interface RoutePoint {

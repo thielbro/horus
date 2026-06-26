@@ -23,7 +23,7 @@ async function readJsonOrNull<T = any>(res: Response): Promise<T | null> {
 }
 
 /**
- * OSIRIS — Global Stats API
+ * HORUS — Global Stats API
  * Lightweight aggregation endpoint.
  * Fetches metrics from all local APIs and returns ONLY the counts.
  * 

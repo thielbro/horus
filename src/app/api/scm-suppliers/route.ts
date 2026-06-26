@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — SCM Supplier Risk Overlay
+ * HORUS — SCM Supplier Risk Overlay
  * Calculates intersection between live global threats (Earthquakes, Fires, Conflicts)
  * and static Tier 1/2 Supplier coordinates.
  */

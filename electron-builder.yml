@@ -1,6 +1,6 @@
-appId: app.osiris.desktop
-productName: OSIRIS
-copyright: OSIRIS
+appId: app.horus.desktop
+productName: HORUS
+copyright: HORUS
 
 directories:
   output: desktop/release
@@ -21,7 +21,7 @@ files:
 # electron-builder strips node_modules out of extraResources directories.
 afterPack: ./desktop/after-pack.js
 
-# App + installer icon. Generated from the OSIRIS brand mark by scripts/make-icon.js;
+# App + installer icon. Generated from the HORUS brand mark by scripts/make-icon.js;
 # also auto-detected as buildResources/icon.ico, but set explicitly for clarity.
 win:
   target: nsis
@@ -37,7 +37,7 @@ linux:
         - x64
   icon: desktop/build/icon.png
   category: Utility
-  maintainer: OSIRIS
+  maintainer: HORUS
   syncDesktopName: true
 
 nsis:

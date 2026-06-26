@@ -18,7 +18,7 @@ function between(source, startMarker, endMarker) {
 }
 
 test('delta review: route and live-position overlays batch GeoJSON updates', () => {
-  const map = file('src/components/OsirisMap.tsx');
+  const map = file('src/components/HorusMap.tsx');
   const userEffect = between(map, '// Live user position', '// Route-exposure overlay');
   const routeEffect = between(map, '// Route-exposure overlay', '// Fly-to.');
 

@@ -30,7 +30,7 @@ export const stubProvider: IntelProvider = {
     const factsBlock = gathered.signals.map((s) => `- ${s.label}: ${JSON.stringify(s.value)}`).join('\n');
     const result = await ctx.llm.chat(
       [
-        { role: 'system', content: 'You are OSIRIS, an OSINT analyst. Write one concise paragraph using ONLY the facts provided. Do not invent details.' },
+        { role: 'system', content: 'You are HORUS, an OSINT analyst. Write one concise paragraph using ONLY the facts provided. Do not invent details.' },
         { role: 'user', content: `Summarize this reference for an analyst.\n\nFACTS:\n${factsBlock}` },
       ],
       { signal: ctx.signal },

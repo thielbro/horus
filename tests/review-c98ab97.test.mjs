@@ -59,8 +59,8 @@ test('review c98ab97 dossier page integration validates request ids and payload 
   assert.match(page, /regionDossierAbort/);
 });
 
-test('review c98ab97 OsirisMap batches dossier overlay updates and escapes popup HTML', () => {
-  const map = file('src/components/OsirisMap.tsx');
+test('review c98ab97 HorusMap batches dossier overlay updates and escapes popup HTML', () => {
+  const map = file('src/components/HorusMap.tsx');
 
   assert.match(map, /DOSSIER_KIND_COLOR/);
   assert.match(map, /escapeHtml/);

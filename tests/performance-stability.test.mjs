@@ -16,7 +16,7 @@ test('global CSS does not transition every element', () => {
 
 test('main map is not remounted on theme switch', () => {
   const page = file('src/app/page.tsx');
-  assert.doesNotMatch(page, /key=\{osirisTheme\}/);
+  assert.doesNotMatch(page, /key=\{horusTheme\}/);
 });
 
 test('stats route reads GDELT events instead of a stale field name', () => {
@@ -86,7 +86,7 @@ test('reviewed frontend caches and viewers stay bounded while preserving map vie
 test('reviewed SDK and desktop lifecycle resources are cleaned up', () => {
   const polybolos = file('src/lib/sdk/PolybolosClient.ts');
   assert.match(polybolos, /this\.sseConnection\?\.close\(\)/);
-  assert.doesNotMatch(polybolos, /osiris-event-fire-\$\{i\}/);
+  assert.doesNotMatch(polybolos, /horus-event-fire-\$\{i\}/);
 
   const main = file('desktop/main.js');
   assert.match(main, /if \(serverChild\) return/);
@@ -230,13 +230,13 @@ test('low-risk frontend and CCTV cleanup items stay fixed', () => {
 
 test('frontend unmount and resize-sensitive components clean up resources', () => {
   assert.match(file('src/components/SearchBar.tsx'), /clearTimeout\(timerRef\.current\)/);
-  assert.match(file('src/components/OsirisMap.tsx'), /ResizeObserver/);
+  assert.match(file('src/components/HorusMap.tsx'), /ResizeObserver/);
   assert.match(file('src/components/EntityGraphPanel.tsx'), /ResizeObserver/);
   assert.match(file('src/components/AiAnalyst.tsx'), /MAX_MESSAGES/);
 });
 
 test('entity graph implementation receives structured aircraft and vessel clicks', () => {
-  const map = file('src/components/OsirisMap.tsx');
+  const map = file('src/components/HorusMap.tsx');
   const page = file('src/app/page.tsx');
 
   assert.match(map, /type:\s*'aircraft'[\s\S]*id:\s*aircraftId/);
@@ -445,7 +445,7 @@ test('bounded-input and lifecycle fixes remain wired', () => {
 });
 
 test('map popups and computed meshes guard malformed or oversized data', () => {
-  const map = file('src/components/OsirisMap.tsx');
+  const map = file('src/components/HorusMap.tsx');
   const registry = file('src/lib/registry/builtins.ts');
   assert.match(map, /safeJsonArray/);
   assert.match(registry, /MAX_MESH_NODES/);
@@ -453,7 +453,7 @@ test('map popups and computed meshes guard malformed or oversized data', () => {
 });
 
 test('delta review map and registry cleanup recommendations stay fixed', () => {
-  const map = file('src/components/OsirisMap.tsx');
+  const map = file('src/components/HorusMap.tsx');
   const layerPanel = file('src/components/LayerPanel.tsx');
   const registry = file('src/lib/registry/builtins.ts');
   const mapEngine = file('src/lib/registry/mapEngine.ts');
@@ -468,7 +468,7 @@ test('delta review map and registry cleanup recommendations stay fixed', () => {
 });
 
 test('registry cleanup keeps source ownership and SDK mapSource contract aligned', () => {
-  const map = file('src/components/OsirisMap.tsx');
+  const map = file('src/components/HorusMap.tsx');
   const mapEngine = file('src/lib/registry/mapEngine.ts');
   const types = file('src/lib/registry/types.ts');
   const context = file('src/lib/plugins/context.ts');
@@ -495,7 +495,7 @@ test('registry cleanup keeps source ownership and SDK mapSource contract aligned
 
 test('extension delta review frontend lifecycle fixes stay wired', () => {
   const page = file('src/app/page.tsx');
-  const map = file('src/components/OsirisMap.tsx');
+  const map = file('src/components/HorusMap.tsx');
   const settingsPanel = file('src/components/SettingsPanel.tsx');
   const layerPanel = file('src/components/LayerPanel.tsx');
 
@@ -542,11 +542,11 @@ test('extension delta review registry engine avoids timer churn and stale interv
   assert.match(mapEngine, /try\s*\{[\s\S]*registryLayerSources\(layer\)/);
   assert.match(mapEngine, /try\s*\{[\s\S]*getRenderBindingSource\(binding\)/);
 
-  assert.match(customSource, /console\.warn\('\[OSIRIS\] Custom source jsonPath did not resolve to an array'/);
+  assert.match(customSource, /console\.warn\('\[HORUS\] Custom source jsonPath did not resolve to an array'/);
   assert.match(store, /MAX_REGISTRY_LAYERS/);
   assert.match(store, /MAX_REGISTRY_GROUPS/);
   assert.match(feeds, /MAX_REGISTRY_FEEDS/);
-  assert.match(events, /console\.error\('\[OSIRIS\] Registry listener failed'/);
+  assert.match(events, /console\.error\('\[HORUS\] Registry listener failed'/);
   assert.match(builtins, /SOLAR_TERMINATOR_TTL_MS/);
   assert.match(builtins, /s\.name \|\| s\.mmsi\?\.toString\(\) \|\| 'Unknown'/);
 });
@@ -621,7 +621,7 @@ test('second-pass stability review crash guards and bounded async paths stay fix
   assert.match(camera, /destroyHls/);
   assert.match(camera, /if \(data\.fatal\) \{[\s\S]*destroyHls/);
 
-  const map = file('src/components/OsirisMap.tsx');
+  const map = file('src/components/HorusMap.tsx');
   assert.match(map, /let map: maplibregl\.Map/);
   assert.match(map, /try\s*\{[\s\S]*new maplibregl\.Map/);
 

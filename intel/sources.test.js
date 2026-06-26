@@ -10,10 +10,10 @@ const {
 } = require('./sources');
 
 test('buildOsintUrl routes Wikidata and OpenSanctions requests through the cache base', () => {
-  const base = 'http://osiris-cache:8080/proxy/osint/';
+  const base = 'http://horus-cache:8080/proxy/osint/';
 
   const sparqlUrl = buildOsintUrl('wikidataSparql', { query: 'SELECT * WHERE {}', format: 'json' }, base);
-  assert.equal(sparqlUrl.origin, 'http://osiris-cache:8080');
+  assert.equal(sparqlUrl.origin, 'http://horus-cache:8080');
   assert.equal(sparqlUrl.pathname, '/proxy/osint/wikidata/sparql');
   assert.equal(sparqlUrl.searchParams.get('query'), 'SELECT * WHERE {}');
 

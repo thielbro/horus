@@ -1,6 +1,6 @@
 'use client';
 
-// OSIRIS — Dossier panel. Streams a compiled intel dossier (SSE from /api/intel/compile) and
+// HORUS — Dossier panel. Streams a compiled intel dossier (SSE from /api/intel/compile) and
 // renders it: BLUF summary, sections, facts, nearby surveillance, street-level photos,
 // citations, privacy notice, provenance. The map overlay (pin/radius/sightlines) is driven by
 // the parent via onLoaded(dossier). Address is the first kind; the panel is kind-agnostic.
@@ -252,7 +252,7 @@ function DossierPanel({ open, target, requestId, onClose, onLoaded, onLocate }: 
           <div className="flex-1 overflow-y-auto styled-scrollbar px-5 py-4 space-y-5">
             {loading && (
               <div className="text-[10px] font-mono text-[var(--gold-primary)]/80 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--gold-primary)] animate-osiris-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--gold-primary)] animate-horus-pulse" />
                 {stage ? `${stage.toUpperCase()}…` : 'COMPILING…'}
               </div>
             )}

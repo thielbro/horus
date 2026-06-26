@@ -17,7 +17,7 @@ let bootstrapped = false;
 const listeners = new Set<() => void>();
 const MAX_CUSTOM_SOURCES = 200;
 const notify = () => listeners.forEach((l) => {
-  try { l(); } catch (err) { console.error('[OSIRIS] custom source listener failed', err); }
+  try { l(); } catch (err) { console.error('[HORUS] custom source listener failed', err); }
 });
 
 function persist() {
@@ -61,7 +61,7 @@ function rollbackLiveRegistry(id: string, previousRecord: CustomSourceRecord | n
     try {
       registerCustomSource(stripRuntimeFields(previousRecord));
     } catch (restoreErr) {
-      console.error('[OSIRIS] custom source rollback failed', previousRecord.id, restoreErr);
+      console.error('[HORUS] custom source rollback failed', previousRecord.id, restoreErr);
     }
   }
 }
@@ -89,13 +89,13 @@ export function upsertCustomSource(spec: CustomSourceSpec): { ok: boolean; id?: 
     commitSpecs(previous ? specs.map((s) => (s.id === clean.id ? record : s)) : [...specs, record]);
   } catch (e: any) {
     const error = String(e?.message ?? e);
-    console.error('[OSIRIS] custom source register failed', clean.id, e);
+    console.error('[HORUS] custom source register failed', clean.id, e);
     rollbackLiveRegistry(clean.id, previousRecord);
     const record: CustomSourceRecord = previousRecord ? { ...previousRecord, error } : { ...clean, error };
     try {
       commitSpecs(previous ? specs.map((s) => (s.id === clean.id ? record : s)) : [...specs, record]);
     } catch (persistErr) {
-      console.error('[OSIRIS] custom source persist failed', clean.id, persistErr);
+      console.error('[HORUS] custom source persist failed', clean.id, persistErr);
       return { ok: false, id: clean.id, error: String((persistErr as any)?.message ?? persistErr) };
     }
     return { ok: false, id: clean.id, error };
@@ -112,7 +112,7 @@ export function removeCustomSource(id: string): void {
   } catch (err) {
     rollbackLiveRegistry(id, previousRecord);
     specs = previousSpecs;
-    console.error('[OSIRIS] custom source remove persist failed', id, err);
+    console.error('[HORUS] custom source remove persist failed', id, err);
     throw err;
   }
 }
@@ -129,7 +129,7 @@ export function bootstrapCustomSources(): void {
       existingIds: [...seen],
     });
     if (!validation.ok) {
-      console.error('[OSIRIS] custom source validation failed', (s as any)?.id, validation.errors);
+      console.error('[HORUS] custom source validation failed', (s as any)?.id, validation.errors);
       continue;
     }
     const clean = validation.value as CustomSourceSpec;
@@ -138,7 +138,7 @@ export function bootstrapCustomSources(): void {
       specs.push({ ...clean, error: null });
       seen.add(clean.id);
     } catch (e: any) {
-      console.error('[OSIRIS] custom source bootstrap failed', clean.id, e);
+      console.error('[HORUS] custom source bootstrap failed', clean.id, e);
       specs.push({ ...clean, error: String(e?.message ?? e) });
       seen.add(clean.id);
     }

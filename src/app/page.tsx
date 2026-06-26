@@ -20,7 +20,7 @@ import { useFeedEngine, getLayers } from '@/lib/registry';
 import { setHostServices, bootstrapExtensions } from '@/lib/plugins';
 import { normalizeWorkspaceSnapshot, restoreActiveLayers, type WorkspaceSnapshot } from '@/lib/workspaces';
 
-const OsirisMap = dynamic(() => import('@/components/OsirisMap'), { ssr: false });
+const HorusMap = dynamic(() => import('@/components/HorusMap'), { ssr: false });
 const LayerPanel = dynamic(() => import('@/components/LayerPanel'));
 const CameraViewer = dynamic(() => import('@/components/CameraViewer'));
 const OsintPanel = dynamic(() => import('@/components/OsintPanel'));
@@ -218,7 +218,7 @@ export default function Dashboard() {
 
   // ── Settings store (themes, map defaults, API keys) ──
   const { settings, update: updateSettings, ready: settingsReady } = useSettings();
-  const osirisTheme: 'core' | 'ghost' = settings.appearance.theme === 'ghost' ? 'ghost' : 'core';
+  const horusTheme: 'core' | 'ghost' = settings.appearance.theme === 'ghost' ? 'ghost' : 'core';
   const setTheme = useCallback((t: 'core' | 'ghost') => updateSettings({ appearance: { theme: t } }), [updateSettings]);
   const [showSettings, setShowSettings] = useState(false);
   const [showSurveillance, setShowSurveillance] = useState(false);
@@ -231,9 +231,9 @@ export default function Dashboard() {
 
   // Base theme class (core/ghost)
   useEffect(() => {
-    document.body.classList.toggle('theme-ghost', osirisTheme === 'ghost');
+    document.body.classList.toggle('theme-ghost', horusTheme === 'ghost');
     return () => { document.body.classList.remove('theme-ghost'); };
-  }, [osirisTheme]);
+  }, [horusTheme]);
 
   // Custom-theme CSS variable overrides (layered on top of the base class)
   useEffect(() => {
@@ -308,7 +308,7 @@ export default function Dashboard() {
     setShowIntel(snap.ui.showIntel);
     setShowEntityGraph(snap.ui.showEntityGraph);
 
-    // Camera restore is gated on map readiness inside OsirisMap (the flyTo effect only
+    // Camera restore is gated on map readiness inside HorusMap (the flyTo effect only
     // runs once mapReady is true), so a fresh timestamp is safe even mid-load.
     setMapView((v) => ({ ...v, latitude: snap.view.latitude, longitude: snap.view.longitude, zoom: snap.view.zoom }));
     setFlyToLocation({ lat: snap.view.latitude, lng: snap.view.longitude, zoom: snap.view.zoom, ts: Date.now() });
@@ -336,13 +336,13 @@ export default function Dashboard() {
   // URL state: parse on mount + IP geolocation for fresh sessions
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const isFreshSession = !sessionStorage.getItem('osiris_session');
+    const isFreshSession = !sessionStorage.getItem('horus_session');
     const p = new URLSearchParams(window.location.search);
     let ipGeoController: AbortController | null = null;
 
     if (isFreshSession) {
       // Brand new session — always geolocate by IP to user's city
-      sessionStorage.setItem('osiris_session', '1');
+      sessionStorage.setItem('horus_session', '1');
       const controller = new AbortController();
       ipGeoController = controller;
       const timeout = setTimeout(() => controller.abort(), 5000);
@@ -481,7 +481,7 @@ export default function Dashboard() {
         }
       } catch (e) {
         if (!(e instanceof DOMException && e.name === 'AbortError')) {
-          console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
+          console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e);
         }
       } finally {
         if (geocodeAbort.current === controller) geocodeAbort.current = null;
@@ -504,7 +504,7 @@ export default function Dashboard() {
       const res = await fetch(`/api/region-dossier?lat=${coords.lat}&lng=${coords.lng}`, { signal: controller.signal });
       if (res.ok && !controller.signal.aborted) setRegionDossier(await res.json());
     } catch (e) {
-      if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
+      if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e);
     } finally {
       if (regionDossierAbort.current === controller) regionDossierAbort.current = null;
       if (!controller.signal.aborted) setDossierLoading(false);
@@ -597,7 +597,7 @@ export default function Dashboard() {
     let cancelled = false;
     if (settingsReady) {
       void bootstrapExtensions().catch((err) => {
-        if (!cancelled) console.error('[OSIRIS] Extension bootstrap failed', err);
+        if (!cancelled) console.error('[HORUS] Extension bootstrap failed', err);
       });
     }
     return () => { cancelled = true; };
@@ -605,7 +605,7 @@ export default function Dashboard() {
 
   // Global handler for map popups to manually open the Intel Graph
   useEffect(() => {
-    (window as any).openOsirisIntel = (entity: any) => {
+    (window as any).openHorusIntel = (entity: any) => {
       if (entity?.callsign || entity?.icao24) {
         setEntityGraphTarget({ type: 'aircraft', id: entity.callsign?.trim() || entity.icao24, label: entity.callsign?.trim() || entity.icao24, properties: { model: entity.model, registration: entity.registration, icao24: entity.icao24 } });
         setShowEntityGraph(true);
@@ -631,8 +631,8 @@ export default function Dashboard() {
       setDossierTarget({ kind: ref.kind || 'address', id: ref.id || `${ref.lat},${ref.lng}`, label: ref.label, lat: ref.lat, lng: ref.lng });
       setShowDossier(true);
     };
-    (window as any).openOsirisDossier = openDossierRequest;
-    return () => { delete (window as any).openOsirisIntel; delete (window as any).openOsirisDossier; };
+    (window as any).openHorusDossier = openDossierRequest;
+    return () => { delete (window as any).openHorusIntel; delete (window as any).openHorusDossier; };
   }, []);
 
   // When a dossier finishes compiling, drive the map: fly to the location and draw the
@@ -730,7 +730,7 @@ export default function Dashboard() {
       }
     } catch (e) {
       if (controller.signal.aborted || (e instanceof DOMException && e.name === 'AbortError')) return;
-      console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
+      console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e);
       setBackendStatus('error');
     } finally {
       clearTimeout(timeout);
@@ -759,7 +759,7 @@ export default function Dashboard() {
         const r = await fetch('/api/space-weather', { signal: controller.signal });
         if (r.ok && !controller.signal.aborted) setSpaceWeather(await r.json());
       } catch (e) {
-        if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
+        if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('[HORUS] Suppressed error:', e instanceof Error ? e.message : e);
       }
     }, 5000);
     return () => {
@@ -794,7 +794,7 @@ export default function Dashboard() {
   }, [activeLayers.cables]);
 
 
-  // ── OSIRIS SDK — Intelligence Fusion Layer ──
+  // ── HORUS SDK — Intelligence Fusion Layer ──
   // Produces node coordinates for the SDK network mesh visualization.
   // Does NOT duplicate existing layer visuals — SDK layer is LINES ONLY.
   // Cameras are excluded — they have their own dedicated layer.
@@ -995,9 +995,9 @@ export default function Dashboard() {
               />
             </div>
 
-            {/* ── OSIRIS title — letter-by-letter stagger ── */}
+            {/* ── HORUS title — letter-by-letter stagger ── */}
             <div className="flex items-center gap-[2px] mb-3 z-[2]">
-              {'OSIRIS'.split('').map((letter, i) => (
+              {'HORUS'.split('').map((letter, i) => (
                 <motion.span
                   key={i}
                   initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
@@ -1097,7 +1097,7 @@ export default function Dashboard() {
 
       {/* ── MAP ── */}
       <ErrorBoundary name="Map">
-        <OsirisMap
+        <HorusMap
           data={data}
           activeLayers={activeLayers}
           projection={mapProjection}
@@ -1113,7 +1113,7 @@ export default function Dashboard() {
           userPosition={userPosition}
           routeOverlay={routeOverlay}
           demoMode={demoMode}
-          theme={osirisTheme}
+          theme={horusTheme}
         />
       </ErrorBoundary>
 
@@ -1160,12 +1160,12 @@ export default function Dashboard() {
       {/* ── HEADER ── */}
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 1, delay: 2.5 }} className={`absolute top-4 left-6 z-[200] pointer-events-none flex flex-col`}>
         <div className="flex items-baseline gap-2">
-          <h1 className="text-xl font-bold tracking-[0.4em] text-[var(--gold-primary)] font-mono">OSIRIS</h1>
+          <h1 className="text-xl font-bold tracking-[0.4em] text-[var(--gold-primary)] font-mono">HORUS</h1>
           <span className="text-[10px] text-[var(--text-muted)] font-mono tracking-[0.15em] opacity-80">GLOBAL INTELLIGENCE COMMAND</span>
         </div>
         <div className="flex items-center gap-4 mt-1">
           <span className="text-[5px] text-[var(--text-muted)] font-mono tracking-[0.3em] uppercase opacity-40">
-            POWERED BY OSIRIS OPEN SOURCE INTELLIGENCE · C2 ENGINE: PHYSICAL COMMAND CORE · SENSORS: ORBITAL LATTICE · NET: LYCAN NETWORK
+            POWERED BY HORUS OPEN SOURCE INTELLIGENCE · C2 ENGINE: PHYSICAL COMMAND CORE · SENSORS: ORBITAL LATTICE · NET: LYCAN NETWORK
           </span>
         </div>
       </motion.div>
@@ -1200,7 +1200,7 @@ export default function Dashboard() {
             <Settings className="w-3.5 h-3.5 text-white/70" />
           </button>
           <a href='https://ko-fi.com/M8D41ZYW4Z' target='_blank' className="glass-panel px-2 py-1 flex items-center gap-1.5 text-[7px] font-mono tracking-widest hover:opacity-80 transition-opacity border-[var(--gold-primary)]/40 bg-[var(--gold-primary)]/10">
-            <div className="w-1 h-1 rounded-full bg-[var(--gold-primary)] animate-osiris-pulse" />
+            <div className="w-1 h-1 rounded-full bg-[var(--gold-primary)] animate-horus-pulse" />
             <span className="text-[var(--gold-primary)] font-bold">SUPPORT PROJECT</span>
           </a>
         </motion.div>
@@ -1209,7 +1209,7 @@ export default function Dashboard() {
 
 
       {/* ── NEW SIDEBAR (Root Level) ── */}
-      {showLayers && !isMobile && <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} theme={osirisTheme} setTheme={setTheme} />}
+      {showLayers && !isMobile && <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} theme={horusTheme} setTheme={setTheme} />}
 
 
 
@@ -1295,7 +1295,7 @@ export default function Dashboard() {
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-2.5 bg-[#111] border-b border-[var(--border-primary)]">
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-[#FF4081] animate-osiris-pulse" />
+                  <div className="w-2 h-2 rounded-full bg-[#FF4081] animate-horus-pulse" />
                   <span className="text-[12px] font-mono font-bold text-white tracking-wider">{liveFeedName}</span>
                   <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-mono text-[9px] font-bold">LIVE STREAM</span>
                   {!liveFeedEmbedAllowed && (
@@ -1401,7 +1401,7 @@ export default function Dashboard() {
                 <div className="px-3 pb-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="hud-text text-[9px] text-[var(--text-primary)]">
-                      {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : mobilePanel === 'recon' ? 'OSIRIS RECON' : 'SEARCH'}
+                      {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : mobilePanel === 'recon' ? 'HORUS RECON' : 'SEARCH'}
                     </span>
                     <button onClick={closeMobilePanel} className="text-[var(--text-muted)] p-1"><X className="w-4 h-4" /></button>
                   </div>
@@ -1416,7 +1416,7 @@ export default function Dashboard() {
                           <div><div className="hud-label" style={{fontSize:'6px'}}>NUC</div><div className="hud-value text-[9px]" style={{color:'var(--accent-nuclear)'}}>{(data.infrastructure?.length||0)}</div></div>
                         </div>
                       </div>
-                      <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} isMobile={true} theme={osirisTheme} setTheme={setTheme} />
+                      <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} isMobile={true} theme={horusTheme} setTheme={setTheme} />
                       <div className="mt-8">
                       <ViewPresets onNavigate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMapView(v => ({ ...v, latitude: lat, longitude: lng, zoom })); closeMobilePanel(); }} />
                       </div>
@@ -1470,7 +1470,7 @@ export default function Dashboard() {
       {/* ── Region Dossier ── */}
       {(regionDossier || dossierLoading) && (
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="absolute top-16 md:top-20 left-2 right-2 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[300] md:w-[480px] max-h-[65vh] overflow-y-auto styled-scrollbar">
-          <div className="glass-panel p-5 osiris-glow">
+          <div className="glass-panel p-5 horus-glow">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-mono font-bold text-[var(--gold-primary)] tracking-wider">REGION DOSSIER</h2>
               <button onClick={() => { setRegionDossier(null); setDossierLoading(false); }} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs">✕</button>

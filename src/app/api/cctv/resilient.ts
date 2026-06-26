@@ -33,7 +33,7 @@ export async function fetchWithRetry(
         ...init,
         signal: safeAbortTimeout(timeoutMs),
         headers: {
-          'User-Agent': 'OSIRIS-map/1.0 (CCTV layer)',
+          'User-Agent': 'HORUS-map/1.0 (CCTV layer)',
           ...(init.headers || {}),
         },
       });

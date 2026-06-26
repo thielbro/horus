@@ -178,12 +178,12 @@ Overstated or already partially addressed:
 ### Task 8: Map Stability Without Step 4z Collision
 
 **Files:**
-- Modify: `src/components/OsirisMap.tsx`
+- Modify: `src/components/HorusMap.tsx`
 - Test: `tests/performance-stability.test.mjs`
 
 - [ ] Add a local `safeJsonArray(value)` helper near popup code and use it for `active_threats`, `ports`, `vulns`, and `hostnames`.
 - [ ] Cap malware mesh nodes before generating links, e.g. `MAX_MESH_NODES`, without migrating `network-mesh` to the registry in this task.
-- [ ] Wrap the map `load` initialization body in a tight try/catch that logs `[OSIRIS] Map init failed` and avoids repeated initialization attempts.
+- [ ] Wrap the map `load` initialization body in a tight try/catch that logs `[HORUS] Map init failed` and avoids repeated initialization attempts.
 - [ ] Defer moving `network-mesh`, `sdk-links`, `day-night`, `ip-sweep`, `scan-targets`, `conflict-zones`, and `war-alerts` to the registry until Phase 2 Step 4z.
 - [ ] Run: `node --test tests/performance-stability.test.mjs`
 
@@ -206,7 +206,7 @@ Overstated or already partially addressed:
 - Modify later: `src/lib/registry/store.ts`
 - Modify later: `src/components/LayerPanel.tsx`
 - Modify later: `src/lib/registry/builtins.ts`
-- Modify later: `src/components/OsirisMap.tsx`
+- Modify later: `src/components/HorusMap.tsx`
 - Modify later: `src/app/page.tsx`
 - Modify later: `src/components/OsintPanel.tsx`
 

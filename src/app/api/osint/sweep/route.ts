@@ -16,11 +16,11 @@ const MAX_RATE_LIMIT_ENTRIES = 1_000;
 // keys — otherwise the map only pruned timestamps for clients that kept requesting, so
 // keys for one-shot IPs accumulated forever.
 const __sweepStore = globalThis as unknown as {
-  __osirisSweepRL?: Map<string, RateLimitEntry>;
-  __osirisSweepRLTimer?: boolean;
+  __horusSweepRL?: Map<string, RateLimitEntry>;
+  __horusSweepRLTimer?: boolean;
 };
-if (!__sweepStore.__osirisSweepRL) __sweepStore.__osirisSweepRL = new Map<string, RateLimitEntry>();
-const rateLimitMap = __sweepStore.__osirisSweepRL;
+if (!__sweepStore.__horusSweepRL) __sweepStore.__horusSweepRL = new Map<string, RateLimitEntry>();
+const rateLimitMap = __sweepStore.__horusSweepRL;
 
 function pruneRateLimitMap(now: number) {
   for (const [ip, entry] of rateLimitMap.entries()) {
@@ -31,8 +31,8 @@ function pruneRateLimitMap(now: number) {
   }
 }
 
-if (!__sweepStore.__osirisSweepRLTimer) {
-  __sweepStore.__osirisSweepRLTimer = true;
+if (!__sweepStore.__horusSweepRLTimer) {
+  __sweepStore.__horusSweepRLTimer = true;
   setInterval(() => {
     pruneRateLimitMap(Date.now());
   }, 120_000);
@@ -148,7 +148,7 @@ export async function GET(req: Request) {
       },
     });
   } catch (err) {
-    console.error('[OSIRIS] Sweep Init error:', err instanceof Error ? err.message : err);
+    console.error('[HORUS] Sweep Init error:', err instanceof Error ? err.message : err);
     return NextResponse.json({ error: 'Sweep initialization failed' }, { status: 500 });
   }
 }

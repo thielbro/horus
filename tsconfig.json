@@ -20,7 +20,7 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@osiris/plugin-sdk": ["./plugins-sdk/index.ts"]
+      "@horus/plugin-sdk": ["./plugins-sdk/index.ts"]
     }
   },
   "include": [

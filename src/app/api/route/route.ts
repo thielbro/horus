@@ -4,7 +4,7 @@ import { routeBetween, type RoutePoint } from '@/lib/routing';
 export const dynamic = 'force-dynamic';
 
 /**
- * OSIRIS — driving-route proxy.
+ * HORUS — driving-route proxy.
  *
  * GET /api/route?from=<lat,lng>&to=<lat,lng>
  *   → { geometry: { type:'LineString', coordinates:[[lng,lat]...] }, distance, duration }

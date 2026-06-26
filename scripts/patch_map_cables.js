@@ -1,7 +1,7 @@
 const fs = require('fs');
 
-// Patch OsirisMap.tsx
-let mapContent = fs.readFileSync('src/components/OsirisMap.tsx', 'utf8');
+// Patch HorusMap.tsx
+let mapContent = fs.readFileSync('src/components/HorusMap.tsx', 'utf8');
 
 if (!mapContent.includes("'submarine-cables'")) {
   // Add source
@@ -32,8 +32,8 @@ if (!mapContent.includes("'submarine-cables'")) {
 `;
   mapContent = mapContent.replace("return <div ref={containerRef}", geoStr + "  return <div ref={containerRef}");
   
-  fs.writeFileSync('src/components/OsirisMap.tsx', mapContent);
-  console.log('Patched OsirisMap.tsx');
+  fs.writeFileSync('src/components/HorusMap.tsx', mapContent);
+  console.log('Patched HorusMap.tsx');
 }
 
 // Patch LayerPanel.tsx

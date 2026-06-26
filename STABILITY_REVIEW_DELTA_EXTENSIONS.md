@@ -1,4 +1,4 @@
-# OSIRIS Code Review — Delta Pass (Extension/Plugin System + Registry)
+# HORUS Code Review — Delta Pass (Extension/Plugin System + Registry)
 
 > **Scope:** Stability and performance only. Security is explicitly out of scope.  
 > **Focus:** Changes in commits `d851493`, `c2c115c`, `e2a87aa` — extension/plugin system, registry cleanup, and hardening.  
@@ -56,8 +56,8 @@ All previously identified patterns remain fixed in the current tree:
 - **Fix:** Persist the full record list (including error state), or at minimum preserve the original spec on failure so the user doesn't lose data.
 - **Effort:** Low
 
-### C3 — `OsirisMap.tsx` missing null check before `setData`
-- **File:** `src/components/OsirisMap.tsx:1242–1243`
+### C3 — `HorusMap.tsx` missing null check before `setData`
+- **File:** `src/components/HorusMap.tsx:1242–1243`
 - **Issue:** `const src = map.getSource('scan-targets')` is cast and immediately called with `setData()`. If the source doesn't exist, this throws. No truthy guard.
 - **Fix:** Add `if (src) (src as GeoJSONSource).setData(...)`.
 - **Effort:** Trivial
@@ -96,10 +96,10 @@ All previously identified patterns remain fixed in the current tree:
 
 | # | File | Lines | Issue | Fix |
 |---|------|-------|-------|-----|
-| H11 | `src/components/OsirisMap.tsx` | 874–933 | Dynamic layer effect missing cleanup on unmount. `dynState.current` retains closures referencing map and handlers. | Add cleanup in the effect return that calls `teardownEntry` for all dynamic layers. |
+| H11 | `src/components/HorusMap.tsx` | 874–933 | Dynamic layer effect missing cleanup on unmount. `dynState.current` retains closures referencing map and handlers. | Add cleanup in the effect return that calls `teardownEntry` for all dynamic layers. |
 | H12 | `src/app/page.tsx` | 159–161 | `document.body.className` overwrites all body classes. Runtime classes from Next.js/Electron are stripped. | Use `document.body.classList.add/remove('theme-ghost')` instead. |
-| H13 | `src/components/OsirisMap.tsx` | 1114–1117 | `conflict_zones` effect missing `data` dependency. Never re-runs when data changes, so updates after initial load are ignored. | Add `data` to dependency array. |
-| H14 | `src/components/OsirisMap.tsx` | 1098–1102 | SDK effect depends on `data.submarine_cables` but likely consumes `data.sdk_entities`. If `sdk_entities` updates without `submarine_cables` changing, layer stays stale. | Add correct dependency. |
+| H13 | `src/components/HorusMap.tsx` | 1114–1117 | `conflict_zones` effect missing `data` dependency. Never re-runs when data changes, so updates after initial load are ignored. | Add `data` to dependency array. |
+| H14 | `src/components/HorusMap.tsx` | 1098–1102 | SDK effect depends on `data.submarine_cables` but likely consumes `data.sdk_entities`. If `sdk_entities` updates without `submarine_cables` changing, layer stays stale. | Add correct dependency. |
 | H15 | `src/app/page.tsx` | 976, 995, 1137, etc. | Inline arrow functions in JSX cause child re-renders. `page.tsx` is large and frequently re-rendering; new function references bypass `memo()` on children. | Memoize callbacks with `useCallback` or extract to stable refs. |
 
 ### Systemic Patterns
@@ -118,10 +118,10 @@ All previously identified patterns remain fixed in the current tree:
 | M2 | `src/lib/registry/engine.ts` | 58–67, 70–90 | Effects re-run on every `registryVersion` bump, iterating all feeds even if none changed. | Memoize derived lazy-feed list or diff before iterating. |
 | M3 | `src/lib/registry/customSource.ts` | 39 | Non-array responses silently discarded. Misconfigured `jsonPath` yields empty array with no diagnostic. | Log warning when resolved value is not an array. |
 | M4 | `src/lib/registry/feeds.ts` / `store.ts` | — | Registry Maps have no total size caps. Buggy plugin could register thousands of entries. | Add hard caps (e.g., 500 layers, 200 feeds) with warning log. |
-| M5 | `src/components/OsirisMap.tsx` | 1121–1154 | `setVis` effect is O(n) on every toggle. ~40 layers updated when one toggles. | Optional: split into per-layer effects or memoize changed keys. |
+| M5 | `src/components/HorusMap.tsx` | 1121–1154 | `setVis` effect is O(n) on every toggle. ~40 layers updated when one toggles. | Optional: split into per-layer effects or memoize changed keys. |
 | M6 | `src/app/page.tsx` | 265–269 | URL layer parsing resets all unknown layers to false. Old URLs disable new layers by default. | Only toggle layers explicitly mentioned in URL. |
-| M7 | `src/components/OsirisMap.tsx` | 1173–1176 | `sweepData` effect forces projection without updating parent state. UI toggle and map desync. | Update `mapProjection` state in page.tsx when effect changes projection. |
-| M8 | `src/components/OsirisMap.tsx` | 59, 63, 82, 86, 976, 1003 | `canvas.getContext('2d')!` non-null assertions. If canvas limit reached, throws. | Guard with null check and early return. |
+| M7 | `src/components/HorusMap.tsx` | 1173–1176 | `sweepData` effect forces projection without updating parent state. UI toggle and map desync. | Update `mapProjection` state in page.tsx when effect changes projection. |
+| M8 | `src/components/HorusMap.tsx` | 59, 63, 82, 86, 976, 1003 | `canvas.getContext('2d')!` non-null assertions. If canvas limit reached, throws. | Guard with null check and early return. |
 | M9 | `src/app/page.tsx` | 240 | IP geolocation fetch without `res.ok` guard. Error body passed to `.json()` can throw. | Check `r.ok` before `.json()`. |
 | M10 | `src/app/page.tsx` | 296 | Stats fetch without `res.ok` guard. Same issue. | Check `res.ok` before `.json()`. |
 | M11 | `src/app/page.tsx` | 459 | `bootstrapExtensions` async work continues after unmount with no cancellation. | Add `AbortController` or unmount guard. |
@@ -132,7 +132,7 @@ All previously identified patterns remain fixed in the current tree:
 
 | # | File | Lines | Issue | Fix |
 |---|------|-------|-------|-----|
-| L1 | `src/components/OsirisMap.tsx` | 340–831 | ~40 built-in `map.on()` handlers rely on `map.remove()` as sole cleanup. | Explicitly remove handlers or verify `map.remove()` behavior. |
+| L1 | `src/components/HorusMap.tsx` | 340–831 | ~40 built-in `map.on()` handlers rely on `map.remove()` as sole cleanup. | Explicitly remove handlers or verify `map.remove()` behavior. |
 | L2 | `src/components/ExtensionsSettings.tsx` | 42–48 | Blob URL revoked immediately after `a.click()`. Download may not start in some browsers. | Revoke in `setTimeout(..., 1000)` or after `load` event. |
 | L3 | `src/components/ExtensionsSettings.tsx` | 115–116 | Raw JSON mode allows primitives. `JSON.parse` can return number/string/null. | Add runtime type check before assigning `.id`. |
 | L4 | `src/lib/plugins/loader.ts` | 36 | `notify()` lacks listener error isolation. One throwing subscriber stops others. | Wrap each listener in try/catch. |
@@ -167,7 +167,7 @@ All previously identified patterns remain fixed in the current tree:
 | 7 | **Defensive try/catch around MapLibre ops** — All `addSource`, `addLayer`, `removeLayer`, etc. wrapped. | `mapEngine.ts` |
 | 8 | **Bounded mesh generation** — `MAX_MESH_NODES = 750` caps botnet lattice links. | `builtins.ts:16` |
 | 9 | **HTML escaping in custom popups** — `escapeHtml` prevents injection in generated popup HTML. | `customSource.ts:41` |
-| 10 | **Stable callback patterns** — `useCallback` used for `createIcon`, `createDot`, `setGeo`, `setVis`, `handleEntityClick`, `fetchEndpoint`, `ifVisible`. | `page.tsx`, `OsirisMap.tsx` |
+| 10 | **Stable callback patterns** — `useCallback` used for `createIcon`, `createDot`, `setGeo`, `setVis`, `handleEntityClick`, `fetchEndpoint`, `ifVisible`. | `page.tsx`, `HorusMap.tsx` |
 | 11 | **LRU cache** — `geocodeCache` Map with 500-entry cap prevents unbounded growth. | `page.tsx:338–364` |
 | 12 | **Settings listener cap** — `MAX_LISTENERS = 500` prevents unbounded listener growth. | `settings/index.ts:154–155` |
 | 13 | **Inflight promise guard** — Prevents concurrent hydration of settings store. | `settings/index.ts:152, 157–174` |
@@ -186,7 +186,7 @@ All previously identified patterns remain fixed in the current tree:
 | 1 | Fix destroy-before-validate in `upsertCustomSource` | `src/lib/plugins/customSources.ts` | Low |
 | 2 | Fix `persist()` filtering out error records | `src/lib/plugins/customSources.ts` | Low |
 | 3 | Fix `busy` state stuck on plugin install failure | `src/components/ExtensionsSettings.tsx` | Trivial |
-| 4 | Add null check before `setData` on scan-targets | `src/components/OsirisMap.tsx` | Trivial |
+| 4 | Add null check before `setData` on scan-targets | `src/components/HorusMap.tsx` | Trivial |
 | 5 | Add cleanup to URL-debounce timer | `src/app/page.tsx` | Trivial |
 | 6 | Fix `bootstrapped`/`started` flag order | `src/lib/plugins/loader.ts`, `src/lib/plugins/index.ts` | Low |
 | 7 | Add `res.ok` guards to frontend fetches | `src/app/page.tsx` (lines 240, 296) | Low |
@@ -199,10 +199,10 @@ All previously identified patterns remain fixed in the current tree:
 | Priority | Issue | File | Effort |
 |----------|-------|------|--------|
 | 11 | Add `try/catch` around `registryLayerSources` | `src/lib/registry/mapEngine.ts` | Low |
-| 12 | Add dynamic layer cleanup on unmount | `src/components/OsirisMap.tsx` | Low |
+| 12 | Add dynamic layer cleanup on unmount | `src/components/HorusMap.tsx` | Low |
 | 13 | Fix `document.body.className` overwrite | `src/app/page.tsx` | Trivial |
-| 14 | Fix `conflict_zones` missing data dependency | `src/components/OsirisMap.tsx` | Trivial |
-| 15 | Fix SDK effect stale dependency | `src/components/OsirisMap.tsx` | Trivial |
+| 14 | Fix `conflict_zones` missing data dependency | `src/components/HorusMap.tsx` | Trivial |
+| 15 | Fix SDK effect stale dependency | `src/components/HorusMap.tsx` | Trivial |
 | 16 | Memoize inline callbacks in `page.tsx` | `src/app/page.tsx` | Medium |
 | 17 | Add `fetched` Set cleanup on feed unregister | `src/lib/registry/engine.ts` | Low |
 | 18 | Add registry Map size caps | `src/lib/registry/store.ts`, `feeds.ts` | Low |
@@ -218,8 +218,8 @@ All previously identified patterns remain fixed in the current tree:
 | 23 | Add `dispose()` error logging | `src/lib/plugins/context.ts` | Low |
 | 24 | Add max plugin/source limits | `src/lib/plugins/loader.ts`, `customSources.ts` | Low |
 | 25 | Memoize `getLayerGroups` in `LayerPanel` | `src/components/LayerPanel.tsx` | Low |
-| 26 | Fix `canvas.getContext('2d')!` null assertions | `src/components/OsirisMap.tsx` | Low |
-| 27 | Fix sweep projection desync | `src/components/OsirisMap.tsx` | Low |
+| 26 | Fix `canvas.getContext('2d')!` null assertions | `src/components/HorusMap.tsx` | Low |
+| 27 | Fix sweep projection desync | `src/components/HorusMap.tsx` | Low |
 | 28 | Add `sandbox` to live feed iframe | `src/app/page.tsx` | Trivial |
 | 29 | Fix `computeSolarTerminator` memoization | `src/lib/registry/builtins.ts` | Low |
 | 30 | Fix `useRef` eager initialization | `src/lib/registry/engine.ts` | Trivial |

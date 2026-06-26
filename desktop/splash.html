@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>OSIRIS</title>
+    <title>HORUS</title>
     <style>
       :root { color-scheme: dark; }
       html, body {
@@ -26,13 +26,13 @@
   <body>
     <div class="wrap">
       <div class="ring"></div>
-      <h1>OSIRIS</h1>
+      <h1>HORUS</h1>
       <p id="status">INITIALIZING SHELL…</p>
     </div>
     <script>
       // Confirms the contextBridge surfaced correctly in the renderer.
-      if (window.osiris && window.osiris.isDesktop) {
-        document.getElementById('status').textContent = 'DESKTOP SHELL READY · ' + window.osiris.platform.toUpperCase();
+      if (window.horus && window.horus.isDesktop) {
+        document.getElementById('status').textContent = 'DESKTOP SHELL READY · ' + window.horus.platform.toUpperCase();
       }
     </script>
   </body>

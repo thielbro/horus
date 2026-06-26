@@ -2,7 +2,7 @@
 
 // Plugin loader. Trusted in-process model: a plugin is an ES module that default-exports
 // a definition `{ id, name, version, activate(ctx) }`. We import it from a blob URL (works
-// in both the web and desktop renderer), call activate() with an OsirisContext, and track
+// in both the web and desktop renderer), call activate() with an HorusContext, and track
 // everything for clean teardown. Errors are caught per-plugin so a bad plugin can never
 // crash the host. Installed plugins persist (code + enabled) to the settings store.
 
@@ -37,7 +37,7 @@ const listeners = new Set<() => void>();
 const installLocks = new Map<string, Promise<void>>();
 const MAX_PLUGINS = 50;
 const notify = () => listeners.forEach((l) => {
-  try { l(); } catch (err) { console.error('[OSIRIS] plugin listener failed', err); }
+  try { l(); } catch (err) { console.error('[HORUS] plugin listener failed', err); }
 });
 
 // Bundler-opaque dynamic import so webpack/turbopack don't try to resolve the blob URL.
@@ -60,7 +60,7 @@ async function importDef(code: string): Promise<any> {
 }
 
 function teardown(id: string) {
-  try { handles.get(id)?.dispose(); } catch (err) { console.error('[OSIRIS] plugin teardown failed', id, err); }
+  try { handles.get(id)?.dispose(); } catch (err) { console.error('[HORUS] plugin teardown failed', id, err); }
   handles.delete(id);
   clearByPlugin(id);
   clearFeedsByPlugin(id);

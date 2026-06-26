@@ -21,9 +21,9 @@ test('Electron main launches the bundled scanner + intel backends with the engin
   assert.match(main, /ELECTRON_RUN_AS_NODE: '1'/);
   assert.match(main, /\[state\.portEnv\]: String\(state\.port\)/);
 
-  // Scanner gets an OSIRIS_KEY; when the user hasn't set SCANNER_KEY we auto-provision one
+  // Scanner gets an HORUS_KEY; when the user hasn't set SCANNER_KEY we auto-provision one
   // so the /api/scanner proxy (which 503s without a key) works zero-config.
-  assert.match(main, /OSIRIS_KEY: key/);
+  assert.match(main, /HORUS_KEY: key/);
   assert.match(main, /crypto\.randomUUID\(\)/);
   assert.match(main, /SCANNER_URL: `http:\/\/127\.0\.0\.1:\$\{port\}`/);
   assert.match(main, /INTEL_URL: `http:\/\/127\.0\.0\.1:\$\{port\}`/);

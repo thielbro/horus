@@ -1058,7 +1058,7 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-secondary)] bg-[#111]">
           <div className="flex items-center gap-3">
             <Radar className="w-5 h-5 text-[var(--cyan-primary)]" />
-            <span className="hud-text text-[16px] text-[var(--text-primary)]">OSIRIS RECON TOOLKIT</span>
+            <span className="hud-text text-[16px] text-[var(--text-primary)]">HORUS RECON TOOLKIT</span>
             <span className="gotham-tag gotham-tag--info" style={{ fontSize: '9px' }}>EXPANDED VIEW</span>
             <span className="gotham-tag gotham-tag--classified" style={{ fontSize: '8px' }}>{TABS.length} MODULES</span>
           </div>
@@ -1088,7 +1088,7 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
           <button onClick={() => setIsFullScreen(true)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors" title="Full Screen">
              <Maximize2 className="w-3.5 h-3.5" />
           </button>
-          <div className="w-1.5 h-1.5 rounded-full bg-[var(--cyan-primary)] animate-osiris-pulse" />
+          <div className="w-1.5 h-1.5 rounded-full bg-[var(--cyan-primary)] animate-horus-pulse" />
           <button onClick={() => setExpanded(!expanded)}>
             {expanded ? <ChevronUp className="w-3.5 h-3.5 text-[var(--text-muted)]" /> : <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
           </button>

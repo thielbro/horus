@@ -1,9 +1,9 @@
 'use client';
 
-// OSIRIS settings store.
+// HORUS settings store.
 //
 // One store, two backends:
-//   - Desktop: persisted to userData/settings.json over the window.osiris IPC bridge.
+//   - Desktop: persisted to userData/settings.json over the window.horus IPC bridge.
 //   - Web:     persisted to localStorage.
 // The renderer never cares which — it calls useSettings()/updateSettings() and the
 // store routes to whichever backend is present. This is the foundation the API-key
@@ -62,7 +62,7 @@ export interface InstalledPlugin {
   enabled: boolean;
 }
 
-export interface OsirisSettings {
+export interface HorusSettings {
   version: number;
   appearance: {
     theme: 'core' | 'ghost' | 'custom';
@@ -80,7 +80,7 @@ export interface OsirisSettings {
   customSources: unknown[];
 }
 
-export const DEFAULT_SETTINGS: OsirisSettings = {
+export const DEFAULT_SETTINGS: HorusSettings = {
   version: 1,
   appearance: {
     theme: 'core',
@@ -129,30 +129,30 @@ function deepMerge<T>(base: T, patch: unknown): T {
 
 interface DesktopBridge {
   settings?: {
-    getAll(): Promise<Partial<OsirisSettings>>;
-    set(full: OsirisSettings): Promise<boolean | void>;
+    getAll(): Promise<Partial<HorusSettings>>;
+    set(full: HorusSettings): Promise<boolean | void>;
   };
 }
 
-const STORAGE_KEY = 'osiris:settings:v1';
+const STORAGE_KEY = 'horus:settings:v1';
 
 function backend() {
-  const os = (typeof window !== 'undefined' ? (window as unknown as { osiris?: DesktopBridge }).osiris : undefined);
+  const os = (typeof window !== 'undefined' ? (window as unknown as { horus?: DesktopBridge }).horus : undefined);
   if (os?.settings) {
     return {
       getAll: () => os.settings!.getAll(),
-      set: (full: OsirisSettings) => os.settings!.set(full),
+      set: (full: HorusSettings) => os.settings!.set(full),
     };
   }
   return {
-    getAll: async (): Promise<Partial<OsirisSettings>> => {
+    getAll: async (): Promise<Partial<HorusSettings>> => {
       try {
         return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
       } catch {
         return {};
       }
     },
-    set: async (full: OsirisSettings): Promise<boolean> => {
+    set: async (full: HorusSettings): Promise<boolean> => {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(full));
         return true;
@@ -165,7 +165,7 @@ function backend() {
 
 // ── Store singleton ─────────────────────────────────────────────────────────
 
-let current: OsirisSettings = DEFAULT_SETTINGS;
+let current: HorusSettings = DEFAULT_SETTINGS;
 let loaded = false;
 let inflight: Promise<void> | null = null;
 let mutationRevision = 0;
@@ -176,7 +176,7 @@ const notify = () => {
     try {
       l();
     } catch (e) {
-      console.error('[OSIRIS] Settings listener failed', e);
+      console.error('[HORUS] Settings listener failed', e);
     }
   });
 };
@@ -201,11 +201,11 @@ async function hydrate() {
   return inflight;
 }
 
-export function getSettings(): OsirisSettings {
+export function getSettings(): HorusSettings {
   return cloneJson(current);
 }
 
-export async function updateSettings(patch: DeepPartial<OsirisSettings>): Promise<boolean> {
+export async function updateSettings(patch: DeepPartial<HorusSettings>): Promise<boolean> {
   current = deepMerge(current, patch);
   mutationRevision++;
   notify();
@@ -213,7 +213,7 @@ export async function updateSettings(patch: DeepPartial<OsirisSettings>): Promis
     const persisted = await backend().set(current);
     return persisted !== false;
   } catch (e) {
-    console.warn('[OSIRIS] Settings persistence failed', e);
+    console.warn('[HORUS] Settings persistence failed', e);
     return false;
   }
 }
@@ -225,7 +225,7 @@ export function useSettings() {
     if (listeners.size >= MAX_LISTENERS) {
       const oldest = listeners.values().next().value;
       if (oldest) listeners.delete(oldest);
-      console.warn('[OSIRIS] Settings listener limit reached; evicted oldest listener');
+      console.warn('[HORUS] Settings listener limit reached; evicted oldest listener');
     }
     listeners.add(l);
     hydrate();
@@ -254,7 +254,7 @@ function hexToRgb(hex: string): string | null {
   return `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`;
 }
 
-export function applyAppearance(appearance: OsirisSettings['appearance']) {
+export function applyAppearance(appearance: HorusSettings['appearance']) {
   if (typeof document === 'undefined') return;
   const s = document.body.style;
   CUSTOM_VARS.forEach((v) => s.removeProperty(v));

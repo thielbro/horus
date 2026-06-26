@@ -4,7 +4,7 @@ import { stealthFetch } from '@/lib/stealthFetch';
 import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
- * OSIRIS — Satellite Tracking API
+ * HORUS — Satellite Tracking API
  * Fetches TLE data from multiple sources with fallbacks
  * Computes real-time positions using simplified SGP4
  */

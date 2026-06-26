@@ -1,7 +1,7 @@
 import { runOverpassLayer, type BBox } from '@/lib/overpass';
 
 /**
- * OSIRIS — Known Mass-Surveillance Technology (OpenStreetMap)
+ * HORUS — Known Mass-Surveillance Technology (OpenStreetMap)
  *
  * Maps fixed surveillance cameras covering public space / whole areas — the markers most
  * associated with mass monitoring (`man_made=surveillance` with `surveillance=public` or a
@@ -20,7 +20,7 @@ export function GET(request: Request) {
     request,
     bucket: 'mass_surveil',
     defaults: DEFAULTS,
-    userAgent: 'OSIRIS-map/1.0 (mass-surveillance location layer; OpenStreetMap data)',
+    userAgent: 'HORUS-map/1.0 (mass-surveillance location layer; OpenStreetMap data)',
     clausesFor: (bbox) =>
       `node["man_made"="surveillance"]["surveillance"="public"](${bbox});\n  node["man_made"="surveillance"]["surveillance:zone"="town"](${bbox});\n  node["man_made"="surveillance"]["surveillance:zone"="area"](${bbox});`,
     mapNode: (el) => {

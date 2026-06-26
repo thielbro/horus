@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Search, X, MapPin, Crosshair } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════
-   OSIRIS — Search / Locate Bar
+   HORUS — Search / Locate Bar
    Coordinate and place name search with geocoding
    ═══════════════════════════════════════════════════════════════ */
 

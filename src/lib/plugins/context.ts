@@ -1,5 +1,5 @@
-// The renderer-side OsirisContext handed to a plugin's activate(). It adapts the
-// @osiris/plugin-sdk shapes (LayerDef/FeedDef/GroupDef) into the internal registry,
+// The renderer-side HorusContext handed to a plugin's activate(). It adapts the
+// @horus/plugin-sdk shapes (LayerDef/FeedDef/GroupDef) into the internal registry,
 // tracks every registration for disposal, and exposes live host services.
 //
 // Fully wired: registerLayer / registerFeed (endpoint) / registerGroup + data/map/ui/
@@ -24,7 +24,7 @@ import {
 interface Disposable { dispose(): void; }
 
 export interface PluginContextHandle {
-  ctx: any; // OsirisContext-shaped (typed against @osiris/plugin-sdk in plugin code)
+  ctx: any; // HorusContext-shaped (typed against @horus/plugin-sdk in plugin code)
   /** Tear down everything the plugin registered. */
   dispose(): void;
   /** After activate(): wire feed activation from each layer's `feeds: string[]`. */
@@ -41,7 +41,7 @@ export function createPluginContext(pluginId: string, meta: { name: string; vers
   const layerFeedDeps: Array<{ layerId: string; feeds: string[] }> = [];
   const warned = new Set<string>();
   const warnOnce = (what: string) =>
-    warned.has(what) || (warned.add(what), console.warn(`[OSIRIS plugin:${pluginId}] ${what} is not wired yet — ignored.`));
+    warned.has(what) || (warned.add(what), console.warn(`[HORUS plugin:${pluginId}] ${what} is not wired yet — ignored.`));
 
   const adaptInteraction = (i: any): LayerInteraction | undefined => {
     if (!i || !INTERACTION_KINDS.has(i.kind)) { if (i) warnOnce(`interaction kind '${i.kind}'`); return undefined; }
@@ -96,9 +96,9 @@ export function createPluginContext(pluginId: string, meta: { name: string; vers
     return { dispose: undo };
   };
 
-  const kvKey = (key: string) => `osiris:plugin:${pluginId}:${key}`;
+  const kvKey = (key: string) => `horus:plugin:${pluginId}:${key}`;
   const logSettingsError = (op: string, err: unknown) => {
-    console.warn(`[OSIRIS plugin:${pluginId}] settings.${op} failed`, err);
+    console.warn(`[HORUS plugin:${pluginId}] settings.${op} failed`, err);
   };
 
   const pluginFetch = (url: string, init: RequestInit = {}) => {
@@ -209,7 +209,7 @@ export function createPluginContext(pluginId: string, meta: { name: string; vers
       try {
         disposers.pop()!();
       } catch (err) {
-        console.error(`[OSIRIS plugin:${pluginId}] dispose failed`, err);
+        console.error(`[HORUS plugin:${pluginId}] dispose failed`, err);
       }
     }
   };
