@@ -20,11 +20,10 @@ export const BUILTIN_FEEDS: FeedDef[] = [
   { id: 'cctv_north_america', url: '/api/cctv?continent=north-america', transform: (d) => ({ cameras_north_america: d.cameras }), priority: 'lazy', activatedBy: ['cctv_north_america'] },
   { id: 'cctv_asia', url: '/api/cctv?continent=asia', transform: (d) => ({ cameras_asia: d.cameras }), priority: 'lazy', activatedBy: ['cctv_asia'] },
   { id: 'cctv_oceania', url: '/api/cctv?continent=oceania', transform: (d) => ({ cameras_oceania: d.cameras }), priority: 'lazy', activatedBy: ['cctv_oceania'] },
-  { id: 'surveillance', url: '/api/surveillance', priority: 'lazy', activatedBy: ['surveillance'] },
-  // Other counter-surveillance layers (OSM/Overpass, positions only).
-  { id: 'police', url: '/api/police', transform: (d) => ({ police: d.police }), priority: 'lazy', activatedBy: ['police'] },
-  { id: 'flock', url: '/api/flock', transform: (d) => ({ flock: d.flock }), priority: 'lazy', activatedBy: ['flock'] },
-  { id: 'mass_surveil', url: '/api/mass-surveillance', transform: (d) => ({ mass_surveil: d.mass_surveil }), priority: 'lazy', activatedBy: ['mass_surveil'] },
+  // NOTE: the OSM positions-only point layers (surveillance, police, flock,
+  // mass_surveil) are NOT feed-engine fetches — they're viewport-driven via
+  // useViewportLayers (src/lib/registry/useViewportLayers.ts), which queries
+  // `/api/<layer>?bbox=<current view>` instead of fixed continent defaults.
   { id: 'maritime', url: '/api/maritime', transform: (d) => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints, maritime_ships: d.ships }), priority: 'lazy', activatedBy: ['maritime'], intervalMs: 10_000 },
   { id: 'balloons', url: '/api/balloons', transform: (d) => ({ balloons: d.balloons }), priority: 'lazy', activatedBy: ['balloons'], intervalMs: 300_000 },
   { id: 'radiation', url: '/api/radiation', transform: (d) => ({ radiation: d.stations }), priority: 'lazy', activatedBy: ['radiation'], intervalMs: 300_000 },

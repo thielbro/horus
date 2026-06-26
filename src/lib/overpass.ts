@@ -80,6 +80,10 @@ export interface OverpassLayerOptions {
 /** Run an OSM/Overpass point layer and return a NextResponse with `{ [bucket], total, timestamp }`. */
 export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Response> {
   const { request, bucket, defaults, clausesFor, mapNode, userAgent, rateLimit = 30, outCount = 12000, extraRecords } = opts;
+  // Curated records for this viewport — hoisted out of the try so the catch can
+  // still ship them. Curated coverage must never blank out, even if Overpass is
+  // slow, errors, or the request aborts.
+  let extra: object[] = [];
   try {
     const clientIp = getClientIp(request);
     if (isRateLimited(clientIp, rateLimit, 60_000)) {
@@ -92,9 +96,7 @@ export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Resp
       return NextResponse.json({ [bucket]: [], error: parsed.error }, { status: 400 });
     }
 
-    // Curated records for this viewport — computed up front so they still ship
-    // even if Overpass is slow or down (curated coverage must never blank out).
-    const extra = extraRecords ? extraRecords(parsed.boxes) : [];
+    extra = extraRecords ? extraRecords(parsed.boxes) : [];
 
     const clauses = parsed.boxes
       .map(([s, w, n, e]) => clausesFor(`${s},${w},${n},${e}`))
@@ -122,7 +124,9 @@ export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Resp
       .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
       .map(mapNode)
       .filter((r): r is Record<string, unknown> => r != null);
-    const items = [...osmItems, ...extra];
+    // Curated first so that if any downstream cap (server `out body`, client
+    // payload cap) truncates, it sheds OSM rows — never the curated ones.
+    const items = [...extra, ...osmItems];
 
     return NextResponse.json(
       { [bucket]: items, total: items.length, timestamp: new Date().toISOString() },
@@ -130,6 +134,7 @@ export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Resp
     );
   } catch (error) {
     console.error(`Overpass layer (${bucket}) fetch error:`, error);
-    return NextResponse.json({ [bucket]: [], error: 'Failed' }, { status: 200 });
+    // Still serve curated data so covered regions don't blank on a timeout/abort.
+    return NextResponse.json({ [bucket]: extra, total: extra.length, error: 'Failed' }, { status: 200 });
   }
 }

@@ -16,7 +16,7 @@ import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import GlobalStatusBar from '@/components/GlobalStatusBar';
 import LiveAlerts from '@/components/LiveAlerts';
 import { useSettings, applyAppearance } from '@/lib/settings';
-import { useFeedEngine, getLayers } from '@/lib/registry';
+import { useFeedEngine, useViewportLayers, getLayers } from '@/lib/registry';
 import { setHostServices, bootstrapExtensions } from '@/lib/plugins';
 import { normalizeWorkspaceSnapshot, restoreActiveLayers, type WorkspaceSnapshot } from '@/lib/workspaces';
 
@@ -116,6 +116,7 @@ const DATA_ARRAY_LIMITS: Record<string, number> = {
   cameras_asia: 3000,
   cameras_oceania: 2000,
   police: 12000,
+  police_curated: 5000,
   flock: 12000,
   mass_surveil: 12000,
   commercial_flights: 5000,
@@ -190,7 +191,7 @@ export default function Dashboard() {
   dataRef.current = data;
 
   const [backendStatus, setBackendStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
-  const [mapView, setMapView] = useState({ zoom: 2.5, latitude: 20, longitude: 0 });
+  const [mapView, setMapView] = useState<{ zoom: number; latitude: number; longitude: number; bounds?: [number, number, number, number] }>({ zoom: 2.5, latitude: 20, longitude: 0 });
   const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; ts: number; zoom?: number } | null>(null);
   const [globalStats, setGlobalStats] = useState<any>(null);
   const mouseCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -749,6 +750,11 @@ export default function Dashboard() {
   // lazy polling subset all come from src/lib/registry/feeds. Behavior is identical to
   // the former hand-written effects; the feed list now lives in the registry.
   useFeedEngine(activeLayers, fetchEndpoint, ifVisible);
+
+  // Viewport-driven OSM point layers (police/flock/mass-surveillance/surveillance)
+  // + always-on curated police. These can't be fetched globally, so they track the
+  // visible map bounds instead of the feed engine's fixed continent defaults.
+  useViewportLayers(activeLayers, mapView, fetchEndpoint);
 
   // Space Weather — one-off into its own state setter (not a map data bucket).
   useEffect(() => {

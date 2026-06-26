@@ -17,6 +17,9 @@ import { safeAbortTimeout, safeAbortAny, releaseResponseBody } from '@/lib/http-
 
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const DEFAULT_RADIUS_M = 400;
+// Police stations are sparse — scan them further out than cameras so the nearest
+// station (curated or OSM) reliably surfaces in the dossier.
+const POLICE_RADIUS_M = 2000;
 const MAX_NEARBY = 40;
 const MAX_GRAPH_NEARBY = 12;
 const MAX_PHOTOS = 8;
@@ -58,47 +61,16 @@ function classify(tags: Record<string, string>): NearbyKind {
 const KIND_LABEL: Record<NearbyKind, string> = { camera: 'CCTV camera', alpr: 'ALPR camera', speed: 'speed camera', police: 'police station' };
 
 async function fetchNearby(lat: number, lng: number, radiusM: number, signal?: AbortSignal): Promise<NearbyItem[]> {
-  const [s, w, n, e] = pointBbox(lat, lng, radiusM);
+  // Query the larger of the two radii so police out to POLICE_RADIUS_M are captured;
+  // cameras are filtered back to `radiusM` below.
+  const queryRadiusM = Math.max(radiusM, POLICE_RADIUS_M);
+  const [s, w, n, e] = pointBbox(lat, lng, queryRadiusM);
   const box: BBox = [s, w, n, e];
   const bbox = `${s},${w},${n},${e}`;
-  const query =
-    `[out:json][timeout:25];\n(\n` +
-    `  node["man_made"="surveillance"](${bbox});\n` +
-    `  node["highway"="speed_camera"](${bbox});\n` +
-    `  node["amenity"="police"](${bbox});\n` +
-    `);\nout body 400;`;
-  const res = await fetch(OVERPASS, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'HORUS-map/1.0 (address intel; OpenStreetMap data)' },
-    body: 'data=' + encodeURIComponent(query),
-    signal: safeAbortAny([signal, safeAbortTimeout(OVERPASS_TIMEOUT_MS)]),
-  });
-  if (!res.ok) {
-    await releaseResponseBody(res);
-    throw new Error(`Overpass ${res.status}`);
-  }
-  const data = await res.json();
-  const nodes: OverpassNode[] = Array.isArray(data?.elements) ? data.elements : [];
-  const osm = nodes
-    .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
-    .map((el): NearbyItem => {
-      const tags = el.tags || {};
-      const kind = classify(tags);
-      return {
-        id: `osm-${el.id}`,
-        kind,
-        name: tags.name || tags.operator || KIND_LABEL[kind],
-        lat: el.lat as number,
-        lng: el.lon as number,
-        distanceM: Math.round(haversineMeters(lat, lng, el.lat as number, el.lon as number)),
-        operator: tags.operator || undefined,
-        osmUrl: `https://www.openstreetmap.org/node/${el.id}`,
-      };
-    })
-    // Curated police is authoritative inside its coverage — drop the OSM police there.
-    .filter((it) => !(it.kind === 'police' && isWithinCuratedCoverage(it.lat, it.lng)));
 
-  // Add curated police stations physically within the bbox (then radius-filtered below).
+  // Curated police stations physically within the bbox — computed independently of
+  // Overpass so owned/manually-added stations still surface when Overpass is slow,
+  // rate-limited, or down (radius-filtered below).
   const curated: NearbyItem[] = curatedPoliceInBoxes([box]).map((st) => ({
     id: st.id,
     kind: 'police',
@@ -110,8 +82,52 @@ async function fetchNearby(lat: number, lng: number, radiusM: number, signal?: A
     osmUrl: st.osm_url || '',
   }));
 
+  // Live OSM cameras/ALPR/police — tolerate failure (Overpass may be throttled);
+  // a miss just means curated-only results this call, never an empty dossier.
+  let osm: NearbyItem[] = [];
+  try {
+    const query =
+      `[out:json][timeout:25];\n(\n` +
+      `  node["man_made"="surveillance"](${bbox});\n` +
+      `  node["highway"="speed_camera"](${bbox});\n` +
+      `  node["amenity"="police"](${bbox});\n` +
+      `);\nout body 400;`;
+    const res = await fetch(OVERPASS, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'HORUS-map/1.0 (address intel; OpenStreetMap data)' },
+      body: 'data=' + encodeURIComponent(query),
+      signal: safeAbortAny([signal, safeAbortTimeout(OVERPASS_TIMEOUT_MS)]),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const nodes: OverpassNode[] = Array.isArray(data?.elements) ? data.elements : [];
+      osm = nodes
+        .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
+        .map((el): NearbyItem => {
+          const tags = el.tags || {};
+          const kind = classify(tags);
+          return {
+            id: `osm-${el.id}`,
+            kind,
+            name: tags.name || tags.operator || KIND_LABEL[kind],
+            lat: el.lat as number,
+            lng: el.lon as number,
+            distanceM: Math.round(haversineMeters(lat, lng, el.lat as number, el.lon as number)),
+            operator: tags.operator || undefined,
+            osmUrl: `https://www.openstreetmap.org/node/${el.id}`,
+          };
+        })
+        // Curated police is authoritative inside its coverage — drop the OSM police there.
+        .filter((it) => !(it.kind === 'police' && isWithinCuratedCoverage(it.lat, it.lng)));
+    } else {
+      await releaseResponseBody(res);
+    }
+  } catch {
+    /* Overpass unavailable — curated police still ship. */
+  }
+
   return [...osm, ...curated]
-    .filter((it) => it.distanceM <= radiusM)
+    .filter((it) => it.distanceM <= (it.kind === 'police' ? POLICE_RADIUS_M : radiusM))
     .sort((a, b) => a.distanceM - b.distanceM)
     .slice(0, MAX_NEARBY);
 }
@@ -206,6 +222,7 @@ export const addressProvider: IntelProvider = {
     const counts: Record<NearbyKind, number> = { camera: 0, alpr: 0, speed: 0, police: 0 };
     for (const it of nearby) counts[it.kind]++;
     const nearestCam = nearby.find((it) => it.kind === 'camera' || it.kind === 'alpr' || it.kind === 'speed');
+    const nearestPolice = nearby.find((it) => it.kind === 'police');
 
     // 3. Graph: address root + postcode/country + nearest surveillance nodes (+ optional occupant).
     const rootId = `address:${lat.toFixed(5)},${lng.toFixed(5)}`;
@@ -257,8 +274,9 @@ export const addressProvider: IntelProvider = {
       ...(geo.address.postcode ? [{ key: 'postcode', label: 'Postcode', value: geo.address.postcode, source: 'nominatim' }] : []),
       { key: 'admin', label: 'Area', value: [geo.address.city || geo.address.town || geo.address.village, geo.address.state, geo.address.country].filter(Boolean).join(', '), source: 'nominatim' },
       ...(geo.category ? [{ key: 'category', label: 'OSM category', value: geo.category, source: 'osm' }] : []),
-      { key: 'exposure', label: `Surveillance within ${radiusM}m`, value: `${counts.camera} CCTV, ${counts.alpr} ALPR, ${counts.speed} speed, ${counts.police} police`, source: 'overpass' },
+      { key: 'exposure', label: 'Surveillance exposure', value: `${counts.camera} CCTV, ${counts.alpr} ALPR, ${counts.speed} speed within ${radiusM}m · ${counts.police} police within ${POLICE_RADIUS_M}m`, source: 'overpass' },
       ...(nearestCam ? [{ key: 'nearest', label: 'Nearest camera', value: `${nearestCam.name} at ${nearestCam.distanceM}m`, source: 'overpass' }] : []),
+      ...(nearestPolice ? [{ key: 'nearestPolice', label: 'Nearest police', value: `${nearestPolice.name} at ${nearestPolice.distanceM}m`, source: 'overpass' }] : []),
       ...(photos.length ? [{ key: 'photos', label: 'Street-level photos', value: `${photos.length} (Mapillary)`, source: 'mapillary' }] : []),
       ...(webContext ? [{ key: 'web', label: 'Web results', value: webContext, source: 'web' }] : []),
     ];
@@ -266,10 +284,11 @@ export const addressProvider: IntelProvider = {
     const facts: Fact[] = [
       { label: 'Address', value: formatted, confidence: 'high', source: 'OSM/Nominatim' },
       ...(geo.address.postcode ? [{ label: 'Postcode', value: geo.address.postcode, confidence: 'high' as const, source: 'OSM' }] : []),
-      { label: 'CCTV within range', value: String(counts.camera), confidence: 'med', source: 'OSM/Overpass' },
-      { label: 'ALPR within range', value: String(counts.alpr), confidence: 'med', source: 'OSM/Overpass' },
-      { label: 'Police within range', value: String(counts.police), confidence: 'med', source: 'Curated + OSM' },
+      { label: `CCTV within ${radiusM}m`, value: String(counts.camera), confidence: 'med', source: 'OSM/Overpass' },
+      { label: `ALPR within ${radiusM}m`, value: String(counts.alpr), confidence: 'med', source: 'OSM/Overpass' },
+      { label: `Police within ${POLICE_RADIUS_M}m`, value: String(counts.police), confidence: 'med', source: 'Curated + OSM' },
       ...(nearestCam ? [{ label: 'Nearest camera', value: `${nearestCam.distanceM} m`, confidence: 'med' as const, source: 'OSM/Overpass' }] : []),
+      ...(nearestPolice ? [{ label: 'Nearest police', value: `${nearestPolice.distanceM} m`, confidence: 'med' as const, source: 'Curated + OSM' }] : []),
     ];
 
     const geometry = {
@@ -324,7 +343,7 @@ export const addressProvider: IntelProvider = {
       sections.push({ id: 'assessment', title: 'Assessment', body: result.text });
     }
     if (exposure) {
-      sections.push({ id: 'exposure', title: 'Surveillance Exposure', body: exposure, facts: gathered.facts?.filter((f) => /within range|Nearest/.test(f.label)) });
+      sections.push({ id: 'exposure', title: 'Surveillance Exposure', body: exposure, facts: gathered.facts?.filter((f) => /within|Nearest/.test(f.label)) });
     }
     const webCitations = gathered.citations.filter((c) => c.source === 'web');
     if (webCitations.length) {

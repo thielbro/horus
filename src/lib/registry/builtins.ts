@@ -234,10 +234,14 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
     ],
   },
   {
-    id: 'police', label: 'Police Stations', group: 'SURVEIL', icon: 'Shield', color: '#42A5F5', countBuckets: ['police'], headless: true,
+    id: 'police', label: 'Police Stations', group: 'SURVEIL', icon: 'Shield', color: '#42A5F5', countBuckets: ['police', 'police_curated'], headless: true,
     styleLayers: osmPointStyle('police', 'police', '#42A5F5'),
+    // Two buckets: `police_curated` (owned, always-on, any zoom) + `police` (live OSM
+    // for the current viewport, disjoint from curated coverage). Union them.
     render: [
-      { source: 'police', toFeatures: (data, active) => (active.police && data.police) ? data.police.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, operator: c.operator, source: c.source, osm_url: c.osm_url } })) : [] },
+      { source: 'police', toFeatures: (data, active) => active.police
+        ? [...(data.police_curated ?? []), ...(data.police ?? [])].map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, operator: c.operator, source: c.source, osm_url: c.osm_url } }))
+        : [] },
     ],
   },
   {

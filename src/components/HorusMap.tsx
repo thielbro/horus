@@ -21,7 +21,7 @@ interface HorusMapProps {
   onEntityClick?: (entity: any) => void;
   onMouseCoords?: (coords: { lat: number; lng: number }) => void;
   onRightClick?: (coords: { lat: number; lng: number }) => void;
-  onViewStateChange?: (vs: { zoom: number; latitude: number; longitude: number }) => void;
+  onViewStateChange?: (vs: { zoom: number; latitude: number; longitude: number; bounds: [number, number, number, number] }) => void;
   flyToLocation?: { lat: number; lng: number; ts: number; zoom?: number } | null;
   projection?: 'mercator' | 'globe';
   mapStyle?: string;
@@ -400,7 +400,22 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
       }
     });
     map.on('contextmenu', e => { e.preventDefault(); onRightClick?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }); });
-    map.on('moveend', () => { const c = map.getCenter(); onViewStateChange?.({ zoom: map.getZoom(), latitude: c.lat, longitude: c.lng }); });
+    // Report center/zoom AND the visible bounds (s,w,n,e) so viewport-driven
+    // layers (police/flock/mass-surveillance/surveillance) can fetch the area in
+    // view. Fire once now (we're inside 'load') so bounds are known before the
+    // first toggle, then on every moveend (incl. the end of a flyTo).
+    const emitView = () => {
+      const c = map.getCenter();
+      const b = map.getBounds();
+      onViewStateChange?.({
+        zoom: map.getZoom(),
+        latitude: c.lat,
+        longitude: c.lng,
+        bounds: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()],
+      });
+    };
+    emitView();
+    map.on('moveend', emitView);
 
     // ── POPUP HELPER ──
     const popup = (coords: any, html: string) => {
@@ -1236,7 +1251,7 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
   useEffect(() => {
     if (!mapReady) return;
     renderRegistryLayer(setGeo, 'police', data, activeLayers);
-  }, [mapReady, data.police, activeLayers.police, setGeo]);
+  }, [mapReady, data.police, data.police_curated, activeLayers.police, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;

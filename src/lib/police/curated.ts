@@ -58,6 +58,18 @@ export function curatedPoliceWithin(boxes: BBox[]): PoliceStation[] {
 }
 
 /**
+ * Every curated station across all datasets. Cheap (a few hundred rows per
+ * country) and viewport-independent — the map layer loads these once so owned
+ * data is always visible, even at world zoom where a live Overpass query for
+ * the viewport would be too large to run.
+ */
+export function curatedPoliceAll(): PoliceStation[] {
+  const out: PoliceStation[] = [];
+  for (const ds of DATASETS) out.push(...ds.stations);
+  return out;
+}
+
+/**
  * Curated stations whose coordinates physically fall inside `boxes`. Unlike
  * {@link curatedPoliceWithin} (which injects a whole country for the map layer),
  * this returns only stations actually in the query area — what the address/route

@@ -1,5 +1,6 @@
+import { NextResponse } from 'next/server';
 import { runOverpassLayer, type BBox } from '@/lib/overpass';
-import { curatedPoliceWithin, isWithinCuratedCoverage } from '@/lib/police/curated';
+import { curatedPoliceAll, isWithinCuratedCoverage } from '@/lib/police/curated';
 
 /**
  * HORUS — Police Station Locations
@@ -19,17 +20,30 @@ const DEFAULTS: BBox[] = [
 ];
 
 export function GET(request: Request) {
+  // Curated-only mode (?curated=1): return every owned station with no Overpass
+  // call. The map loads this once on toggle so curated data is always visible at
+  // any zoom, while the viewport (?bbox) path below fills in live OSM on top.
+  const { searchParams } = new URL(request.url);
+  if (searchParams.get('curated') != null) {
+    const police = curatedPoliceAll();
+    return NextResponse.json(
+      { police, total: police.length, timestamp: new Date().toISOString() },
+      { headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=172800' } },
+    );
+  }
+
   return runOverpassLayer({
     request,
     bucket: 'police',
     defaults: DEFAULTS,
     userAgent: 'HORUS-map/1.0 (police-station location layer; OpenStreetMap data)',
     clausesFor: (bbox) => `node["amenity"="police"](${bbox});`,
+    // Curated comes from the dedicated ?curated=1 bucket (always-on), so this OSM
+    // path only returns live nodes OUTSIDE curated coverage — the drop below keeps
+    // the two buckets disjoint (no duplicate pins where curated data exists).
     mapNode: (el) => {
       const lat = el.lat as number;
       const lng = el.lon as number;
-      // Curated data is authoritative inside its coverage — drop the OSM node so
-      // it isn't duplicated by (or conflicting with) the injected curated row.
       if (isWithinCuratedCoverage(lat, lng)) return null;
       const t = el.tags || {};
       return {
@@ -42,6 +56,5 @@ export function GET(request: Request) {
         osm_url: `https://www.openstreetmap.org/node/${el.id}`,
       };
     },
-    extraRecords: (boxes) => curatedPoliceWithin(boxes),
   });
 }
