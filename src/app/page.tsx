@@ -739,6 +739,39 @@ export default function Dashboard() {
     }
   }, []);
 
+  // On-demand Waze live police/camera scan for the current viewport. Unlike the OSM point
+  // layers, the only working Waze transport is a headed browser (Playwright), so this is a
+  // deliberate user action (the Surveillance panel's "Scan this area" button) rather than an
+  // auto-refetch-on-pan layer — one browser popup per click. Writes the `waze_alerts` bucket
+  // and flips the (headless) layer on so the markers render.
+  const scanWazeAlerts = useCallback(async (): Promise<{ ok: boolean; police: number; camera: number; timestamp?: string; error?: string; errors?: unknown[] }> => {
+    const b = mapView.bounds;
+    if (!b) return { ok: false, police: 0, camera: 0, error: 'Map is still loading — try again in a moment.' };
+    const s = Math.max(-90, b[0]); const w = Math.max(-180, b[1]); const n = Math.min(90, b[2]); const e = Math.min(180, b[3]);
+    // Mirror the route's area cap — give friendly guidance instead of a 400.
+    if ((n - s) * (e - w) > 4) {
+      return { ok: false, police: 0, camera: 0, error: 'Area too large — zoom in to scan for Waze alerts.' };
+    }
+    const bbox = `${s.toFixed(4)},${w.toFixed(4)},${n.toFixed(4)},${e.toFixed(4)}`;
+    try {
+      const res = await fetch(`/api/waze-alerts?bbox=${bbox}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok) return { ok: false, police: 0, camera: 0, error: json?.error || `Request failed (HTTP ${res.status})` };
+      const alerts: any[] = Array.isArray(json.alerts) ? json.alerts : [];
+      setData(prev => ({ ...prev, waze_alerts: alerts }));
+      setActiveLayers((prev: any) => ({ ...prev, waze_alerts: true }));
+      return {
+        ok: true,
+        police: alerts.filter((a) => a.kind === 'police').length,
+        camera: alerts.filter((a) => a.kind === 'camera').length,
+        timestamp: json.timestamp,
+        errors: Array.isArray(json.errors) ? json.errors : [],
+      };
+    } catch (err) {
+      return { ok: false, police: 0, camera: 0, error: err instanceof Error ? err.message : 'Network error' };
+    }
+  }, [mapView.bounds]);
+
   // Wrap a polling callback so it skips work while the tab is hidden.
   // (One-time initial loads must NOT use this — they run regardless of tab state.)
   const ifVisible = useCallback((fn: () => void) => () => {
@@ -1519,7 +1552,7 @@ export default function Dashboard() {
       {/* ── Settings ── */}
       <SettingsPanel open={showSettings} onClose={closeSettings} getWorkspaceSnapshot={getWorkspaceSnapshot} onApplyWorkspace={applyWorkspace} />
 
-      <SurveillancePanel open={showSurveillance} onClose={() => setShowSurveillance(false)} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />
+      <SurveillancePanel open={showSurveillance} onClose={() => setShowSurveillance(false)} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onScanWaze={scanWazeAlerts} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />
 
       <DossierPanel open={showDossier} target={dossierTarget} requestId={currentDossierRequestId} onClose={closeDossier} onLoaded={onDossierLoaded} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now(), zoom: 17 })} />
 

@@ -20,12 +20,16 @@ import {
   type CustomSourceSpec,
 } from '@/lib/plugins';
 
+interface WazeScanResult { ok: boolean; police: number; camera: number; timestamp?: string; error?: string; errors?: unknown[] }
+
 interface SurveillancePanelProps {
   open: boolean;
   onClose: () => void;
   data: any;
   activeLayers: Record<string, boolean>;
   setActiveLayers: React.Dispatch<React.SetStateAction<any>>;
+  /** Scans the current map viewport for live Waze police/camera alerts (one headed-browser fetch). */
+  onScanWaze?: () => Promise<WazeScanResult>;
   onLocate?: (lat: number, lng: number) => void;
 }
 
@@ -122,7 +126,7 @@ const EMPTY_DRAFT: Draft = {
   labelProp: 'name', markerType: 'circle', radius: 5, intervalMs: undefined,
 };
 
-function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers, onLocate }: SurveillancePanelProps) {
+function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers, onScanWaze, onLocate }: SurveillancePanelProps) {
   const customSources = useCustomSources();
   const formRef = useRef<HTMLDivElement>(null);
   const testAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -131,6 +135,18 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
   const [formError, setFormError] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [addrQuery, setAddrQuery] = useState('');
+  const [wazeScan, setWazeScan] = useState<{ loading: boolean; result?: WazeScanResult }>({ loading: false });
+
+  const runWazeScan = async () => {
+    if (!onScanWaze || wazeScan.loading) return;
+    setWazeScan({ loading: true });
+    try {
+      const result = await onScanWaze();
+      setWazeScan({ loading: false, result });
+    } catch (e) {
+      setWazeScan({ loading: false, result: { ok: false, police: 0, camera: 0, error: e instanceof Error ? e.message : 'Scan failed' } });
+    }
+  };
 
   const runAddressIntel = () => {
     const q = addrQuery.trim();
@@ -306,6 +322,59 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
                   Positions only (OpenStreetMap, ODbL) — no live video. Coverage is community-sourced and continent-scale by default.
                 </p>
               </section>
+
+              {/* ── Waze live alerts (on-demand viewport scan) ── */}
+              {onScanWaze && (() => {
+                const r = wazeScan.result;
+                const total = r ? r.police + r.camera : 0;
+                const hasData = (count('waze_alerts') ?? 0) > 0;
+                return (
+                  <section>
+                    <SectionTitle icon={AlertTriangle}>WAZE LIVE ALERTS</SectionTitle>
+                    <div className="bg-black/30 border border-white/5 rounded px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={runWazeScan}
+                          disabled={wazeScan.loading}
+                          className={`${btnCls} flex-1 justify-center ${wazeScan.loading ? 'opacity-60 cursor-wait' : ''}`}
+                        >
+                          {wazeScan.loading
+                            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> SCANNING…</>
+                            : <><ScanLine className="w-3.5 h-3.5" /> SCAN THIS AREA</>}
+                        </button>
+                        {hasData && (
+                          <button
+                            onClick={() => toggle('waze_alerts')}
+                            title={activeLayers.waze_alerts ? 'Hide on map' : 'Show on map'}
+                            className={`p-1.5 rounded border transition-colors ${activeLayers.waze_alerts ? 'border-[#FF1744]/50 text-[#FF1744]' : 'border-white/10 text-white/40 hover:text-white/80'}`}
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      {r && !wazeScan.loading && (
+                        r.error ? (
+                          <div className="mt-2 text-[9px] font-mono text-[var(--alert-red)] break-words flex items-start gap-1.5"><AlertTriangle className="w-3 h-3 mt-px shrink-0" />{r.error}</div>
+                        ) : (
+                          <div className="mt-2 text-[9px] font-mono break-words" style={{ color: total > 0 ? 'var(--alert-green)' : '#E0A030' }}>
+                            <span className="inline-flex items-center gap-1">
+                              {total > 0 ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                              {total > 0 ? `${r.police} police · ${r.camera} cameras` : 'No Waze alerts in this view'}
+                              {r.timestamp ? ` · ${new Date(r.timestamp).toLocaleTimeString()}` : ''}
+                            </span>
+                            {(r.errors?.length ?? 0) > 0 && <div className="text-white/40 mt-0.5">{r.errors!.length} tile(s) failed — results may be partial.</div>}
+                          </div>
+                        )
+                      )}
+                    </div>
+                    <p className="text-[9px] font-mono text-white/30 leading-relaxed mt-2">
+                      Crowd-sourced police &amp; speed-camera sightings reported by Waze drivers for the current map view —
+                      live and ephemeral, so re-scan to refresh. Zoom in if the area is too large. A browser window may briefly
+                      open while fetching.
+                    </p>
+                  </section>
+                );
+              })()}
 
               {/* ── Custom sources (toggle / edit / remove) ── */}
               {customSources.length > 0 && (

@@ -289,6 +289,10 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
       addRegistryLayer(map, 'flock');
       addRegistryLayer(map, 'mass_surveil');
 
+      // Live Waze police/camera sightings (headless; populated by the Surveillance panel's
+      // "Scan this area" button). Above the static OSM point layers so live sightings sit on top.
+      addRegistryLayer(map, 'waze_alerts');
+
       // GDELT
 
 
@@ -544,6 +548,29 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
         <div style="color:#EF5350;font-size:13px;font-weight:700;margin-bottom:2px;">👁 ${p.name || 'Surveillance'}</div>
         <div style="font-size:9px;color:#8A8780;margin-bottom:8px;">${p.zone || p.surveillance_type || 'public area'}${p.operator ? ' · ' + p.operator : ''} · location only</div>
         <a href="${p.osm_url || '#'}" target="_blank" rel="noopener" style="${linkStyle}color:#EF5350;border:1px solid rgba(239,83,80,0.4);background:rgba(239,83,80,0.1);">🗺 VIEW ON OSM</a>
+      </div>`);
+    });
+
+    // ── Waze live police / speed-camera sightings (crowd-sourced, ephemeral) ──
+    map.on('click', 'waze-dots', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      const isPolice = p.kind === 'police';
+      const color = isPolice ? '#FF1744' : '#FFC400';
+      const rgb = isPolice ? '255,23,68' : '255,196,0';
+      const reported = p.reportTime ? new Date(p.reportTime).toLocaleString() : '—';
+      const rel = p.reliability != null && p.reliability !== '' ? `${p.reliability}/10` : '—';
+      const conf = p.confidence != null && p.confidence !== '' ? `${p.confidence}/10` : '—';
+      const rows = [
+        ['REPORTED', reported],
+        ['RELIABILITY', rel],
+        ['CONFIDENCE', conf],
+      ].map(([k, v]) => `<div><span style="color:#5C5A54;">${k}</span><br/><span style="color:#E8E6E0;">${v}</span></div>`).join('');
+      popup(coords, `<div style="${pStyle}border:1px solid rgba(${rgb},0.35);">
+        <div style="color:${color};font-size:13px;font-weight:700;margin-bottom:2px;">${isPolice ? '🚓' : '📸'} ${isPolice ? 'Police Reported' : 'Speed Camera'}</div>
+        <div style="font-size:9px;color:#8A8780;margin-bottom:8px;">Waze live report · ${p.subtype || p.type || p.kind}${p.description ? ' · ' + p.description : ''}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:9px;">${rows}</div>
       </div>`);
     });
 
@@ -1265,6 +1292,11 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
 
   useEffect(() => {
     if (!mapReady) return;
+    renderRegistryLayer(setGeo, 'waze_alerts', data, activeLayers);
+  }, [mapReady, data.waze_alerts, activeLayers.waze_alerts, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     renderRegistryLayer(setGeo, 'fires', data, activeLayers);
   }, [mapReady, data.fires, activeLayers.fires, setGeo]);
 
@@ -1336,6 +1368,7 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     setVis(['police-glow','police-dots','police-label'], activeLayers.police);
     setVis(['flock-glow','flock-dots','flock-label'], activeLayers.flock);
     setVis(['mass-glow','mass-dots','mass-label'], activeLayers.mass_surveil);
+    setVis(['waze-glow','waze-dots','waze-label'], activeLayers.waze_alerts);
     setVis(['fires-heat'], activeLayers.fires);
     setVis(['weather-glow','weather-dots','weather-label'], activeLayers.weather);
     setVis(['infra-glow','infra-dots','infra-label'], activeLayers.infrastructure);

@@ -12,6 +12,10 @@ const flightGov = (t: ThemeMode) => (t === 'ghost' ? GHOST_GOV : '#FF9500');
 const cameraColor = (t: ThemeMode) => (t === 'ghost' ? '#B388FF' : '#00E676');
 const surveillanceColor = (t: ThemeMode) => (t === 'ghost' ? '#FF80AB' : '#FFAB00');
 
+// Live Waze sightings are colored by kind (theme-independent): police = vivid red (a live
+// presence, not the blue static police-station), speed/red-light cameras = amber.
+const WAZE_KIND_COLOR: unknown[] = ['match', ['get', 'kind'], 'police', '#FF1744', 'camera', '#FFC400', '#FF1744'];
+
 // CCTV continents: [activeLayers key, data bucket]. The cameras are loaded one continent at a
 // time (separate feeds/buckets) but plotted through a SINGLE map source ('cctv'), so the
 // existing cctv style layers + click handler are reused unchanged. The render binding below
@@ -267,6 +271,22 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
     ],
     render: [
       { source: 'surveillance', toFeatures: (data, active) => (active.surveillance && data.surveillance) ? data.surveillance.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { id: c.id, name: c.name, country: c.country, source: c.source, surveillance_type: c.surveillance_type, camera_type: c.camera_type, zone: c.zone, operator: c.operator, osm_url: c.osm_url } })) : [] },
+    ],
+  },
+  {
+    // Live Waze police / speed-camera sightings (ephemeral, crowd-sourced) — distinct from the
+    // static OSM police-station / camera layers. Headless: there's no rail toggle; the
+    // Surveillance panel's "Scan this area" button populates the `waze_alerts` bucket and flips
+    // this layer on (see SurveillancePanel + /api/waze-alerts). Police = red, cameras = amber, so
+    // a live sighting never reads as a fixed police station (blue) or OSM camera (gold).
+    id: 'waze_alerts', label: 'Waze Live Alerts', group: 'SURVEIL', icon: 'AlertTriangle', color: '#FF1744', countBuckets: ['waze_alerts'], headless: true,
+    styleLayers: [
+      { id: 'waze-glow', source: 'waze-alerts', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 8,8, 12,13, 16,18], 'circle-color': WAZE_KIND_COLOR, 'circle-opacity': 0.2, 'circle-blur': 1 } },
+      { id: 'waze-dots', source: 'waze-alerts', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,2.5, 8,4, 12,6.5, 16,10], 'circle-color': WAZE_KIND_COLOR, 'circle-opacity': 0.95, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.85 } },
+      { id: 'waze-label', source: 'waze-alerts', type: 'symbol', minzoom: 11, layout: { 'text-field': ['get','label'], 'text-size': 9, 'text-font': ['Open Sans Regular'], 'text-offset': [0, 1.4], 'text-max-width': 12, 'text-allow-overlap': false }, paint: { 'text-color': WAZE_KIND_COLOR, 'text-halo-color': '#000000', 'text-halo-width': 1.5, 'text-opacity': 0.8 } },
+    ],
+    render: [
+      { source: 'waze-alerts', toFeatures: (data, active) => (active.waze_alerts && Array.isArray(data.waze_alerts)) ? data.waze_alerts.map((a: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [a.lng, a.lat] }, properties: { id: a.id, kind: a.kind, label: a.kind === 'police' ? 'Police' : 'Camera', type: a.type, subtype: a.subtype, reportTime: a.reportTime, reliability: a.reliability, confidence: a.confidence, description: a.description } })) : [] },
     ],
   },
   {
