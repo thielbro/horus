@@ -360,6 +360,119 @@ function stopEmbeddedServer() {
   // Tear down the bundled backends alongside the server (quit / relaunch only — this is
   // not called on the Next-server auto-restart path, so backends survive that).
   stopManagedBackends();
+  stopWazeProxy();
+}
+
+// ── Waze browser proxy (packaged builds only) ──
+// Playwright is a devDependency and is unavailable in production. Instead we keep a
+// hidden BrowserWindow loaded with the Waze live map so it has real session cookies and
+// a valid reCAPTCHA context, then serve a tiny HTTP API on localhost that the Next.js
+// child process calls to execute GeoRSS fetches from within that page.
+let wazeProxyServer = null;
+let wazeWindow = null;
+let wazePageReady = false;
+const WAZE_LIVE_MAP_URL = 'https://www.waze.com/live-map';
+const WAZE_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.55 Safari/537.36';
+
+async function ensureWazePage() {
+  if (wazeWindow && !wazeWindow.isDestroyed() && wazePageReady) return;
+  if (!wazeWindow || wazeWindow.isDestroyed()) {
+    wazeWindow = new BrowserWindow({
+      show: false,
+      skipTaskbar: true,
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    wazeWindow.webContents.setUserAgent(WAZE_UA);
+    wazeWindow.on('closed', () => { wazeWindow = null; wazePageReady = false; });
+  }
+  wazePageReady = false;
+  try {
+    await wazeWindow.loadURL(WAZE_LIVE_MAP_URL);
+    // Wait up to 30s for reCAPTCHA enterprise to initialise; proceed anyway if it doesn't.
+    await wazeWindow.webContents.executeJavaScript(`
+      new Promise(resolve => {
+        const deadline = Date.now() + 30000;
+        (function check() {
+          if (globalThis.grecaptcha && globalThis.grecaptcha.enterprise) return resolve(true);
+          if (Date.now() > deadline) return resolve(false);
+          setTimeout(check, 500);
+        })();
+      })
+    `);
+    wazePageReady = true;
+  } catch (err) {
+    console.error('[horus] Waze page load failed:', err.message);
+    throw err;
+  }
+}
+
+async function startWazeProxy() {
+  if (wazeProxyServer) return wazeProxyServer.port;
+  const port = await getFreePort();
+
+  const server = http.createServer(async (req, res) => {
+    if (req.method !== 'POST' || req.url !== '/fetch') {
+      res.writeHead(404); res.end('not found'); return;
+    }
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { url } = JSON.parse(body);
+        if (typeof url !== 'string' || !url.startsWith('https://www.waze.com/')) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid url' })); return;
+        }
+        await ensureWazePage();
+        // Serialise the URL into the JS string safely — no eval of user data.
+        const safeUrl = JSON.stringify(url);
+        const result = await wazeWindow.webContents.executeJavaScript(`
+          (async () => {
+            const gon = JSON.parse(document.querySelector('#gon')?.textContent || '{}');
+            const recaptcha = globalThis.grecaptcha;
+            let token = null;
+            if (gon.recaptchaActionSiteKey && recaptcha && recaptcha.enterprise) {
+              token = await new Promise((resolve, reject) => {
+                recaptcha.enterprise.ready(() => {
+                  recaptcha.enterprise.execute(gon.recaptchaActionSiteKey, { action: 'livemap' }).then(resolve, reject);
+                });
+              });
+            }
+            const headers = { 'Accept': 'application/json, text/plain, */*' };
+            if (token) headers['x-recaptcha-token'] = token;
+            const r = await fetch(${safeUrl}, { headers, credentials: 'include' });
+            return { ok: r.ok, status: r.status, text: await r.text() };
+          })()
+        `);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        wazePageReady = false; // force re-navigation on next request
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+  wazeProxyServer = { server, port };
+  console.log(`[horus] Waze proxy ready on :${port}`);
+  return port;
+}
+
+function stopWazeProxy() {
+  if (wazeProxyServer) {
+    try { wazeProxyServer.server.close(); } catch { /* ignore */ }
+    wazeProxyServer = null;
+  }
+  if (wazeWindow && !wazeWindow.isDestroyed()) {
+    try { wazeWindow.destroy(); } catch { /* ignore */ }
+    wazeWindow = null;
+  }
+  wazePageReady = false;
 }
 
 function armServerStableReset() {
@@ -426,10 +539,22 @@ async function startEmbeddedServer() {
   const backendOverrides = await startManagedBackends(apiKeys);
   const engineEnv = buildEngineEnv(process.env, apiKeys, backendOverrides);
 
+  // Start the Waze browser proxy so the packaged build can bypass Waze's server-side
+  // block. In dev, Playwright handles this; in production Playwright is unavailable so
+  // the proxy routes fetches through a real hidden BrowserWindow instead.
+  let wazeProxyEnv = {};
+  try {
+    const wazePort = await startWazeProxy();
+    wazeProxyEnv = { WAZE_ELECTRON_PROXY: `http://127.0.0.1:${wazePort}` };
+  } catch (err) {
+    console.error('[horus] Waze proxy failed to start (Waze alerts will be unavailable):', err.message);
+  }
+
   serverChild = fork(serverJs, [], {
     cwd: path.dirname(serverJs),
     env: {
       ...engineEnv,
+      ...wazeProxyEnv,
       NODE_ENV: 'production',
       PORT: String(port),
       HOSTNAME: '127.0.0.1',

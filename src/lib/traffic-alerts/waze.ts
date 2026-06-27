@@ -142,9 +142,50 @@ export function dedupeAlerts(alerts: WazePoliceCameraAlert[]): WazePoliceCameraA
 
 function resolveTransport(transport: WazeTransportMode | WazeGeoRssTransport, options: { browserHeadless: boolean }): WazeGeoRssTransport {
   if (typeof transport !== 'string') return transport;
+  // In packaged Electron builds, WAZE_ELECTRON_PROXY points to a tiny HTTP server in the
+  // main process that routes requests through a real hidden BrowserWindow (with real Waze
+  // session cookies + reCAPTCHA). Playwright is a devDependency and is not available in
+  // production, so this is the only browser-capable transport in a packaged build.
+  const electronProxy = process.env.WAZE_ELECTRON_PROXY;
+  if (electronProxy && transport !== 'http' && transport !== 'browser') {
+    return createElectronProxyTransport(electronProxy);
+  }
   if (transport === 'http') return createHttpWazeTransport();
   if (transport === 'browser') return createBrowserWazeTransport(options);
   return createAutoWazeTransport(options);
+}
+
+// Electron production transport: routes requests through a hidden BrowserWindow in the
+// Electron main process (WAZE_ELECTRON_PROXY=http://127.0.0.1:<port>). The main process
+// loads the Waze live map to establish real session cookies + reCAPTCHA, then executes
+// the GeoRSS fetch from within that page context via executeJavaScript.
+function createElectronProxyTransport(proxyUrl: string): WazeGeoRssTransport {
+  return {
+    async fetchGeoRss(url, context) {
+      const res = await fetch(`${proxyUrl}/fetch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+        signal: context.signal,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'proxy error' })) as { error?: string };
+        throw new WazeTransportError(
+          `Waze electron proxy ${res.status}: ${err.error ?? 'unknown'}`,
+          res.status,
+          'electron',
+        );
+      }
+      const result = await res.json() as { ok: boolean; status: number; text: string };
+      if (!result.ok) {
+        throw new WazeTransportError(`Waze browser HTTP ${result.status}`, result.status, 'electron');
+      }
+      if (result.text.length > MAX_GEORSS_RESPONSE_CHARS) {
+        throw new WazeTransportError(`Waze response too large (${result.text.length} chars)`, 413, 'electron');
+      }
+      return JSON.parse(result.text);
+    },
+  };
 }
 
 function createAutoWazeTransport(options: { browserHeadless: boolean }): WazeGeoRssTransport {
