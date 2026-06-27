@@ -371,11 +371,36 @@ function stopEmbeddedServer() {
 let wazeProxyServer = null;
 let wazeWindow = null;
 let wazePageReady = false;
+let wazePageLoadedAt = 0;
+let wazeEnsureInFlight = null;
 const WAZE_LIVE_MAP_URL = 'https://www.waze.com/live-map';
 const WAZE_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.55 Safari/537.36';
+// The live-map page's reCAPTCHA/session context goes stale after a handful of GeoRSS
+// fetches — Waze starts answering 403. Reload proactively once the page ages past this,
+// and on demand whenever a fetch comes back unauthorized (see the request handler).
+const WAZE_PAGE_MAX_AGE_MS = 4 * 60_000;
+// Hard ceiling on any single page navigation / in-page fetch so a hung reCAPTCHA or a
+// never-resolving fetch can't permanently wedge the proxy (the original failure mode:
+// only a full app restart cleared it).
+const WAZE_EXEC_TIMEOUT_MS = 35_000;
+// Statuses that mean "the page's session/reCAPTCHA is stale" — reload and retry.
+const WAZE_STALE_STATUSES = new Set([401, 403, 429]);
 
-async function ensureWazePage() {
-  if (wazeWindow && !wazeWindow.isDestroyed() && wazePageReady) return;
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
+function wazePageIsStale() {
+  return !wazePageReady || (Date.now() - wazePageLoadedAt) > WAZE_PAGE_MAX_AGE_MS;
+}
+
+async function loadWazePage() {
   if (!wazeWindow || wazeWindow.isDestroyed()) {
     wazeWindow = new BrowserWindow({
       show: false,
@@ -386,24 +411,60 @@ async function ensureWazePage() {
     wazeWindow.on('closed', () => { wazeWindow = null; wazePageReady = false; });
   }
   wazePageReady = false;
-  try {
-    await wazeWindow.loadURL(WAZE_LIVE_MAP_URL);
-    // Wait up to 30s for reCAPTCHA enterprise to initialise; proceed anyway if it doesn't.
-    await wazeWindow.webContents.executeJavaScript(`
-      new Promise(resolve => {
-        const deadline = Date.now() + 30000;
-        (function check() {
-          if (globalThis.grecaptcha && globalThis.grecaptcha.enterprise) return resolve(true);
-          if (Date.now() > deadline) return resolve(false);
-          setTimeout(check, 500);
-        })();
-      })
-    `);
-    wazePageReady = true;
-  } catch (err) {
-    console.error('[horus] Waze page load failed:', err.message);
-    throw err;
-  }
+  await withTimeout(wazeWindow.loadURL(WAZE_LIVE_MAP_URL), WAZE_EXEC_TIMEOUT_MS, 'Waze loadURL');
+  // Wait up to 30s for reCAPTCHA enterprise to initialise; proceed anyway if it doesn't.
+  await wazeWindow.webContents.executeJavaScript(`
+    new Promise(resolve => {
+      const deadline = Date.now() + 30000;
+      (function check() {
+        if (globalThis.grecaptcha && globalThis.grecaptcha.enterprise) return resolve(true);
+        if (Date.now() > deadline) return resolve(false);
+        setTimeout(check, 500);
+      })();
+    })
+  `);
+  wazePageReady = true;
+  wazePageLoadedAt = Date.now();
+}
+
+// Ensure a fresh-enough loaded page exists. Concurrent callers (the scraper fetches tiles
+// 2-at-a-time) share one in-flight (re)load so the window isn't navigated out from under a
+// sibling request mid-fetch.
+async function ensureWazePage() {
+  if (wazeWindow && !wazeWindow.isDestroyed() && !wazePageIsStale()) return;
+  if (wazeEnsureInFlight) return wazeEnsureInFlight;
+  wazeEnsureInFlight = loadWazePage()
+    .catch((err) => { console.error('[horus] Waze page load failed:', err.message); throw err; })
+    .finally(() => { wazeEnsureInFlight = null; });
+  return wazeEnsureInFlight;
+}
+
+// Execute the GeoRSS fetch from inside the live-map page (real cookies + a fresh reCAPTCHA
+// token per call). The URL is serialised, not eval'd, so request data is never executed.
+async function wazeFetchInPage(url) {
+  const safeUrl = JSON.stringify(url);
+  return withTimeout(
+    wazeWindow.webContents.executeJavaScript(`
+      (async () => {
+        const gon = JSON.parse(document.querySelector('#gon')?.textContent || '{}');
+        const recaptcha = globalThis.grecaptcha;
+        let token = null;
+        if (gon.recaptchaActionSiteKey && recaptcha && recaptcha.enterprise) {
+          token = await new Promise((resolve, reject) => {
+            recaptcha.enterprise.ready(() => {
+              recaptcha.enterprise.execute(gon.recaptchaActionSiteKey, { action: 'livemap' }).then(resolve, reject);
+            });
+          });
+        }
+        const headers = { 'Accept': 'application/json, text/plain, */*' };
+        if (token) headers['x-recaptcha-token'] = token;
+        const r = await fetch(${safeUrl}, { headers, credentials: 'include' });
+        return { ok: r.ok, status: r.status, text: await r.text() };
+      })()
+    `),
+    WAZE_EXEC_TIMEOUT_MS,
+    'Waze fetch',
+  );
 }
 
 async function startWazeProxy() {
@@ -423,27 +484,28 @@ async function startWazeProxy() {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'invalid url' })); return;
         }
-        await ensureWazePage();
-        // Serialise the URL into the JS string safely — no eval of user data.
-        const safeUrl = JSON.stringify(url);
-        const result = await wazeWindow.webContents.executeJavaScript(`
-          (async () => {
-            const gon = JSON.parse(document.querySelector('#gon')?.textContent || '{}');
-            const recaptcha = globalThis.grecaptcha;
-            let token = null;
-            if (gon.recaptchaActionSiteKey && recaptcha && recaptcha.enterprise) {
-              token = await new Promise((resolve, reject) => {
-                recaptcha.enterprise.ready(() => {
-                  recaptcha.enterprise.execute(gon.recaptchaActionSiteKey, { action: 'livemap' }).then(resolve, reject);
-                });
-              });
-            }
-            const headers = { 'Accept': 'application/json, text/plain, */*' };
-            if (token) headers['x-recaptcha-token'] = token;
-            const r = await fetch(${safeUrl}, { headers, credentials: 'include' });
-            return { ok: r.ok, status: r.status, text: await r.text() };
-          })()
-        `);
+
+        // Up to two attempts: a stale page (403/429) or a thrown/timed-out fetch on the
+        // first try invalidates the page and forces a fresh reload before the retry. This
+        // is the core fix — previously a 403 was passed straight back and the stale page
+        // was reused on every later request, so the layer stayed broken until app restart.
+        let result;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          await ensureWazePage();
+          try {
+            result = await wazeFetchInPage(url);
+          } catch (err) {
+            wazePageReady = false; // page is suspect — reload before retrying / next request
+            if (attempt === 0) continue;
+            throw err;
+          }
+          if (!result.ok && WAZE_STALE_STATUSES.has(result.status)) {
+            wazePageReady = false; // session went stale — reload so this and the next request recover
+            if (attempt === 0) continue;
+          }
+          break;
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result));
       } catch (err) {
@@ -473,6 +535,8 @@ function stopWazeProxy() {
     wazeWindow = null;
   }
   wazePageReady = false;
+  wazePageLoadedAt = 0;
+  wazeEnsureInFlight = null;
 }
 
 function armServerStableReset() {
