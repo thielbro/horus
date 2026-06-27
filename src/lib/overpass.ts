@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getClientIp, isRateLimited } from '@/lib/ssrf-guard';
-import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
+import { releaseResponseBody, safeAbortTimeout, safeAbortAny } from '@/lib/http-utils';
 
 /**
  * HORUS — shared OpenStreetMap / Overpass layer helper.
@@ -15,12 +15,23 @@ import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
  * phase will drive from the live viewport.
  */
 
-const OVERPASS = 'https://overpass-api.de/api/interpreter';
+// Public Overpass mirrors, tried in order. The primary (.de) is the most complete but also
+// the most heavily loaded; the others are healthy community mirrors we fall back to on
+// 429/5xx/timeout so a throttled primary doesn't blank the map.
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+];
 const MAX_BBOX_AREA_DEGREES = 25;
+// Per-attempt upstream timeout. Viewport queries return in 1–3s; this is the ceiling before
+// we give up on one mirror and try the next.
+const OVERPASS_FETCH_TIMEOUT_MS = 22_000;
 
-// Short-lived in-memory cache of merged results, keyed by bucket+query. Panning back to a
-// recently viewed viewport returns instantly instead of re-hitting the public Overpass API.
-const OVERPASS_CACHE_TTL_MS = 60_000;
+// In-memory cache of merged results, keyed by bucket+query. Panning back to a recently viewed
+// viewport returns instantly instead of re-hitting Overpass. Bumped to 5 min so a user
+// working a small area (the common case) almost never re-queries.
+const OVERPASS_CACHE_TTL_MS = 5 * 60_000;
 const OVERPASS_CACHE_MAX = 200;
 const overpassCache = new Map<string, { at: number; items: object[] }>();
 
@@ -37,12 +48,109 @@ function getOverpassCache(key: string): object[] | null {
   return hit.items;
 }
 
+// Stale read used only as an error fallback: returns the last-known items for this query
+// even past the TTL, so a transient Overpass failure shows slightly-old markers instead of
+// wiping the layer to empty.
+function getOverpassCacheStale(key: string): object[] | null {
+  return overpassCache.get(key)?.items ?? null;
+}
+
 function setOverpassCache(key: string, items: object[]): void {
   overpassCache.set(key, { at: Date.now(), items });
   while (overpassCache.size > OVERPASS_CACHE_MAX) {
     const oldest = overpassCache.keys().next().value;
     if (!oldest) break;
     overpassCache.delete(oldest);
+  }
+}
+
+// ── Global upstream concurrency gate ──
+// Overpass allows ~2 concurrent queries per IP. The client fires up to 4 layers at once on a
+// viewport change, which would self-throttle. This gate caps concurrent upstream requests
+// across ALL layers; excess requests queue and run as slots free, so nothing 429s itself.
+const MAX_CONCURRENT_OVERPASS = 2;
+let activeOverpass = 0;
+type Waiter = { resolve: () => void; reject: (e: unknown) => void; signal?: AbortSignal; onAbort?: () => void };
+const overpassWaiters: Waiter[] = [];
+
+function abortError(): Error {
+  const e = new Error('aborted');
+  e.name = 'AbortError';
+  return e;
+}
+
+function pumpOverpass(): void {
+  while (activeOverpass < MAX_CONCURRENT_OVERPASS && overpassWaiters.length) {
+    const w = overpassWaiters.shift()!;
+    if (w.onAbort && w.signal) w.signal.removeEventListener('abort', w.onAbort);
+    if (w.signal?.aborted) { w.reject(abortError()); continue; }
+    activeOverpass++;
+    w.resolve();
+  }
+}
+
+function acquireOverpassSlot(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(abortError());
+  if (activeOverpass < MAX_CONCURRENT_OVERPASS) { activeOverpass++; return Promise.resolve(); }
+  return new Promise<void>((resolve, reject) => {
+    const w: Waiter = { resolve, reject, signal };
+    if (signal) {
+      w.onAbort = () => {
+        const i = overpassWaiters.indexOf(w);
+        if (i >= 0) overpassWaiters.splice(i, 1);
+        reject(abortError());
+      };
+      signal.addEventListener('abort', w.onAbort, { once: true });
+    }
+    overpassWaiters.push(w);
+  });
+}
+
+function releaseOverpassSlot(): void {
+  activeOverpass = Math.max(0, activeOverpass - 1);
+  pumpOverpass();
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError());
+    const t = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+    const onAbort = () => { clearTimeout(t); reject(abortError()); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * POST an Overpass query through the concurrency gate, rotating mirrors with backoff. Resolves
+ * with the first OK Response; throws if every mirror fails (or the caller aborts). The gate is
+ * held for the whole mirror-rotation so a queued layer doesn't jump ahead of an in-flight one.
+ */
+async function fetchOverpassResilient(query: string, userAgent: string, signal?: AbortSignal): Promise<Response> {
+  const body = 'data=' + encodeURIComponent(query);
+  await acquireOverpassSlot(signal);
+  try {
+    let lastErr: unknown;
+    for (let i = 0; i < OVERPASS_MIRRORS.length; i++) {
+      try {
+        const res = await fetch(OVERPASS_MIRRORS[i], {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': userAgent },
+          body,
+          signal: safeAbortAny([signal, safeAbortTimeout(OVERPASS_FETCH_TIMEOUT_MS)]),
+        });
+        if (res.ok) return res;
+        await releaseResponseBody(res);
+        lastErr = new Error(`Overpass ${res.status}`);
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        lastErr = e;
+      }
+      // Brief backoff before the next mirror (skip after the last attempt).
+      if (i < OVERPASS_MIRRORS.length - 1) await delay(250 * (i + 1), signal);
+    }
+    throw lastErr ?? new Error('Overpass: all mirrors failed');
+  } finally {
+    releaseOverpassSlot();
   }
 }
 
@@ -141,20 +249,17 @@ export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Resp
       );
     }
 
-    // Plain fetch (not stealthFetch — it hard-aborts at 10s; Overpass needs longer).
-    const res = await fetch(OVERPASS, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': userAgent,
-      },
-      body: 'data=' + encodeURIComponent(query),
-      signal: safeAbortTimeout(30000),
-    });
-    if (!res.ok) {
-      await releaseResponseBody(res);
-      // Overpass failed — still serve curated data so covered regions don't blank.
-      return NextResponse.json({ [bucket]: extra, total: extra.length, error: `Overpass ${res.status}` }, { status: 200 });
+    // Resilient upstream fetch: concurrency-gated, with mirror rotation + backoff.
+    let res: Response;
+    try {
+      res = await fetchOverpassResilient(query, userAgent, request.signal);
+    } catch (err) {
+      if (request.signal?.aborted) throw err;
+      // Every mirror failed — serve the last-known markers for this view (even if stale) so
+      // the layer doesn't blank, falling back to curated-only if we've never cached it.
+      const stale = getOverpassCacheStale(cacheKey);
+      const fallback = stale ?? extra;
+      return NextResponse.json({ [bucket]: fallback, total: fallback.length, error: 'Overpass unavailable', stale: !!stale }, { status: 200 });
     }
 
     const data = await res.json();
