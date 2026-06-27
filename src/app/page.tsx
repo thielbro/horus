@@ -790,7 +790,10 @@ export default function Dashboard() {
   // Viewport-driven OSM point layers (police/flock/mass-surveillance/surveillance)
   // + always-on curated police. These can't be fetched globally, so they track the
   // visible map bounds instead of the feed engine's fixed continent defaults.
-  useViewportLayers(activeLayers, mapView, fetchEndpoint);
+  const clearBucket = useCallback((bucket: string) => {
+    setData(prev => ({ ...prev, [bucket]: [] }));
+  }, []);
+  useViewportLayers(activeLayers, mapView, fetchEndpoint, clearBucket);
 
   // Space Weather — one-off into its own state setter (not a map data bucket).
   useEffect(() => {

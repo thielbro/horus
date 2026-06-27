@@ -53,6 +53,7 @@ export function useViewportLayers(
   activeLayers: Record<string, boolean>,
   mapView: { bounds?: Bounds },
   fetchEndpoint: FetchEndpoint,
+  clearBucket?: (bucket: string) => void,
 ): void {
   const bounds = mapView.bounds;
   // Last bbox string fetched per layer — skip refetching an unchanged viewport.
@@ -97,9 +98,12 @@ export function useViewportLayers(
         // (for police, the always-on curated set still shows).
         if (tooLarge) continue;
         if (lastFetched.current.get(layer) === param) continue;
-        lastFetched.current.set(layer, param);
         // Supersede any in-flight fetch for this layer before starting the new one.
         controllers.current.get(layer)?.abort();
+        // Clear stale markers immediately so wrong-location data never lingers while
+        // the new viewport fetch is in flight (or if it fails / rate-limits).
+        clearBucket?.(bucket);
+        lastFetched.current.set(layer, param);
         const ac = new AbortController();
         controllers.current.set(layer, ac);
         fetchEndpoint(`${route}?bbox=${param}`, (d) => ({ [bucket]: d[bucket] ?? [] }), { signal: ac.signal });
