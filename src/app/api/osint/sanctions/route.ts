@@ -32,7 +32,7 @@ export async function GET(req: Request) {
   }
 
   const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp, 20, 60_000)) {
+  if (isRateLimited(clientIp, 20, 60_000, 'osint-sanctions')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

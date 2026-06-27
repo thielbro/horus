@@ -266,13 +266,23 @@ function cleanupRateMap(now: number, force = false) {
   }
 }
 
-export function isRateLimited(ip: string, limit: number = 20, windowMs: number = 60_000): boolean {
+/**
+ * Per-isolate sliding-window rate limiter.
+ *
+ * IMPORTANT: the `bucket` argument namespaces the counter per route. Without it,
+ * every route that rate-limits a given IP would share a single counter — so on a
+ * desktop client (where the IP is almost always 'unknown') one zoom that fans out
+ * to surveillance + scanner + dossier + police would blow a shared budget and 429
+ * everything. Always pass a distinct bucket per route.
+ */
+export function isRateLimited(ip: string, limit: number = 20, windowMs: number = 60_000, bucket: string = 'default'): boolean {
   const now = Date.now();
   cleanupRateMap(now);
-  const entry = rateMap.get(ip);
+  const key = `${bucket}:${ip}`;
+  const entry = rateMap.get(key);
   if (!entry || now > entry.resetAt) {
     if (rateMap.size >= MAX_RATE_MAP_ENTRIES) cleanupRateMap(now, true);
-    rateMap.set(ip, { count: 1, resetAt: now + windowMs });
+    rateMap.set(key, { count: 1, resetAt: now + windowMs });
     return false;
   }
   entry.count++;
@@ -290,8 +300,14 @@ export function getClientIp(req: Request): string {
  * decoupled from next/server. Usage:
  *   const limited = rateLimitOr429(request, 60); if (limited) return limited;
  */
-export function rateLimitOr429(req: Request, limit: number = 60, windowMs: number = 60_000): Response | null {
-  if (isRateLimited(getClientIp(req), limit, windowMs)) {
+export function rateLimitOr429(req: Request, limit: number = 60, windowMs: number = 60_000, bucket?: string): Response | null {
+  // Derive a per-route bucket from the pathname so each endpoint gets its own
+  // counter instead of sharing one global budget across the whole app.
+  let ns = bucket;
+  if (!ns) {
+    try { ns = new URL(req.url).pathname; } catch { ns = 'default'; }
+  }
+  if (isRateLimited(getClientIp(req), limit, windowMs, ns)) {
     return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
       status: 429,
       headers: { 'Content-Type': 'application/json' },

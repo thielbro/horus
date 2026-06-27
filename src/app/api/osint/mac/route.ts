@@ -9,7 +9,7 @@ export async function GET(req: Request) {
   if (!mac) {
     return NextResponse.json({ error: 'Missing MAC parameter' }, { status: 400 });
   }
-  if (isRateLimited(getClientIp(req), 20, 60_000)) {
+  if (isRateLimited(getClientIp(req), 20, 60_000, 'osint-mac')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

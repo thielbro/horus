@@ -114,7 +114,7 @@ export async function runOverpassLayer(opts: OverpassLayerOptions): Promise<Resp
   let extra: object[] = [];
   try {
     const clientIp = getClientIp(request);
-    if (isRateLimited(clientIp, rateLimit, 60_000)) {
+    if (isRateLimited(clientIp, rateLimit, 60_000, `overpass:${bucket}`)) {
       return NextResponse.json({ [bucket]: [], error: 'Rate limit exceeded' }, { status: 429 });
     }
 

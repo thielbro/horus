@@ -10,7 +10,7 @@ import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 export async function GET(request: Request) {
   const clientIp = getClientIp(request);
-  if (isRateLimited(clientIp, 20, 60_000)) {
+  if (isRateLimited(clientIp, 20, 60_000, 'region-dossier')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

@@ -104,7 +104,7 @@ export async function GET(req: Request) {
   if (!number) {
     return NextResponse.json({ error: 'Missing phone parameter' }, { status: 400 });
   }
-  if (isRateLimited(getClientIp(req), 30, 60_000)) {
+  if (isRateLimited(getClientIp(req), 30, 60_000, 'osint-phone')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

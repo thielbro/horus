@@ -65,7 +65,7 @@ function parseBboxParam(bboxParam: string | null): { ok: true; boxes: BBox[] } |
 export async function GET(request: Request) {
   try {
     const clientIp = getClientIp(request);
-    if (isRateLimited(clientIp, 30, 60_000)) {
+    if (isRateLimited(clientIp, 30, 60_000, 'surveillance')) {
       return NextResponse.json({ surveillance: [], error: 'Rate limit exceeded' }, { status: 429 });
     }
 

@@ -7,7 +7,7 @@ export async function GET(req: Request) {
   const email = searchParams.get('email');
 
   if (!email) return NextResponse.json({ error: 'Missing email parameter' }, { status: 400 });
-  if (isRateLimited(getClientIp(req), 10, 60_000)) {
+  if (isRateLimited(getClientIp(req), 10, 60_000, 'osint-leaks')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

@@ -7,7 +7,7 @@ export async function GET(req: Request) {
   const username = searchParams.get('user');
 
   if (!username) return NextResponse.json({ error: 'Missing username parameter' }, { status: 400 });
-  if (isRateLimited(getClientIp(req), 20, 60_000)) {
+  if (isRateLimited(getClientIp(req), 20, 60_000, 'osint-github')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

@@ -41,7 +41,7 @@ function parseTransport(value: string | null): WazeTransportMode {
 export async function GET(request: Request) {
   try {
     const clientIp = getClientIp(request);
-    if (isRateLimited(clientIp, RATE_LIMIT_PER_MIN, 60_000)) {
+    if (isRateLimited(clientIp, RATE_LIMIT_PER_MIN, 60_000, 'waze-alerts')) {
       return NextResponse.json({ alerts: [], total: 0, error: 'Rate limit exceeded' }, { status: 429 });
     }
 

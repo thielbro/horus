@@ -36,7 +36,7 @@ function parseRef(searchParams: URLSearchParams, kind: string): EntityRef | null
 
 export async function GET(req: Request) {
   const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp, 20, 60_000)) {
+  if (isRateLimited(clientIp, 20, 60_000, 'intel-compile')) {
     return json({ error: 'Rate limit exceeded' }, 429);
   }
 

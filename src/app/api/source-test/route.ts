@@ -38,7 +38,7 @@ function findFirstArray(obj: any): { arr: any[]; at: string } | null {
 
 export async function GET(request: Request) {
   const clientIp = getClientIp(request);
-  if (isRateLimited(clientIp, 20, 60_000)) {
+  if (isRateLimited(clientIp, 20, 60_000, 'source-test')) {
     return NextResponse.json({ ok: false, error: 'Rate limit exceeded' }, { status: 429 });
   }
 
