@@ -60,6 +60,10 @@ const HOST = process.env.SURVEILLANCE_FEED_BIND || process.env.HOST || '0.0.0.0'
 const DEFAULT_REFRESH_MS = Number(process.env.SURVEILLANCE_FEED_REFRESH_MS || 7 * 24 * 60 * 60 * 1000);
 const DEFAULT_DB_PATH = process.env.SURVEILLANCE_FEED_DB || path.join(__dirname, 'data', 'surveillance-feed.sqlite');
 const DEFAULT_ADMIN_TOKEN = process.env.SURVEILLANCE_FEED_ADMIN_TOKEN || '';
+const DEFAULT_TILE_DEGREES = Number(process.env.SURVEILLANCE_FEED_TILE_DEGREES || 0.25);
+const DEFAULT_WORKER_CONCURRENCY = Number(process.env.SURVEILLANCE_FEED_WORKERS || 2);
+const DEFAULT_RETRY_BASE_MS = Number(process.env.SURVEILLANCE_FEED_RETRY_BASE_MS || 5 * 60 * 1000);
+const DEFAULT_MAX_JOB_ATTEMPTS = Number(process.env.SURVEILLANCE_FEED_MAX_JOB_ATTEMPTS || 3);
 const MAX_BBOX_AREA_DEG2 = Number(process.env.SURVEILLANCE_FEED_MAX_BBOX_AREA || 25);
 const MAX_LAYER_ROWS = Number(process.env.SURVEILLANCE_FEED_MAX_ROWS || 5000);
 const OVERPASS_TIMEOUT_MS = Number(process.env.SURVEILLANCE_FEED_OVERPASS_TIMEOUT_MS || 45_000);
@@ -170,6 +174,31 @@ function parseBbox(raw) {
 
 function tileKeyFor(bbox) {
   return bbox.map((n) => Number(n).toFixed(4)).join(',');
+}
+
+function positiveNumber(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function positiveInt(value, fallback) {
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function roundCoord(value) {
+  return Number(Number(value).toFixed(6));
+}
+
+function refreshBboxFor(bbox, tileDegrees = DEFAULT_TILE_DEGREES) {
+  const step = positiveNumber(tileDegrees, 0.25);
+  const [s, w, n, e] = bbox;
+  return [
+    Math.max(-90, roundCoord(Math.floor(s / step) * step)),
+    Math.max(-180, roundCoord(Math.floor(w / step) * step)),
+    Math.min(90, roundCoord(Math.ceil(n / step) * step)),
+    Math.min(180, roundCoord(Math.ceil(e / step) * step)),
+  ];
 }
 
 function parseLayers(raw) {
@@ -355,6 +384,8 @@ function migrate(db) {
       bbox_json TEXT,
       payload_json TEXT NOT NULL DEFAULT '{}',
       error TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       started_at INTEGER,
@@ -362,6 +393,7 @@ function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status, created_at);
     CREATE INDEX IF NOT EXISTS jobs_refresh_idx ON jobs(type, status, layer, source_id, tile_key);
+    CREATE INDEX IF NOT EXISTS jobs_next_attempt_idx ON jobs(status, next_attempt_at, created_at);
     CREATE TABLE IF NOT EXISTS events (
       id TEXT PRIMARY KEY,
       record_id TEXT,
@@ -375,6 +407,13 @@ function migrate(db) {
       created_at INTEGER NOT NULL
     );
   `);
+  ensureColumn(db, 'jobs', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'jobs', 'next_attempt_at', 'INTEGER');
+}
+
+function ensureColumn(db, table, column, definition) {
+  const hasColumn = db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column);
+  if (!hasColumn) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 function upsertSource(db, source, nowMs = Date.now()) {
@@ -535,7 +574,8 @@ function markTileFresh(db, layer, sourceId, bbox, refreshMs, nowMs = Date.now())
 function queueRefreshJob(db, { layer, source_id, bbox, reason = 'missing_or_stale' }, nowMs = Date.now()) {
   if (!ALLOWED_LAYERS.has(layer)) throw new Error(`unsupported layer: ${layer}`);
   const sourceId = source_id || OSM_SOURCES[layer];
-  const key = tileKeyFor(bbox);
+  const refreshBbox = refreshBboxFor(bbox);
+  const key = tileKeyFor(refreshBbox);
   const existing = db.prepare(`
     SELECT * FROM jobs
     WHERE type = 'refresh'
@@ -548,23 +588,24 @@ function queueRefreshJob(db, { layer, source_id, bbox, reason = 'missing_or_stal
   `).get(layer, sourceId, key);
   if (existing) return { created: false, job: existing };
   const id = crypto.randomUUID();
-  const payload = { layer, source_id: sourceId, bbox, reason };
+  const payload = { layer, source_id: sourceId, bbox: refreshBbox, requested_bbox: bbox, reason };
   db.prepare(`
     INSERT INTO jobs (id, type, status, layer, source_id, tile_key, bbox_json, payload_json, created_at, updated_at)
     VALUES (?, 'refresh', 'queued', ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, layer, sourceId, key, JSON.stringify(bbox), JSON.stringify(payload), nowMs, nowMs);
-  return { created: true, job: { id, type: 'refresh', status: 'queued', layer, source_id: sourceId, tile_key: key, created_at: nowMs } };
+  `).run(id, layer, sourceId, key, JSON.stringify(refreshBbox), JSON.stringify(payload), nowMs, nowMs);
+  return { created: true, job: { id, type: 'refresh', status: 'queued', layer, source_id: sourceId, tile_key: key, bbox_json: JSON.stringify(refreshBbox), payload_json: JSON.stringify(payload), created_at: nowMs, updated_at: nowMs, attempts: 0, next_attempt_at: null } };
 }
 
 function sourceFreshness(db, bbox, layers, nowMs = Date.now()) {
   const out = [];
+  const refreshBbox = refreshBboxFor(bbox);
   for (const layer of layers) {
     const sourceId = OSM_SOURCES[layer];
     const source = db.prepare('SELECT refresh_ms FROM sources WHERE id = ? AND enabled = 1').get(sourceId);
     if (!source) continue;
-    const tile = getTile(db, layer, sourceId, bbox);
+    const tile = getTile(db, layer, sourceId, refreshBbox);
     if (isTileStale(tile?.refreshed_at, source.refresh_ms ?? DEFAULT_REFRESH_MS, nowMs)) {
-      out.push({ layer, source_id: sourceId, refresh_ms: source.refresh_ms ?? DEFAULT_REFRESH_MS });
+      out.push({ layer, source_id: sourceId, bbox: refreshBbox, refresh_ms: source.refresh_ms ?? DEFAULT_REFRESH_MS });
     }
   }
   return out;
@@ -710,6 +751,8 @@ function jobJson(row) {
     bbox: parseJson(row.bbox_json, null),
     payload: parseJson(row.payload_json, {}),
     error: row.error,
+    attempts: row.attempts ?? 0,
+    next_attempt_at: row.next_attempt_at ? nowIso(row.next_attempt_at) : null,
     created_at: nowIso(row.created_at),
     updated_at: nowIso(row.updated_at),
     started_at: row.started_at ? nowIso(row.started_at) : null,
@@ -717,10 +760,13 @@ function jobJson(row) {
   };
 }
 
-async function processOneJob(db, job, now, fetchImpl) {
+async function processOneJob(db, job, now, fetchImpl, options = {}) {
   const started = now();
-  db.prepare('UPDATE jobs SET status = ?, started_at = ?, updated_at = ? WHERE id = ?')
-    .run('running', started, started, job.id);
+  const attempt = (job.attempts || 0) + 1;
+  const maxAttempts = positiveInt(options.maxJobAttempts, DEFAULT_MAX_JOB_ATTEMPTS);
+  const retryBaseMs = positiveNumber(options.retryBaseMs, DEFAULT_RETRY_BASE_MS);
+  db.prepare('UPDATE jobs SET status = ?, attempts = ?, next_attempt_at = NULL, started_at = ?, updated_at = ? WHERE id = ?')
+    .run('running', attempt, started, started, job.id);
   try {
     const bbox = parseJson(job.bbox_json, null);
     if (!bbox) throw new Error('job missing bbox');
@@ -733,8 +779,15 @@ async function processOneJob(db, job, now, fetchImpl) {
       .run('complete', finished, finished, job.id);
   } catch (error) {
     const finished = now();
-    db.prepare('UPDATE jobs SET status = ?, finished_at = ?, updated_at = ?, error = ? WHERE id = ?')
-      .run('failed', finished, finished, error instanceof Error ? error.message : String(error), job.id);
+    const message = error instanceof Error ? error.message : String(error);
+    if (attempt < maxAttempts) {
+      const delay = retryBaseMs * (2 ** (attempt - 1));
+      db.prepare('UPDATE jobs SET status = ?, next_attempt_at = ?, finished_at = ?, updated_at = ?, error = ? WHERE id = ?')
+        .run('queued', finished + delay, finished, finished, message, job.id);
+    } else {
+      db.prepare('UPDATE jobs SET status = ?, next_attempt_at = NULL, finished_at = ?, updated_at = ?, error = ? WHERE id = ?')
+        .run('failed', finished, finished, message, job.id);
+    }
   }
 }
 
@@ -745,6 +798,9 @@ function createService(options = {}) {
   const now = typeof options.now === 'function' ? options.now : () => Date.now();
   const fetchImpl = options.fetch || fetch;
   const autoProcessJobs = options.autoProcessJobs !== false;
+  const workerConcurrency = Math.min(8, positiveInt(options.workerConcurrency ?? DEFAULT_WORKER_CONCURRENCY, 2));
+  const retryBaseMs = positiveNumber(options.retryBaseMs ?? DEFAULT_RETRY_BASE_MS, 5 * 60 * 1000);
+  const maxJobAttempts = positiveInt(options.maxJobAttempts ?? DEFAULT_MAX_JOB_ATTEMPTS, 3);
   let processing = false;
 
   migrate(db);
@@ -767,9 +823,15 @@ function createService(options = {}) {
     processing = true;
     try {
       while (true) {
-        const job = db.prepare("SELECT * FROM jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1").get();
-        if (!job) break;
-        await processOneJob(db, job, now, fetchImpl);
+        const jobs = db.prepare(`
+          SELECT * FROM jobs
+          WHERE status = 'queued'
+            AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+          ORDER BY created_at ASC
+          LIMIT ?
+        `).all(now(), workerConcurrency);
+        if (!jobs.length) break;
+        await Promise.all(jobs.map((job) => processOneJob(db, job, now, fetchImpl, { retryBaseMs, maxJobAttempts })));
       }
     } finally {
       processing = false;
