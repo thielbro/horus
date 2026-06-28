@@ -7,15 +7,17 @@
 // chokepoints). No static DB — the whole corridor is compiled at request time.
 
 import type {
-  IntelProvider, GatherResult, SynthResult, EntityRef, ProviderCtx,
+  IntelProvider, GatherResult, SynthResult,
   EntityNode, EntityLink, Fact, Signal,
 } from '@/lib/intel/types';
 import { geocode, type GeoResult } from '@/lib/geocode';
-import { haversineMeters, bboxOfPoints, tileBbox, bufferPolygon, projectPointOnLine } from '@/lib/geo';
+import { bboxOfPoints, tileBbox, bufferPolygon, projectPointOnLine } from '@/lib/geo';
 import type { BBox } from '@/lib/overpass';
 import { curatedPoliceInBoxes, isWithinCuratedCoverage } from '@/lib/police/curated';
 import { routeBetween, type RoutePoint } from '@/lib/routing';
 import { safeAbortTimeout, safeAbortAny, releaseResponseBody } from '@/lib/http-utils';
+import { fetchCctvCamerasForPoint } from '@/lib/cctv/sources';
+import { scrapeWazePoliceCameraAlerts } from '@/lib/traffic-alerts';
 
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const CORRIDOR_W_M = 150;         // keep devices within this distance of the route line
@@ -24,8 +26,10 @@ const MAX_BBOX_AREA_DEG = 24;     // just under the Overpass 25° cap
 const MAX_TILES = 16;
 const MAX_NEARBY = 80;
 const MAX_GRAPH_NEARBY = 12;
+const MAX_CCTV_CANDIDATES = 2500;
 const SEGMENT_BUCKET_M = 1000;    // bucket size for "densest segment" detection
 const OVERPASS_TIMEOUT_MS = 25_000;
+const WAZE_ROUTE_MAX_BBOX_AREA_DEG = 4;
 
 type SurveilKind = 'camera' | 'alpr' | 'speed' | 'police';
 interface SurveilItem {
@@ -39,7 +43,10 @@ interface SurveilItem {
   /** Distance travelled along the route to the nearest projection, metres. */
   alongM: number;
   operator?: string;
-  osmUrl: string;
+  source?: string;
+  osmUrl?: string;
+  feedUrl?: string;
+  externalUrl?: string;
 }
 
 interface OverpassNode {
@@ -110,6 +117,34 @@ function fmtDur(s: number): string {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
+function bboxAreaDeg([s, w, n, e]: BBox): number {
+  const lngWidth = w < e ? e - w : 360 - (w - e);
+  return Math.max(0, n - s) * Math.max(0, lngWidth);
+}
+
+function routeSamplePoints(line: Array<[number, number]>): Array<[number, number]> {
+  if (line.length <= 5) return line;
+  const indexes = [0, Math.floor(line.length * 0.25), Math.floor(line.length * 0.5), Math.floor(line.length * 0.75), line.length - 1];
+  const seen = new Set<number>();
+  return indexes
+    .filter((i) => !seen.has(i) && seen.add(i))
+    .map((i) => line[i])
+    .filter((p): p is [number, number] => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+}
+
+function projectRouteItem(
+  item: Omit<SurveilItem, 'offsetM' | 'alongM'> & { lat: number; lng: number },
+  line: Array<[number, number]>,
+): SurveilItem | null {
+  const { perpM, alongM } = projectPointOnLine(item.lat, item.lng, line);
+  if (perpM > CORRIDOR_W_M) return null;
+  return {
+    ...item,
+    offsetM: Math.round(perpM),
+    alongM: Math.round(alongM),
+  };
+}
+
 export const routeProvider: IntelProvider = {
   kind: 'route',
   version: '1',
@@ -167,6 +202,7 @@ export const routeProvider: IntelProvider = {
           offsetM: Math.round(perpM),
           alongM: Math.round(alongM),
           operator: tags.operator || undefined,
+          source: 'OpenStreetMap',
           osmUrl: `https://www.openstreetmap.org/node/${el.id}`,
         };
       })
@@ -184,12 +220,75 @@ export const routeProvider: IntelProvider = {
           offsetM: Math.round(perpM),
           alongM: Math.round(alongM),
           operator: st.operator || undefined,
+          source: st.source || 'Curated police',
           osmUrl: st.osm_url || '',
         };
       })
       .filter((it): it is SurveilItem => it !== null);
 
-    const surveil: SurveilItem[] = [...osmSurveil, ...curatedSurveil]
+    const cctvCandidates: SurveilItem[] = [];
+    const sampled = routeSamplePoints(line);
+    const cctvResults = await Promise.allSettled(
+      sampled.map(([lng, lat]) => fetchCctvCamerasForPoint(lat, lng, 10, MAX_CCTV_CANDIDATES)),
+    );
+    const seenCctv = new Set<string>();
+    for (const result of cctvResults) {
+      if (result.status !== 'fulfilled') continue;
+      for (const cam of result.value.cameras) {
+        const lat = Number(cam?.lat);
+        const lng = Number(cam?.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        const id = String(cam?.id || `${cam?.source || 'cctv'}:${lat.toFixed(5)},${lng.toFixed(5)}`);
+        if (seenCctv.has(id)) continue;
+        seenCctv.add(id);
+        const projected = projectRouteItem({
+          id: `cctv-${id}`,
+          kind: 'camera',
+          name: String(cam?.name || cam?.title || 'CCTV camera'),
+          lat,
+          lng,
+          source: String(cam?.source || 'CCTV feed'),
+          feedUrl: typeof cam?.feed_url === 'string' ? cam.feed_url : typeof cam?.stream_url === 'string' ? cam.stream_url : undefined,
+          externalUrl: typeof cam?.external_url === 'string' ? cam.external_url : undefined,
+        }, line);
+        if (projected) cctvCandidates.push(projected);
+      }
+    }
+
+    const wazeCandidates: SurveilItem[] = [];
+    if (corridorBbox && bboxAreaDeg(corridorBbox) <= WAZE_ROUTE_MAX_BBOX_AREA_DEG) {
+      try {
+        const waze = await scrapeWazePoliceCameraAlerts({
+          bbox: corridorBbox,
+          transport: 'auto',
+          browserHeadless: true,
+          signal: ctx.signal,
+        });
+        for (const alert of waze.alerts) {
+          const projected = projectRouteItem({
+            id: `waze-${alert.id}`,
+            kind: alert.kind === 'police' ? 'police' : 'camera',
+            name: alert.kind === 'police' ? 'Waze police report' : 'Waze camera report',
+            lat: alert.lat,
+            lng: alert.lng,
+            source: 'Waze live alert',
+            externalUrl: 'https://www.waze.com/live-map',
+          }, line);
+          if (projected) wazeCandidates.push(projected);
+        }
+      } catch {
+        // Waze is live and transport-dependent; fixed sources still make a useful route dossier.
+      }
+    }
+
+    const seenSurveil = new Set<string>();
+    const surveil: SurveilItem[] = [...osmSurveil, ...curatedSurveil, ...cctvCandidates, ...wazeCandidates]
+      .filter((it) => {
+        const key = `${it.kind}:${it.id}`;
+        if (seenSurveil.has(key)) return false;
+        seenSurveil.add(key);
+        return true;
+      })
       .sort((a, b) => a.alongM - b.alongM)
       .slice(0, MAX_NEARBY);
 
@@ -240,6 +339,18 @@ export const routeProvider: IntelProvider = {
       { key: 'duration', label: 'Est. drive time', value: fmtDur(route.duration), source: 'osrm' },
       { key: 'exposure', label: `Surveillance within ${CORRIDOR_W_M}m of route`, value: `${counts.camera} CCTV, ${counts.alpr} ALPR, ${counts.speed} speed, ${counts.police} police`, source: 'overpass' },
       { key: 'densest', label: 'Densest segment', value: densestText, source: 'overpass' },
+      {
+        key: 'on_route_items',
+        label: 'Detected on route',
+        value: surveil.slice(0, 24).map((it) => ({
+          kind: it.kind,
+          name: it.name,
+          alongM: it.alongM,
+          offsetM: it.offsetM,
+          source: it.source,
+        })),
+        source: 'route-corridor',
+      },
       ...(alprPoints.length ? [{ key: 'alpr', label: 'ALPR chokepoints', value: `${alprPoints.length} reader(s); first at ${fmtKm(alprPoints[0].alongM)}`, source: 'overpass' }] : []),
     ];
 
@@ -260,7 +371,7 @@ export const routeProvider: IntelProvider = {
         ...(corridorRing ? [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [corridorRing] }, properties: { role: 'corridor' } }] : []),
         ...surveil.map((it) => ({
           type: 'Feature', geometry: { type: 'Point', coordinates: [it.lng, it.lat] },
-          properties: { role: 'surveil', kind: it.kind, name: it.name, distanceM: it.offsetM, alongM: it.alongM, osmUrl: it.osmUrl },
+          properties: { role: 'surveil', kind: it.kind, name: it.name, distanceM: it.offsetM, alongM: it.alongM, source: it.source, osmUrl: it.osmUrl, feedUrl: it.feedUrl, externalUrl: it.externalUrl },
         })),
       ],
     };
@@ -310,6 +421,20 @@ export const routeProvider: IntelProvider = {
     }
     if (exposure) {
       sections.push({ id: 'exposure', title: 'Exposure Breakdown', body: exposure, facts: gathered.facts?.filter((f) => /on route|cameras/i.test(f.label)) });
+    }
+    const routeItems = gathered.signals.find((s) => s.key === 'on_route_items')?.value;
+    if (Array.isArray(routeItems) && routeItems.length > 0) {
+      const body = routeItems
+        .map((it) => {
+          const kind = typeof it?.kind === 'string' && it.kind in KIND_LABEL ? KIND_LABEL[it.kind as SurveilKind] : 'surveillance';
+          const alongM = Number(it?.alongM ?? 0);
+          const offsetM = Number(it?.offsetM ?? 0);
+          const name = typeof it?.name === 'string' ? it.name : 'Detected device';
+          const source = typeof it?.source === 'string' ? it.source : 'public source';
+          return `- ${fmtKm(Number.isFinite(alongM) ? alongM : 0)}: ${name} (${kind}, ${Number.isFinite(offsetM) ? Math.round(offsetM) : 0}m off route, ${source})`;
+        })
+        .join('\n');
+      sections.push({ id: 'detected-on-route', title: 'Detected On Route', body });
     }
 
     return { summary, sections, facts: [], privacy: gathered.privacy };

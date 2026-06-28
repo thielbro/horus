@@ -81,9 +81,11 @@ test('delta review: route buffer documents antimeridian rendering limits', () =>
 
 test('delta review: CCTV cache policy follows query type, not result count', () => {
   const cctv = file('src/app/api/cctv/route.ts');
+  const cctvSources = file('src/lib/cctv/sources.ts');
 
   assert.match(cctv, /const hasCoordinateQuery = searchParams\.has\('lat'\) \|\| searchParams\.has\('lng'\);/);
-  assert.match(cctv, /else if \(hasCoordinateQuery\) \{/);
+  assert.match(cctvSources, /if \(req\.hasCoordinateQuery\) \{/);
+  assert.match(cctvSources, /return getRegionsForBounds\(Number\(req\.lat \?\? 0\), Number\(req\.lng \?\? 0\)\)/);
   assert.match(cctv, /const cacheControl = hasCoordinateQuery\s*\?\s*'no-store, max-age=0'\s*:\s*'public, s-maxage=300, stale-while-revalidate=600';/);
   assert.doesNotMatch(cctv, /allCameras\.length\s*<\s*50/);
 });

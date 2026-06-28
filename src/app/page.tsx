@@ -40,6 +40,23 @@ function safeDossierPoint(lat: unknown, lng: unknown): { lat: number; lng: numbe
     : null;
 }
 
+function buildRouteFitBounds(line: Array<[number, number]>): [[number, number], [number, number]] | null {
+  if (line.length < 2) return null;
+  let west = Infinity;
+  let south = Infinity;
+  let east = -Infinity;
+  let north = -Infinity;
+  for (const [lng, lat] of line) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    west = Math.min(west, lng);
+    east = Math.max(east, lng);
+    south = Math.min(south, lat);
+    north = Math.max(north, lat);
+  }
+  if (![west, south, east, north].every(Number.isFinite)) return null;
+  return [[west, south], [east, north]];
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -195,6 +212,7 @@ export default function Dashboard() {
   const [backendStatus, setBackendStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [mapView, setMapView] = useState<{ zoom: number; latitude: number; longitude: number; bounds?: [number, number, number, number] }>({ zoom: 2.5, latitude: 20, longitude: 0 });
   const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; ts: number; zoom?: number } | null>(null);
+  const [fitRouteBounds, setFitRouteBounds] = useState<{ bounds: [[number, number], [number, number]]; ts: number } | null>(null);
   const [globalStats, setGlobalStats] = useState<any>(null);
   const mouseCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
   const coordsDisplayRef = useRef<HTMLDivElement>(null);
@@ -230,7 +248,7 @@ export default function Dashboard() {
   const [currentDossierRequestId, setCurrentDossierRequestId] = useState(0);
   const [dossierOverlay, setDossierOverlay] = useState<{ center: { lat: number; lng: number } | null; radiusM: number; nearby: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }> } | null>(null);
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
-  const [routeOverlay, setRouteOverlay] = useState<{ line: Array<[number, number]>; corridor: Array<[number, number]> | null; surveil: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }> } | null>(null);
+  const [routeOverlay, setRouteOverlay] = useState<{ line: Array<[number, number]>; corridor: Array<[number, number]> | null; surveil: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; alongM?: number; source?: string; osmUrl?: string; feedUrl?: string; externalUrl?: string }> } | null>(null);
 
   // Base theme class (core/ghost)
   useEffect(() => {
@@ -662,24 +680,32 @@ export default function Dashboard() {
           const point = safeDossierPoint(f.geometry.coordinates[1], f.geometry.coordinates[0]);
           if (!point) return null;
           const distanceM = Number(f.properties?.distanceM ?? 0);
+          const alongM = Number(f.properties?.alongM ?? 0);
           return {
             ...point,
             kind: String(f.properties?.kind || 'camera'),
             name: String(f.properties?.name || 'Surveillance'),
             distanceM: Number.isFinite(distanceM) ? distanceM : 0,
+            alongM: Number.isFinite(alongM) ? alongM : 0,
+            source: String(f.properties?.source || ''),
             osmUrl: typeof f.properties?.osmUrl === 'string' ? f.properties.osmUrl : undefined,
+            feedUrl: typeof f.properties?.feedUrl === 'string' ? f.properties.feedUrl : undefined,
+            externalUrl: typeof f.properties?.externalUrl === 'string' ? f.properties.externalUrl : undefined,
           };
         })
         .filter(Boolean)
-        .slice(0, MAX_DOSSIER_NEARBY) as Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }>;
+        .slice(0, MAX_DOSSIER_NEARBY) as Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; alongM?: number; source?: string; osmUrl?: string; feedUrl?: string; externalUrl?: string }>;
       setRouteOverlay({ line, corridor: corridor.length >= 4 ? corridor : null, surveil });
+      const bounds = buildRouteFitBounds(line);
+      if (bounds) setFitRouteBounds({ bounds, ts: Date.now() });
       const flyAction = d?.actions?.find((a: any) => a.type === 'flyTo');
       const flyTo = flyAction ? safeDossierPoint(flyAction.lat, flyAction.lng) : null;
-      if (flyTo) setFlyToLocation({ lat: flyTo.lat, lng: flyTo.lng, ts: Date.now(), zoom: Number(flyAction?.zoom) || 12 });
+      if (!bounds && flyTo) setFlyToLocation({ lat: flyTo.lat, lng: flyTo.lng, ts: Date.now(), zoom: Number(flyAction?.zoom) || 12 });
       return;
     }
 
     setRouteOverlay(null);
+    setFitRouteBounds(null);
     const radiusAction = d?.actions?.find((a: any) => a.type === 'drawRadius');
     const center = radiusAction
       ? safeDossierPoint(radiusAction.lat, radiusAction.lng)
@@ -706,7 +732,7 @@ export default function Dashboard() {
     setFlyToLocation({ lat: center.lat, lng: center.lng, ts: Date.now(), zoom: 16 });
   }, []);
 
-  const closeDossier = useCallback(() => { setShowDossier(false); setDossierOverlay(null); setRouteOverlay(null); }, []);
+  const closeDossier = useCallback(() => { setShowDossier(false); setDossierOverlay(null); setRouteOverlay(null); setFitRouteBounds(null); }, []);
 
   // ── SHARED FETCH UTILITY (Fixes #107 — single definition, not 3 copies) ──
   const fetchEndpoint = useCallback(async (url: string, transform?: (d: any) => any, options?: RequestInit) => {
@@ -1157,6 +1183,7 @@ export default function Dashboard() {
           dossierOverlay={dossierOverlay}
           userPosition={userPosition}
           routeOverlay={routeOverlay}
+          fitRouteBounds={fitRouteBounds}
           demoMode={demoMode}
           theme={horusTheme}
         />

@@ -151,17 +151,18 @@ test('AI and sweep rate limit maps have hard caps', () => {
 
 test('CCTV fallbacks are bounded and key feed fields are stable', () => {
   const route = file('src/app/api/cctv/route.ts');
+  const sources = file('src/lib/cctv/sources.ts');
   const resilient = file('src/app/api/cctv/resilient.ts');
   const asfinag = file('src/app/api/cctv/asfinag.ts');
   const australia = file('src/app/api/cctv/australia.ts');
   const switzerland = file('src/app/api/cctv/switzerland.ts');
   const queensland = file('src/app/api/cctv/queensland.ts');
 
-  assert.match(route, /MAX_CAMERAS\s*=\s*5000/);
+  assert.match(sources, /MAX_CAMERAS\s*=\s*5000/);
   // The fan-out bound lives in a named per-batch timeout constant passed to settleCameraFetchers()
   // (tuned to 12s so the widest region=all query stays under the route's maxDuration=60).
-  assert.match(route, /settleCameraFetchers(?:<[^>]+>)?\(/);
-  assert.match(route, /REGION_BATCH_TIMEOUT_MS\s*=\s*12_?000/);
+  assert.match(sources, /settleCameraFetchers(?:<[^>]+>)?\(/);
+  assert.match(sources, /REGION_BATCH_TIMEOUT_MS\s*=\s*12_?000/);
   assert.match(route, /export const maxDuration\s*=\s*60/);
   assert.match(resilient, /LAST_GOOD_TTL_MS/);
   assert.match(asfinag, /withFallback\('at-asfinag'/);
@@ -284,11 +285,12 @@ test('aircraft resolver returns a self-contained root node', () => {
 });
 
 test('second-pass route fanout and parsing guards stay bounded', () => {
-  const cctv = file('src/app/api/cctv/route.ts');
+  const cctv = file('src/lib/cctv/sources.ts');
   assert.match(cctv, /DEFAULT_CCTV_REGIONS/);
   assert.match(cctv, /MAX_REGION_ALL_CONCURRENCY/);
   assert.match(cctv, /runRegionFetchers/);
-  assert.match(cctv, /regionsToFetch = DEFAULT_CCTV_REGIONS/);
+  assert.match(cctv, /resolveCctvRegions/);
+  assert.match(cctv, /return DEFAULT_CCTV_REGIONS/);
 
   const news = file('src/app/api/news/route.ts');
   assert.match(news, /MAX_PARSE_MS/);
@@ -361,7 +363,7 @@ test('shared stability helpers are wired into correctness-sensitive routes', () 
     'src/app/api/earthquakes/route.ts',
     'src/app/api/frontlines/route.ts',
     'src/app/api/gdelt/route.ts',
-    'src/app/api/cctv/route.ts',
+    'src/lib/cctv/sources.ts',
     'src/app/api/cctv/asfinag.ts',
     'src/app/api/cctv/stream-status/route.ts',
     'src/app/api/air-quality/route.ts',
@@ -388,11 +390,11 @@ test('CCTV fanout aborts timed-out source work and deduplicates cameras', () => 
   assert.match(fanout, /controller\.abort/);
   assert.match(fanout, /fetcher\(controller\.signal\)/);
 
-  const route = file('src/app/api/cctv/route.ts');
-  assert.match(route, /fetchCaltransDistrict/);
-  assert.match(route, /fetchCanadaSource/);
-  assert.match(route, /Promise\.allSettled/);
-  assert.match(route, /\bseen(?:CameraIds)?\b\s*=\s*new Set<string>\(\)/);
+  const sources = file('src/lib/cctv/sources.ts');
+  assert.match(sources, /fetchCaltransDistrict/);
+  assert.match(sources, /fetchCanadaSource/);
+  assert.match(sources, /Promise\.allSettled/);
+  assert.match(sources, /\bseen(?:CameraIds)?\b\s*=\s*new Set<string>\(\)/);
 });
 
 test('desktop and SDK streams have bounded reconnect and crash behavior', () => {
