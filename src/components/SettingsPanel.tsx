@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Palette, Globe, KeyRound, RotateCw, Save, Monitor } from 'lucide-react';
+import { X, Palette, Globe, KeyRound, RotateCw, Save, Monitor, Server } from 'lucide-react';
 import { DEFAULT_SETTINGS, getSettings, useSettings, type ApiKeys, type CustomThemeTokens } from '@/lib/settings';
 import type { WorkspaceSnapshot } from '@/lib/workspaces';
 import ExtensionsSettings from '@/components/ExtensionsSettings';
@@ -15,21 +15,27 @@ interface SettingsPanelProps {
   onApplyWorkspace: (snapshot: WorkspaceSnapshot) => void;
 }
 
-const KEY_FIELDS: Array<{ key: keyof ApiKeys; label: string; type: 'text' | 'password'; hint?: string }> = [
+type SettingsField = { key: keyof ApiKeys; label: string; type: 'text' | 'password'; hint?: string };
+
+const SERVICE_URL_FIELDS: SettingsField[] = [
   { key: 'INTEL_URL', label: 'Intel URL', type: 'text', hint: 'entity graph backend base URL' },
   { key: 'SCANNER_URL', label: 'Scanner URL', type: 'text', hint: 'RECON backend base URL' },
+  { key: 'SURVEILLANCE_FEED_URL', label: 'Surveillance Feed URL', type: 'text', hint: 'fixed surveillance layer backend' },
+  { key: 'LLM_URL', label: 'Local LLM URL', type: 'text', hint: 'OpenAI-compatible (Ollama: http://127.0.0.1:11434/v1)' },
+  { key: 'FIRECRAWL_URL', label: 'Firecrawl URL', type: 'text', hint: 'self-hosted search/scrape (http://127.0.0.1:3002)' },
+  { key: 'ROUTING_URL', label: 'Routing URL', type: 'text', hint: 'OSRM for route exposure (self-host, or https://router.project-osrm.org)' },
+];
+
+const KEY_FIELDS: SettingsField[] = [
   { key: 'SCANNER_KEY', label: 'Scanner Key', type: 'password', hint: 'must match backend HORUS_KEY' },
   { key: 'FIRMS_API_KEY', label: 'NASA FIRMS Key', type: 'password' },
   { key: 'OPENSKY_CLIENT_ID', label: 'OpenSky Client ID', type: 'text' },
   { key: 'OPENSKY_CLIENT_SECRET', label: 'OpenSky Secret', type: 'password' },
   { key: 'N2YO_API_KEY', label: 'N2YO Key', type: 'password' },
   { key: 'AIS_API_KEY', label: 'AISStream Key', type: 'password' },
-  { key: 'LLM_URL', label: 'Local LLM URL', type: 'text', hint: 'OpenAI-compatible (Ollama: http://127.0.0.1:11434/v1)' },
   { key: 'LLM_MODEL', label: 'Local LLM Model', type: 'text', hint: 'e.g. llama3.1' },
-  { key: 'FIRECRAWL_URL', label: 'Firecrawl URL', type: 'text', hint: 'self-hosted search/scrape (http://127.0.0.1:3002)' },
   { key: 'FIRECRAWL_KEY', label: 'Firecrawl Key', type: 'password', hint: 'optional' },
   { key: 'MAPILLARY_TOKEN', label: 'Mapillary Token', type: 'password', hint: 'street-level imagery' },
-  { key: 'ROUTING_URL', label: 'Routing URL', type: 'text', hint: 'OSRM for route exposure (self-host, or https://router.project-osrm.org)' },
 ];
 
 const COLOR_ROWS: Array<{ token: keyof CustomThemeTokens; label: string }> = [
@@ -78,6 +84,33 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
           {o.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function SettingsFieldRow({ field, value, onChange }: { field: SettingsField; value: string; onChange: (key: keyof ApiKeys, value: string) => void }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3">
+        <label className="text-[10px] font-mono tracking-wider text-white/60 uppercase">{field.label}</label>
+        {field.hint && <span className="text-[8px] font-mono text-white/25 text-right">{field.hint}</span>}
+      </div>
+      <input
+        type={field.type}
+        value={value}
+        onChange={(e) => onChange(field.key, e.target.value)}
+        autoComplete="off"
+        className="w-full mt-1 bg-black/40 border border-white/10 rounded px-2.5 py-1.5 text-[11px] font-mono text-white/85 focus:border-[var(--gold-primary)]/40 outline-none"
+      />
+    </div>
+  );
+}
+
+function DesktopSettingsUnavailable() {
+  return (
+    <div className="flex items-center gap-2 text-[10px] font-mono text-white/40 bg-black/30 border border-white/5 rounded px-3 py-2.5">
+      <Monitor className="w-3.5 h-3.5 shrink-0" />
+      Service URLs and API keys are configured in the desktop app or environment variables.
     </div>
   );
 }
@@ -133,6 +166,29 @@ function SettingsPanel({ open, onClose, getWorkspaceSnapshot, onApplyWorkspace }
       (window as unknown as { horus?: { relaunch?: () => void } }).horus?.relaunch?.();
     }
   }, [keys, update]);
+
+  const setKeyValue = useCallback((key: keyof ApiKeys, value: string) => {
+    setKeys((k) => ({ ...k, [key]: value }));
+  }, []);
+
+  const saveControls = (
+    <div className="flex items-center gap-2 pt-1">
+      <button
+        onClick={() => { void saveKeys(false); }}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-white/10 text-[10px] font-mono tracking-wider text-white/70 hover:border-[var(--gold-primary)]/40 hover:text-white transition-colors"
+      >
+        <Save className="w-3.5 h-3.5" /> SAVE
+      </button>
+      <button
+        onClick={() => { void saveKeys(true); }}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--cyan-primary)]/30 text-[10px] font-mono tracking-wider text-[var(--cyan-primary)] hover:bg-[var(--cyan-primary)]/10 transition-colors"
+      >
+        <RotateCw className="w-3.5 h-3.5" /> SAVE &amp; RESTART ENGINE
+      </button>
+      {saved && <span className="text-[9px] font-mono text-[var(--alert-green)]">SAVED</span>}
+      {saveError && <span className="text-[9px] font-mono text-[var(--alert-red)]">{saveError}</span>}
+    </div>
+  );
 
   return (
     <AnimatePresence>
@@ -217,52 +273,33 @@ function SettingsPanel({ open, onClose, getWorkspaceSnapshot, onApplyWorkspace }
                 </div>
               </section>
 
+              {/* ── Service URLs (desktop only) ── */}
+              <section>
+                <SectionTitle icon={Server}>SERVICE URLS</SectionTitle>
+                {isDesktop ? (
+                  <div className="space-y-2.5">
+                    {SERVICE_URL_FIELDS.map((field) => (
+                      <SettingsFieldRow key={field.key} field={field} value={keys[field.key] || ''} onChange={setKeyValue} />
+                    ))}
+                    {saveControls}
+                  </div>
+                ) : <DesktopSettingsUnavailable />}
+              </section>
+
               {/* ── API keys (desktop only) ── */}
               <section>
                 <SectionTitle icon={KeyRound}>API KEYS</SectionTitle>
                 {isDesktop ? (
                   <div className="space-y-2.5">
-                    {KEY_FIELDS.map(({ key, label, type, hint }) => (
-                      <div key={key}>
-                        <div className="flex items-baseline justify-between">
-                          <label className="text-[10px] font-mono tracking-wider text-white/60 uppercase">{label}</label>
-                          {hint && <span className="text-[8px] font-mono text-white/25">{hint}</span>}
-                        </div>
-                        <input
-                          type={type}
-                          value={keys[key] || ''}
-                          onChange={(e) => setKeys((k) => ({ ...k, [key]: e.target.value }))}
-                          autoComplete="off"
-                          className="w-full mt-1 bg-black/40 border border-white/10 rounded px-2.5 py-1.5 text-[11px] font-mono text-white/85 focus:border-[var(--gold-primary)]/40 outline-none"
-                        />
-                      </div>
+                    {KEY_FIELDS.map((field) => (
+                      <SettingsFieldRow key={field.key} field={field} value={keys[field.key] || ''} onChange={setKeyValue} />
                     ))}
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        onClick={() => { void saveKeys(false); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-white/10 text-[10px] font-mono tracking-wider text-white/70 hover:border-[var(--gold-primary)]/40 hover:text-white transition-colors"
-                      >
-                        <Save className="w-3.5 h-3.5" /> SAVE
-                      </button>
-                      <button
-                        onClick={() => { void saveKeys(true); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--cyan-primary)]/30 text-[10px] font-mono tracking-wider text-[var(--cyan-primary)] hover:bg-[var(--cyan-primary)]/10 transition-colors"
-                      >
-                        <RotateCw className="w-3.5 h-3.5" /> SAVE &amp; RESTART ENGINE
-                      </button>
-                      {saved && <span className="text-[9px] font-mono text-[var(--alert-green)]">SAVED</span>}
-                      {saveError && <span className="text-[9px] font-mono text-[var(--alert-red)]">{saveError}</span>}
-                    </div>
+                    {saveControls}
                     <p className="text-[9px] font-mono text-white/30 leading-relaxed">
                       Keys are injected into the embedded engine on launch. Stored locally in plain text.
                     </p>
                   </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-[10px] font-mono text-white/40 bg-black/30 border border-white/5 rounded px-3 py-2.5">
-                    <Monitor className="w-3.5 h-3.5 shrink-0" />
-                    API keys are configured in the desktop app (set via environment variables on the web).
-                  </div>
-                )}
+                ) : <DesktopSettingsUnavailable />}
               </section>
 
               {/* ── Saved workspaces / layouts ── */}

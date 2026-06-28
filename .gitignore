@@ -13,6 +13,8 @@
 
 # Production
 /build
+desktop/release/
+desktop/release-*/
 
 # Misc
 .DS_Store
@@ -37,9 +39,15 @@ next-env.d.ts
 # Backends — commit source, never deps (key comes from HORUS_KEY env)
 intel/node_modules/
 scanner/node_modules/
+surveillance-feed/node_modules/
 scanner/.env
 scanner/.env.local
+surveillance-feed/.env
+surveillance-feed/.env.local
 scanner/*.log
+surveillance-feed/*.log
+surveillance-feed/data/*.sqlite
+surveillance-feed/data/*.sqlite-*
 .vercel
 
 # Security - prevent accidental backup commits
@@ -47,4 +55,3 @@ scanner_backend_backup.js
 
 # Security - Prevent accidental manual leaks
 *Manual*.md
-

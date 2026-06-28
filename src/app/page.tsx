@@ -813,13 +813,10 @@ export default function Dashboard() {
   // the former hand-written effects; the feed list now lives in the registry.
   useFeedEngine(activeLayers, fetchEndpoint, ifVisible);
 
-  // Viewport-driven OSM point layers (police/flock/mass-surveillance/surveillance)
-  // + always-on curated police. These can't be fetched globally, so they track the
-  // visible map bounds instead of the feed engine's fixed continent defaults.
-  const clearBucket = useCallback((bucket: string) => {
-    setData(prev => ({ ...prev, [bucket]: [] }));
-  }, []);
-  useViewportLayers(activeLayers, mapView, fetchEndpoint, clearBucket);
+  // Viewport-driven fixed point layers (police/flock/mass-surveillance/surveillance)
+  // + always-on curated police. These track the visible map bounds through the
+  // surveillance-feed sidecar and preserve existing markers if a request fails.
+  useViewportLayers(activeLayers, mapView, fetchEndpoint);
 
   // Space Weather — one-off into its own state setter (not a map data bucket).
   useEffect(() => {

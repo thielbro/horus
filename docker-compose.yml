@@ -26,6 +26,7 @@ services:
       # Umami analytics — opt-in. Leave UMAMI_ENDPOINT blank to disable it.
       # Set it in .env to a URL reachable from this container when needed.
       - UMAMI_ENDPOINT=${UMAMI_ENDPOINT:-}
+      - SURVEILLANCE_FEED_URL=${SURVEILLANCE_FEED_URL:-http://surveillance-feed:7800}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -167,9 +168,38 @@ services:
     networks:
       - default
 
+  # Fixed counter-surveillance layer backend. The app reads public layer data
+  # from here; imports, refreshes, and future agents use SURVEILLANCE_FEED_ADMIN_TOKEN.
+  surveillance-feed:
+    build:
+      context: ./surveillance-feed
+      dockerfile: Dockerfile
+    container_name: horus-surveillance-feed
+    environment:
+      - PORT=7800
+      - SURVEILLANCE_FEED_DB=/data/surveillance-feed.sqlite
+      - SURVEILLANCE_FEED_ADMIN_TOKEN=${SURVEILLANCE_FEED_ADMIN_TOKEN:-}
+      - SURVEILLANCE_FEED_REFRESH_MS=${SURVEILLANCE_FEED_REFRESH_MS:-604800000}
+    ports:
+      - "${SURVEILLANCE_FEED_BIND:-127.0.0.1}:${SURVEILLANCE_FEED_PORT:-7800}:7800"
+    expose:
+      - "7800"
+    volumes:
+      - surveillance-feed-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:7800/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - default
+
 volumes:
   nginx-cache:
   yente-elasticsearch-data:
+  surveillance-feed-data:
 
 # ── CasaOS app-store metadata (ignored by plain Docker Compose) ──
 x-casaos:
@@ -208,6 +238,12 @@ x-casaos:
     - container: SCANNER_KEY
       description:
         en_us: "(Optional) RECON scanner shared secret (must match backend HORUS_KEY)."
+    - container: SURVEILLANCE_FEED_URL
+      description:
+        en_us: "(Optional) Fixed surveillance feed backend URL, e.g. http://surveillance-feed:7800"
+    - container: SURVEILLANCE_FEED_ADMIN_TOKEN
+      description:
+        en_us: "(Optional) Bearer token for surveillance feed imports and refresh jobs."
     - container: FIRMS_API_KEY
       description:
         en_us: "(Optional) NASA FIRMS API key for active-fire data."

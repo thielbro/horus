@@ -261,13 +261,16 @@ test('registry map engine isolates bad plugin render and style specs', () => {
   assert.match(source, /console\.(?:warn|error)\([^)]*layerId/);
 });
 
-test('surveillance bbox input is bounded before Overpass fanout', () => {
-  const source = file('src/app/api/surveillance/route.ts');
+test('surveillance bbox input is bounded before sidecar refresh fanout', () => {
+  const route = file('src/app/api/surveillance/route.ts');
+  const sidecar = file('surveillance-feed/server.js');
 
-  assert.match(source, /MAX_BBOX_AREA_DEGREES/);
-  assert.match(source, /parseBboxParam/);
-  assert.match(source, /status:\s*400/);
-  assert.match(source, /bbox area too large/i);
+  assert.match(route, /proxySurveillanceLayer/);
+  assert.doesNotMatch(route, /runOverpassLayer/);
+  assert.match(sidecar, /MAX_BBOX_AREA_DEG2/);
+  assert.match(sidecar, /function parseBbox/);
+  assert.match(sidecar, /status\(400\)/);
+  assert.match(sidecar, /bbox area too large/i);
 });
 
 test('intel sanctions loader fails loudly on missing CSV schema columns', () => {
@@ -304,16 +307,17 @@ test('second-pass route fanout and parsing guards stay bounded', () => {
   assert.match(spaceWeather, /latest\.kp_index \?\? latest\.Kp \?\? 0/);
 });
 
-test('second-pass free API routes rate limit and flaky Yahoo calls retry', () => {
-  for (const path of [
-    'src/app/api/region-dossier/route.ts',
-    'src/app/api/surveillance/route.ts',
-  ]) {
-    const source = file(path);
-    assert.match(source, /isRateLimited/);
-    assert.match(source, /getClientIp/);
-    assert.match(source, /status:\s*429/);
-  }
+test('second-pass free API routes rate limit, surveillance proxy stays bounded, and flaky Yahoo calls retry', () => {
+  const dossier = file('src/app/api/region-dossier/route.ts');
+  assert.match(dossier, /isRateLimited/);
+  assert.match(dossier, /getClientIp/);
+  assert.match(dossier, /status:\s*429/);
+
+  const surveillance = file('src/app/api/surveillance/route.ts');
+  const feedProxy = file('src/lib/surveillance-feed.ts');
+  assert.match(surveillance, /proxySurveillanceLayer/);
+  assert.doesNotMatch(surveillance, /isRateLimited|runOverpassLayer/);
+  assert.match(feedProxy, /FEED_TIMEOUT_MS/);
 
   const markets = file('src/app/api/markets/route.ts');
   assert.match(markets, /YAHOO_RETRY_DELAYS_MS/);

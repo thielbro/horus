@@ -14,7 +14,7 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    files: ["desktop/**/*.js", "intel/**/*.js", "scanner/**/*.js", "scripts/**/*.js"],
+    files: ["desktop/**/*.js", "intel/**/*.js", "scanner/**/*.js", "scripts/**/*.js", "surveillance-feed/**/*.js"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },
@@ -25,6 +25,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     "desktop/.staging/**",
     "desktop/release/**",
+    "desktop/release-*/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

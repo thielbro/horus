@@ -1,0 +1,17 @@
+{
+  "name": "horus-surveillance-feed",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HORUS fixed counter-surveillance layer sidecar backed by SQLite",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test server.test.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
