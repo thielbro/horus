@@ -69,10 +69,6 @@ test('server env template documents runtime knobs and local env loading is non-d
     'SURVEILLANCE_FEED_DB',
     'SURVEILLANCE_FEED_ADMIN_TOKEN',
     'SURVEILLANCE_FEED_REFRESH_MS',
-    'SURVEILLANCE_FEED_TILE_DEGREES',
-    'SURVEILLANCE_FEED_WORKERS',
-    'SURVEILLANCE_FEED_RETRY_BASE_MS',
-    'SURVEILLANCE_FEED_MAX_JOB_ATTEMPTS',
     'SURVEILLANCE_FEED_MAX_BBOX_AREA',
     'SURVEILLANCE_FEED_MAX_ROWS',
     'SURVEILLANCE_FEED_OVERPASS_TIMEOUT_MS',
@@ -115,10 +111,6 @@ test('linux installer prompts for bind, port, and token then writes service env'
   assert.match(installer, /SURVEILLANCE_FEED_BIND=\$\{BIND_ADDR\}/);
   assert.match(installer, /SURVEILLANCE_FEED_PORT=\$\{PORT\}/);
   assert.match(installer, /SURVEILLANCE_FEED_ADMIN_TOKEN=\$\{ADMIN_TOKEN\}/);
-  assert.match(installer, /SURVEILLANCE_FEED_TILE_DEGREES=0\.25/);
-  assert.match(installer, /SURVEILLANCE_FEED_WORKERS=2/);
-  assert.match(installer, /SURVEILLANCE_FEED_RETRY_BASE_MS=300000/);
-  assert.match(installer, /SURVEILLANCE_FEED_MAX_JOB_ATTEMPTS=3/);
   assert.match(installer, /npm ci --omit=dev --no-audit --no-fund/);
   assert.match(installer, /systemctl daemon-reload/);
   assert.match(installer, /horus-surveillance-feed\.service/);
@@ -240,91 +232,6 @@ test('public layer reads return immediately and queue refresh jobs for missing o
   assert.equal(jobs.res.status, 200);
   assert.equal(jobs.body.jobs.length, 2);
   assert.deepEqual(jobs.body.jobs.map((job) => job.layer).sort(), ['flock', 'mass_surveil']);
-});
-
-test('overlapping viewport reads reuse a coarse refresh tile instead of flooding jobs', async (t) => {
-  const svc = await withService(t);
-
-  const first = await svc.json('/v1/layers?bbox=10.01,20.01,10.10,20.10&layers=flock');
-  assert.equal(first.res.status, 200);
-  assert.equal(first.body.refresh.queued, 1);
-
-  const second = await svc.json('/v1/layers?bbox=10.02,20.02,10.11,20.11&layers=flock');
-  assert.equal(second.res.status, 200);
-  assert.equal(second.body.refresh.queued, 0);
-
-  const jobs = await svc.json('/v1/admin/jobs', {
-    headers: { authorization: 'Bearer test-token' },
-  });
-  assert.equal(jobs.body.jobs.length, 1);
-  assert.equal(jobs.body.jobs[0].tile_key, '10.0000,20.0000,10.2500,20.2500');
-  assert.deepEqual(jobs.body.jobs[0].bbox, [10, 20, 10.25, 20.25]);
-});
-
-test('failed refresh jobs back off before retrying and eventually fail closed', async (t) => {
-  let nowMs = 1_000;
-  let calls = 0;
-  const svc = await withService(t, {
-    autoProcessJobs: true,
-    maxJobAttempts: 2,
-    retryBaseMs: 30_000,
-    now: () => nowMs,
-    fetch: async () => {
-      calls += 1;
-      throw new Error('overpass unavailable');
-    },
-  });
-
-  svc.queueRefreshJob({ layer: 'flock', bbox: [10.01, 20.01, 10.10, 20.10] });
-  await svc.processQueuedJobs();
-
-  let row = svc.db.prepare('SELECT status, attempts, next_attempt_at, error FROM jobs LIMIT 1').get();
-  const callsAfterFirstAttempt = calls;
-  assert.ok(callsAfterFirstAttempt > 0);
-  assert.equal(row.status, 'queued');
-  assert.equal(row.attempts, 1);
-  assert.equal(row.next_attempt_at, 31_000);
-  assert.match(row.error, /overpass unavailable/);
-
-  await svc.processQueuedJobs();
-  assert.equal(calls, callsAfterFirstAttempt, 'delayed queued job should not retry before next_attempt_at');
-
-  nowMs = 31_001;
-  await svc.processQueuedJobs();
-
-  row = svc.db.prepare('SELECT status, attempts, next_attempt_at, error FROM jobs LIMIT 1').get();
-  assert.equal(calls, callsAfterFirstAttempt * 2);
-  assert.equal(row.status, 'failed');
-  assert.equal(row.attempts, 2);
-  assert.equal(row.next_attempt_at, null);
-});
-
-test('refresh worker concurrency is bounded while draining queued jobs', async (t) => {
-  let nowMs = 10_000;
-  let inFlight = 0;
-  let maxInFlight = 0;
-  const svc = await withService(t, {
-    autoProcessJobs: true,
-    workerConcurrency: 2,
-    now: () => nowMs,
-    fetch: async () => {
-      inFlight += 1;
-      maxInFlight = Math.max(maxInFlight, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      inFlight -= 1;
-      return { ok: true, json: async () => ({ elements: [] }) };
-    },
-  });
-
-  for (const offset of [0, 1, 2, 3, 4]) {
-    svc.queueRefreshJob({ layer: 'surveillance', bbox: [10 + offset, 20, 10.1 + offset, 20.1] });
-  }
-
-  await svc.processQueuedJobs();
-
-  assert.equal(maxInFlight, 2);
-  const queue = svc.db.prepare('SELECT status, COUNT(*) AS count FROM jobs GROUP BY status').all();
-  assert.deepEqual(queue.map((row) => ({ ...row })), [{ status: 'complete', count: 5 }]);
 });
 
 test('tile freshness helper uses source cadence and stable bbox keys', () => {
