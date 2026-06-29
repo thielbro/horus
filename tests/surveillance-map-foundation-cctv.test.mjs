@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 const root = process.cwd();
 const sourcePath = join(root, 'src/app/api/cctv/surveillance-map-foundation.ts');
-const routePath = join(root, 'src/app/api/cctv/route.ts');
+const sourcesPath = join(root, 'src/lib/cctv/sources.ts');
 
 const liveVideoIds = [
   'UHlDzWrBEPI',
@@ -76,7 +76,7 @@ test('SurveillanceMap Foundation camera markers are pinned to the named place or
 });
 
 test('CCTV route includes SurveillanceMap Foundation streams in matching viewport regions', () => {
-  const route = readFileSync(routePath, 'utf8');
+  const route = readFileSync(sourcesPath, 'utf8');
 
   assert.match(route, /fetchSurveillanceMapFoundationCameras/);
   assert.match(route, /fetchSurveillanceMapFoundationCameras\('us-west'\)/);

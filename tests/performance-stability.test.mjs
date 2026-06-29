@@ -48,6 +48,28 @@ test('reviewed route handlers bound hung upstreams and malformed JSON', () => {
   assert.match(briefingRoute, /generateBriefing\(client, body\.context, signal\)/);
 });
 
+test('LLM request timeouts leave enough room for slower local and Gemini responses', () => {
+  const timeouts = file('src/lib/llm/timeouts.ts');
+  assert.match(timeouts, /LLM_REQUEST_TIMEOUT_MS\s*=\s*180_000/);
+  assert.match(timeouts, /AI_CLIENT_REQUEST_TIMEOUT_MS\s*=\s*LLM_REQUEST_TIMEOUT_MS\s*\+\s*15_000/);
+
+  const aiEngine = file('src/lib/ai-engine.ts');
+  assert.match(aiEngine, /const GEMINI_TIMEOUT_MS\s*=\s*LLM_REQUEST_TIMEOUT_MS/);
+
+  const ollama = file('src/lib/llm/ollama.ts');
+  assert.match(ollama, /const LLM_TIMEOUT_MS\s*=\s*LLM_REQUEST_TIMEOUT_MS/);
+
+  const gemini = file('src/lib/llm/gemini-adapter.ts');
+  assert.match(gemini, /const GEMINI_TIMEOUT_MS\s*=\s*LLM_REQUEST_TIMEOUT_MS/);
+
+  const compile = file('src/lib/intel/compile.ts');
+  assert.match(compile, /const PROVIDER_SYNTHESIS_TIMEOUT_MS\s*=\s*LLM_REQUEST_TIMEOUT_MS/);
+  assert.match(compile, /stage === 'synthesize' \? PROVIDER_SYNTHESIS_TIMEOUT_MS : PROVIDER_GATHER_TIMEOUT_MS/);
+
+  const aiPanel = file('src/components/AiAnalyst.tsx');
+  assert.match(aiPanel, /const AI_REQUEST_TIMEOUT_MS\s*=\s*AI_CLIENT_REQUEST_TIMEOUT_MS/);
+});
+
 test('reviewed network helpers release pooled connections and reconnect with backoff', () => {
   const ssrf = file('src/lib/ssrf-guard.ts');
   assert.match(ssrf, /SAFE_FETCH_TIMEOUT_MS/);
@@ -151,17 +173,18 @@ test('AI and sweep rate limit maps have hard caps', () => {
 
 test('CCTV fallbacks are bounded and key feed fields are stable', () => {
   const route = file('src/app/api/cctv/route.ts');
+  const sources = file('src/lib/cctv/sources.ts');
   const resilient = file('src/app/api/cctv/resilient.ts');
   const asfinag = file('src/app/api/cctv/asfinag.ts');
   const australia = file('src/app/api/cctv/australia.ts');
   const switzerland = file('src/app/api/cctv/switzerland.ts');
   const queensland = file('src/app/api/cctv/queensland.ts');
 
-  assert.match(route, /MAX_CAMERAS\s*=\s*5000/);
+  assert.match(sources, /MAX_CAMERAS\s*=\s*5000/);
   // The fan-out bound lives in a named per-batch timeout constant passed to settleCameraFetchers()
   // (tuned to 12s so the widest region=all query stays under the route's maxDuration=60).
-  assert.match(route, /settleCameraFetchers(?:<[^>]+>)?\(/);
-  assert.match(route, /REGION_BATCH_TIMEOUT_MS\s*=\s*12_?000/);
+  assert.match(sources, /settleCameraFetchers(?:<[^>]+>)?\(/);
+  assert.match(sources, /REGION_BATCH_TIMEOUT_MS\s*=\s*12_?000/);
   assert.match(route, /export const maxDuration\s*=\s*60/);
   assert.match(resilient, /LAST_GOOD_TTL_MS/);
   assert.match(asfinag, /withFallback\('at-asfinag'/);
@@ -260,13 +283,16 @@ test('registry map engine isolates bad plugin render and style specs', () => {
   assert.match(source, /console\.(?:warn|error)\([^)]*layerId/);
 });
 
-test('surveillance bbox input is bounded before Overpass fanout', () => {
-  const source = file('src/app/api/surveillance/route.ts');
+test('surveillance bbox input is bounded before sidecar refresh fanout', () => {
+  const route = file('src/app/api/surveillance/route.ts');
+  const sidecar = file('surveillance-feed/server.js');
 
-  assert.match(source, /MAX_BBOX_AREA_DEGREES/);
-  assert.match(source, /parseBboxParam/);
-  assert.match(source, /status:\s*400/);
-  assert.match(source, /bbox area too large/i);
+  assert.match(route, /proxySurveillanceLayer/);
+  assert.doesNotMatch(route, /runOverpassLayer/);
+  assert.match(sidecar, /MAX_BBOX_AREA_DEG2/);
+  assert.match(sidecar, /function parseBbox/);
+  assert.match(sidecar, /status\(400\)/);
+  assert.match(sidecar, /bbox area too large/i);
 });
 
 test('intel sanctions loader fails loudly on missing CSV schema columns', () => {
@@ -284,11 +310,12 @@ test('aircraft resolver returns a self-contained root node', () => {
 });
 
 test('second-pass route fanout and parsing guards stay bounded', () => {
-  const cctv = file('src/app/api/cctv/route.ts');
+  const cctv = file('src/lib/cctv/sources.ts');
   assert.match(cctv, /DEFAULT_CCTV_REGIONS/);
   assert.match(cctv, /MAX_REGION_ALL_CONCURRENCY/);
   assert.match(cctv, /runRegionFetchers/);
-  assert.match(cctv, /regionsToFetch = DEFAULT_CCTV_REGIONS/);
+  assert.match(cctv, /resolveCctvRegions/);
+  assert.match(cctv, /return DEFAULT_CCTV_REGIONS/);
 
   const news = file('src/app/api/news/route.ts');
   assert.match(news, /MAX_PARSE_MS/);
@@ -302,16 +329,17 @@ test('second-pass route fanout and parsing guards stay bounded', () => {
   assert.match(spaceWeather, /latest\.kp_index \?\? latest\.Kp \?\? 0/);
 });
 
-test('second-pass free API routes rate limit and flaky Yahoo calls retry', () => {
-  for (const path of [
-    'src/app/api/region-dossier/route.ts',
-    'src/app/api/surveillance/route.ts',
-  ]) {
-    const source = file(path);
-    assert.match(source, /isRateLimited/);
-    assert.match(source, /getClientIp/);
-    assert.match(source, /status:\s*429/);
-  }
+test('second-pass free API routes rate limit, surveillance proxy stays bounded, and flaky Yahoo calls retry', () => {
+  const dossier = file('src/app/api/region-dossier/route.ts');
+  assert.match(dossier, /isRateLimited/);
+  assert.match(dossier, /getClientIp/);
+  assert.match(dossier, /status:\s*429/);
+
+  const surveillance = file('src/app/api/surveillance/route.ts');
+  const feedProxy = file('src/lib/surveillance-feed.ts');
+  assert.match(surveillance, /proxySurveillanceLayer/);
+  assert.doesNotMatch(surveillance, /isRateLimited|runOverpassLayer/);
+  assert.match(feedProxy, /FEED_TIMEOUT_MS/);
 
   const markets = file('src/app/api/markets/route.ts');
   assert.match(markets, /YAHOO_RETRY_DELAYS_MS/);
@@ -361,7 +389,7 @@ test('shared stability helpers are wired into correctness-sensitive routes', () 
     'src/app/api/earthquakes/route.ts',
     'src/app/api/frontlines/route.ts',
     'src/app/api/gdelt/route.ts',
-    'src/app/api/cctv/route.ts',
+    'src/lib/cctv/sources.ts',
     'src/app/api/cctv/asfinag.ts',
     'src/app/api/cctv/stream-status/route.ts',
     'src/app/api/air-quality/route.ts',
@@ -388,11 +416,11 @@ test('CCTV fanout aborts timed-out source work and deduplicates cameras', () => 
   assert.match(fanout, /controller\.abort/);
   assert.match(fanout, /fetcher\(controller\.signal\)/);
 
-  const route = file('src/app/api/cctv/route.ts');
-  assert.match(route, /fetchCaltransDistrict/);
-  assert.match(route, /fetchCanadaSource/);
-  assert.match(route, /Promise\.allSettled/);
-  assert.match(route, /\bseen(?:CameraIds)?\b\s*=\s*new Set<string>\(\)/);
+  const sources = file('src/lib/cctv/sources.ts');
+  assert.match(sources, /fetchCaltransDistrict/);
+  assert.match(sources, /fetchCanadaSource/);
+  assert.match(sources, /Promise\.allSettled/);
+  assert.match(sources, /\bseen(?:CameraIds)?\b\s*=\s*new Set<string>\(\)/);
 });
 
 test('desktop and SDK streams have bounded reconnect and crash behavior', () => {
@@ -576,7 +604,8 @@ test('second-pass stability review crash guards and bounded async paths stay fix
 
   const overpass = file('src/lib/overpass.ts');
   assert.match(overpass, /releaseResponseBody/);
-  assert.match(overpass, /safeAbortTimeout\(30000\)/);
+  assert.match(overpass, /OVERPASS_FETCH_TIMEOUT_MS/);
+  assert.match(overpass, /safeAbortTimeout\(OVERPASS_FETCH_TIMEOUT_MS\)/);
   assert.match(overpass, /await releaseResponseBody\(res\)/);
 
   const proxy = file('src/proxy.ts');

@@ -79,13 +79,15 @@ test('coverage drives injection: Oceania intersects, Europe does not', () => {
   assert.ok(!coverage.some((b) => boxesIntersect(b, europe)), 'Europe box must not pull in NZ data');
 });
 
-test('police route serves curated data and drops OSM inside coverage', () => {
+test('police route serves curated data and proxies viewport records through the sidecar', () => {
   const route = readFileSync(routePath, 'utf8');
-  // Curated stations are served via the always-on ?curated=1 bucket (curatedPoliceAll),
-  // and live OSM nodes inside curated coverage are dropped so the two buckets stay disjoint.
+  // Curated stations are still served via the always-on ?curated=1 bucket
+  // (curatedPoliceAll). Viewport records are now served through the sidecar, where
+  // fixed OSM refresh and dedupe happens outside the app route.
   assert.match(route, /curatedPoliceAll\(\)/);
   assert.match(route, /searchParams\.get\('curated'\)/);
-  assert.match(route, /isWithinCuratedCoverage\(lat, lng\)\)\s*return null/);
+  assert.match(route, /proxySurveillanceLayer/);
+  assert.doesNotMatch(route, /runOverpassLayer/);
 });
 
 test('curated registry and overpass injection are wired', () => {

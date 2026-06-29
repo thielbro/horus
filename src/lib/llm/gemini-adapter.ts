@@ -4,9 +4,10 @@
 
 import { createGeminiClient, rotateApiKey } from '@/lib/ai-engine';
 import type { LLMMessage, LLMResult, LLMChatOptions } from '@/lib/intel/types';
+import { LLM_REQUEST_TIMEOUT_MS } from './timeouts';
 
 export const GEMINI_MODEL = 'gemini-2.0-flash';
-const GEMINI_TIMEOUT_MS = 60_000;
+const GEMINI_TIMEOUT_MS = LLM_REQUEST_TIMEOUT_MS;
 
 function readGeminiKeys(): string[] {
   const keys: string[] = [];

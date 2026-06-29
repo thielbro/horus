@@ -16,6 +16,7 @@ import type {
 } from './types';
 import { getProvider, providerKinds } from './providers';
 import { getLLM } from '@/lib/llm';
+import { LLM_REQUEST_TIMEOUT_MS } from '@/lib/llm/timeouts';
 import { getSearch } from '@/lib/search';
 
 export { providerKinds };
@@ -31,7 +32,8 @@ const CACHE = new Map<string, { dossier: Dossier; at: number; bytes: number }>()
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const CACHE_MAX = 200;
 const CACHE_MAX_BYTES = 5 * 1024 * 1024;
-const PROVIDER_STAGE_TIMEOUT_MS = 30_000;
+const PROVIDER_GATHER_TIMEOUT_MS = 30_000;
+const PROVIDER_SYNTHESIS_TIMEOUT_MS = LLM_REQUEST_TIMEOUT_MS;
 const INFLIGHT = new Map<string, Promise<Dossier>>();
 let cacheBytes = 0;
 
@@ -126,7 +128,8 @@ async function runProviderStage<T>(
   parentSignal: AbortSignal | undefined,
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
-  const stageSignal = safeAbortAny([parentSignal, safeAbortTimeout(PROVIDER_STAGE_TIMEOUT_MS)]);
+  const timeoutMs = stage === 'synthesize' ? PROVIDER_SYNTHESIS_TIMEOUT_MS : PROVIDER_GATHER_TIMEOUT_MS;
+  const stageSignal = safeAbortAny([parentSignal, safeAbortTimeout(timeoutMs)]);
   try {
     return await abortable(run(stageSignal), stageSignal);
   } catch (e) {

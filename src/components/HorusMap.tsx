@@ -36,8 +36,9 @@ interface HorusMapProps {
   routeOverlay?: {
     line: Array<[number, number]>;
     corridor: Array<[number, number]> | null;
-    surveil: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; osmUrl?: string }>;
+    surveil: Array<{ lat: number; lng: number; kind: string; name: string; distanceM: number; alongM?: number; source?: string; osmUrl?: string; feedUrl?: string; externalUrl?: string }>;
   } | null;
+  fitRouteBounds?: { bounds: [[number, number], [number, number]]; ts: number } | null;
   demoMode?: boolean;
   theme?: 'core' | 'ghost';
 }
@@ -76,7 +77,7 @@ function safeJsonArray<T = unknown>(value: unknown): T[] {
   }
 }
 
-function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], dossierOverlay = null, userPosition = null, routeOverlay = null, demoMode = false, theme = 'core' }: HorusMapProps) {
+function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], dossierOverlay = null, userPosition = null, routeOverlay = null, fitRouteBounds = null, demoMode = false, theme = 'core' }: HorusMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -339,6 +340,9 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
 
       // Address-intel overlay (pin / radius / nearby surveillance / sightlines) — top of z-order
       addRegistryLayer(map, 'dossier');
+
+      // Route-exposure overlay (route line / corridor / on-route surveillance)
+      addRegistryLayer(map, 'route');
 
       // Live user position (GPS) — above everything
       addRegistryLayer(map, 'user_position');
@@ -610,7 +614,7 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
       const name = escapeHtml(String(p.name || 'Surveillance'));
       const distanceM = escapeHtml(String(p.distanceM ?? ''));
       const label = escapeHtml(kind.toUpperCase());
-      const href = escapeHtml(String(p.osmUrl || '#'));
+      const href = escapeHtml(String(p.osmUrl || p.externalUrl || p.feedUrl || '#'));
       popup(coords, `<div style="${pStyle}border:1px solid rgba(${rgb},0.35);">
         <div style="color:${c};font-size:13px;font-weight:700;margin-bottom:2px;">${name}</div>
         <div style="font-size:9px;color:#8A8780;margin-bottom:8px;">${label} · ${distanceM}m from route · can observe the route</div>
@@ -1546,10 +1550,26 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
         : [],
       'route-surveil': (o?.surveil ?? []).map((it) => ({
         type: 'Feature', geometry: { type: 'Point', coordinates: [it.lng, it.lat] },
-        properties: { kind: it.kind, name: it.name, distanceM: it.distanceM, osmUrl: it.osmUrl },
+        properties: { kind: it.kind, name: it.name, distanceM: it.distanceM, alongM: it.alongM, source: it.source, osmUrl: it.osmUrl, feedUrl: it.feedUrl, externalUrl: it.externalUrl },
       })),
     });
   }, [mapReady, routeOverlay, setGeoBatch]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !fitRouteBounds) return;
+    const { bounds } = fitRouteBounds;
+    const values = [bounds[0][0], bounds[0][1], bounds[1][0], bounds[1][1]];
+    if (!values.every(Number.isFinite)) return;
+    try {
+      mapRef.current.fitBounds(bounds, {
+        padding: { top: 96, right: 520, bottom: 96, left: 96 },
+        duration: 1600,
+        maxZoom: 15,
+      });
+    } catch (e) {
+      console.warn('Route bounds fit failed:', e);
+    }
+  }, [mapReady, fitRouteBounds]);
 
   // Fly-to. `zoom` is honored when provided (workspace restore / view presets); otherwise
   // we default to 8 for a generic "fly here" nudge. Gated on mapReady so workspace restore

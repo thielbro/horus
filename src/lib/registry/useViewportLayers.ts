@@ -1,14 +1,12 @@
 'use client';
 
-// Viewport-driven loading for the OSM "positions-only" point layers — police,
-// Flock/ALPR, mass-surveillance, and surveillance(OSM). These layers are far too
-// dense to fetch globally, so instead of the feed engine's fixed continent-scale
-// defaults (which left, e.g., a New Zealand user with no data at all), they fetch
-// `/api/<layer>?bbox=<current view>` and refresh as the map pans/zooms.
+// Viewport-driven loading for the fixed counter-surveillance point layers —
+// police, Flock/ALPR, mass-surveillance, and surveillance(OSM). These now read
+// from the surveillance-feed sidecar through `/api/<layer>?bbox=<current view>`.
 //
 // Curated police are owned, viewport-independent data — loaded ONCE into their own
 // `police_curated` bucket via `/api/police?curated=1` so the user's stations always
-// render at any zoom, with live OSM (the viewport bucket) layered on top.
+// render at any zoom, with backend-fed fixed records layered on top.
 
 import { useEffect, useRef } from 'react';
 import type { DataBuckets } from './types';
@@ -53,7 +51,6 @@ export function useViewportLayers(
   activeLayers: Record<string, boolean>,
   mapView: { bounds?: Bounds },
   fetchEndpoint: FetchEndpoint,
-  clearBucket?: (bucket: string) => void,
 ): void {
   const bounds = mapView.bounds;
   // Last bbox string fetched per layer — skip refetching an unchanged viewport.
@@ -78,8 +75,8 @@ export function useViewportLayers(
     fetchEndpoint('/api/police?curated=1', (d) => ({ police_curated: d.police ?? [] }));
   }, [activeLayers.police, fetchEndpoint]);
 
-  // Viewport OSM — (re)fetch the in-view area for each active layer, debounced so
-  // panning doesn't hammer Overpass.
+  // Viewport fixed records — (re)fetch the in-view area for each active layer,
+  // debounced so panning doesn't hammer the sidecar.
   useEffect(() => {
     if (!bounds) return;
     const param = bboxParam(bounds);
@@ -100,9 +97,8 @@ export function useViewportLayers(
         if (lastFetched.current.get(layer) === param) continue;
         // Supersede any in-flight fetch for this layer before starting the new one.
         controllers.current.get(layer)?.abort();
-        // Clear stale markers immediately so wrong-location data never lingers while
-        // the new viewport fetch is in flight (or if it fails / rate-limits).
-        clearBucket?.(bucket);
+        // Preserve current markers until a successful response arrives. If the
+        // sidecar is down, fetchEndpoint leaves the existing bucket as-is.
         lastFetched.current.set(layer, param);
         const ac = new AbortController();
         controllers.current.set(layer, ac);

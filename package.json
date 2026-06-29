@@ -1,6 +1,6 @@
 {
   "name": "horus-native-desktop",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "private": true,
   "description": "HORUS — counter-surveillance & on-the-go OSINT intelligence map (native desktop; built on OSIRIS)",
   "author": "rocco",

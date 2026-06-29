@@ -7,8 +7,9 @@
  */
 
 import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai';
+import { LLM_REQUEST_TIMEOUT_MS } from '@/lib/llm/timeouts';
 
-const GEMINI_TIMEOUT_MS = 30_000;
+const GEMINI_TIMEOUT_MS = LLM_REQUEST_TIMEOUT_MS;
 const FIELD_LIMITS = {
   location: 100,
   title: 200,

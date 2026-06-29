@@ -74,7 +74,9 @@ test('review 03c0485 compile pipeline is bounded, deduped, cloned, and emits err
   assert.match(compile, /INFLIGHT/);
   assert.match(compile, /cloneJson/);
   assert.match(compile, /runProviderStage/);
-  assert.match(compile, /PROVIDER_STAGE_TIMEOUT_MS/);
+  assert.match(compile, /PROVIDER_GATHER_TIMEOUT_MS/);
+  assert.match(compile, /PROVIDER_SYNTHESIS_TIMEOUT_MS/);
+  assert.match(compile, /LLM_REQUEST_TIMEOUT_MS/);
   assert.match(compile, /resolveGraph\(type: string, id: string, signal\?: AbortSignal\)/);
   assert.match(compile, /safeAbortAny/);
   assert.match(compile, /cloneDossierWithCacheHit\([\s\S]*,\s*true\)/);

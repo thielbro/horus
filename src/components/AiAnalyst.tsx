@@ -18,6 +18,7 @@ import {
   Check,
   Trash2,
 } from 'lucide-react';
+import { AI_CLIENT_REQUEST_TIMEOUT_MS } from '@/lib/llm/timeouts';
 import type { IntelligenceContext } from '@/lib/ai-engine';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -188,7 +189,7 @@ function renderMarkdown(text: string): string {
    ───────────────────────────────────────────────────────────── */
 
 const MAX_MESSAGES = 100;
-const AI_REQUEST_TIMEOUT_MS = 30_000;
+const AI_REQUEST_TIMEOUT_MS = AI_CLIENT_REQUEST_TIMEOUT_MS;
 
 function appendMessage(prev: ChatMessage[], msg: ChatMessage): ChatMessage[] {
   return [...prev, msg].slice(-MAX_MESSAGES);

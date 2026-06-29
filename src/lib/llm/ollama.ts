@@ -5,10 +5,11 @@
 
 import { safeAbortTimeout, safeAbortAny, releaseResponseBody } from '@/lib/http-utils';
 import type { LLMMessage, LLMResult, LLMChatOptions } from '@/lib/intel/types';
+import { LLM_REQUEST_TIMEOUT_MS } from './timeouts';
 
 const DEFAULT_LLM_URL = 'http://127.0.0.1:11434/v1';
 const DEFAULT_MODEL = 'llama3.1';
-const LLM_TIMEOUT_MS = 60_000;
+const LLM_TIMEOUT_MS = LLM_REQUEST_TIMEOUT_MS;
 const HEALTH_TIMEOUT_MS = 2_500;
 
 export function llmUrl(): string {
