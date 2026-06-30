@@ -163,7 +163,23 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
       },
     ],
   },
-  { id: 'sdk_ransomware', label: 'Ransomware Feed', group: 'SDK', icon: 'AlertTriangle', color: '#D32F2F', countBuckets: ['sdk_entities'], comingSoon: true },
+  {
+    id: 'sdk_ransomware', label: 'Ransomware Feed', group: 'SDK', icon: 'AlertTriangle', color: '#D32F2F', countBuckets: ['ransomware_posts'],
+    // Live leak-site victims (RansomLook). Only those geolocated by server IP draw here; the full
+    // list (incl. ungeolocated company-name victims) lives in the Ransomware panel.
+    styleLayers: [
+      { id: 'ransomware-glow', source: 'ransomware-victims', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,6, 5,12, 10,20], 'circle-color': '#D32F2F', 'circle-opacity': 0.07, 'circle-blur': 0.6 } },
+      { id: 'ransomware-dots', source: 'ransomware-victims', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,2.5, 5,4.5, 10,7], 'circle-color': '#D32F2F', 'circle-opacity': 0.9, 'circle-stroke-width': 1, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.85 } },
+      { id: 'ransomware-label', source: 'ransomware-victims', type: 'symbol', minzoom: 4, layout: { 'text-field': ['get','victim'], 'text-size': 8, 'text-font': ['JetBrains Mono Bold', 'Open Sans Bold'], 'text-offset': [0, 1.5], 'text-max-width': 12, 'text-allow-overlap': false }, paint: { 'text-color': '#FF6B6B', 'text-halo-color': '#111', 'text-halo-width': 1.5, 'text-opacity': 0.85 } },
+    ],
+    render: [
+      { source: 'ransomware-victims', toFeatures: (data, active) => (active.sdk_ransomware && Array.isArray(data.ransomware_posts))
+        ? data.ransomware_posts
+            .filter((p: any) => typeof p?.lat === 'number' && typeof p?.lng === 'number')
+            .map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { victim: p.victim, group: p.group, sector: p.sector || '', country: p.country || '', city: p.city || '', discovered: p.discovered, link: p.link || '' } }))
+        : [] },
+    ],
+  },
   // ── AVIATION ──
   {
     id: 'flights', label: 'Commercial', group: 'AVIATION', icon: 'Plane', color: flightCom, countBuckets: ['commercial_flights'],

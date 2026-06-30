@@ -9,6 +9,9 @@ export const BUILTIN_FEEDS: FeedDef[] = [
   { id: 'earthquakes', url: '/api/earthquakes', priority: 'core', intervalMs: 900_000 },
   { id: 'news', url: '/api/news', priority: 'core', intervalMs: 1_800_000 },
   { id: 'markets', url: '/api/markets', transform: (d) => ({ markets: d }), priority: 'core', startupDelayMs: 800, intervalMs: 900_000 },
+  // Ransomware leak-site posts back the Ransomware panel (and the sdk_ransomware map markers),
+  // so they load regardless of map-layer state — core, low-velocity poll.
+  { id: 'ransomware', url: '/api/ransomware', transform: (d) => ({ ransomware_posts: d.posts }), priority: 'core', startupDelayMs: 1500, intervalMs: 900_000 },
 
   // ── Lazy (load once on layer activation; poll only if intervalMs set) ──
   { id: 'flights', url: '/api/flights', priority: 'lazy', activatedBy: ['flights', 'military', 'jets', 'private'], intervalMs: 300_000 },

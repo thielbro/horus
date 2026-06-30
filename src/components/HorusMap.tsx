@@ -387,6 +387,9 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
       // Polybolos Style: Delicate, translucent, steel-blue splined mesh
       addRegistryLayer(map, 'sdk_sea');
 
+      // Ransomware victims (RansomLook, geolocated by server IP) — red dots/labels above the mesh
+      addRegistryLayer(map, 'sdk_ransomware');
+
       // Maritime Ships (moving entities) — ocean teal family
       map.addLayer({ id: 'ship-dots', type: 'circle', source: 'maritime-ships', paint: {
         'circle-radius': ['interpolate',['linear'],['zoom'], 1,2, 5,4, 10,6],
@@ -1340,6 +1343,12 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     if (!mapReady) return;
     renderRegistryLayer(setGeo, 'sdk_sea', data, activeLayers);
   }, [mapReady, activeLayers.sdk_sea, activeLayers.sdk_air, activeLayers.sdk_naval, data.submarine_cables, data.sdk_entities, setGeo]);
+
+  // Ransomware victims (geolocated subset of ransomware_posts) — render binding self-gates on active.
+  useEffect(() => {
+    if (!mapReady) return;
+    renderRegistryLayer(setGeo, 'sdk_ransomware', data, activeLayers);
+  }, [mapReady, data.ransomware_posts, activeLayers.sdk_ransomware, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;

@@ -26,6 +26,7 @@ export interface WorkspaceUi {
   showAlerts: boolean;
   showScmPanel: boolean;
   showIntel: boolean;
+  showRansomware: boolean;
   showEntityGraph: boolean;
 }
 
@@ -48,6 +49,7 @@ export const DEFAULT_WORKSPACE_UI: WorkspaceUi = {
   showAlerts: false,
   showScmPanel: true,
   showIntel: false,
+  showRansomware: false,
   showEntityGraph: false,
 };
 
@@ -103,6 +105,7 @@ export function normalizeWorkspaceSnapshot(raw: unknown): WorkspaceSnapshot {
       showAlerts: bool(ui.showAlerts, DEFAULT_WORKSPACE_UI.showAlerts),
       showScmPanel: bool(ui.showScmPanel, DEFAULT_WORKSPACE_UI.showScmPanel),
       showIntel: bool(ui.showIntel, DEFAULT_WORKSPACE_UI.showIntel),
+      showRansomware: bool(ui.showRansomware, DEFAULT_WORKSPACE_UI.showRansomware),
       showEntityGraph: bool(ui.showEntityGraph, DEFAULT_WORKSPACE_UI.showEntityGraph),
     },
   };
