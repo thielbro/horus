@@ -698,6 +698,42 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     });
 
 
+    // ── Ransomware Victims (RansomLook leak-site posts) — routes into the Ransomware intel feed ──
+    map.on('click', 'ransomware-dots', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      const loc = [p.city, p.country].filter(Boolean).join(', ') || '—';
+      const discovered = p.discovered ? new Date(p.discovered).toLocaleString() : '—';
+      // Open the Ransomware Feed panel and highlight this victim's post.
+      onEntityClickRef.current?.({
+        type: 'ransomware',
+        id: p.id,
+        victim: p.victim,
+        group: p.group,
+        sector: p.sector,
+        country: p.country,
+        city: p.city,
+        discovered: p.discovered,
+        link: p.link,
+        lat: coords[1],
+        lng: coords[0],
+      });
+      popup(coords, `<div style="${pStyle}border:1px solid rgba(211,47,47,0.45);box-shadow:inset 0 0 12px rgba(211,47,47,0.1);">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(211,47,47,0.3);padding-bottom:6px;margin-bottom:8px;">
+          <div style="color:#FF6B6B;font-size:12px;font-weight:700;letter-spacing:0.1em;text-shadow:0 0 4px rgba(211,47,47,0.5);">☠ ${escapeHtml(String(p.group || 'RANSOMWARE')).toUpperCase()}</div>
+          <div style="color:#5C5A54;font-size:9px;">${escapeHtml(loc)}</div>
+        </div>
+        <div style="color:#E8E6E0;font-size:11px;font-weight:bold;margin-bottom:10px;word-break:break-word;">${escapeHtml(String(p.victim || 'Unknown victim'))}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;margin-bottom:12px;background:rgba(0,0,0,0.3);padding:6px;border-radius:4px;">
+          <div><span style="color:#5C5A54;">SECTOR</span><br/><span style="color:#E8E6E0;">${escapeHtml(String(p.sector || '—'))}</span></div>
+          <div><span style="color:#5C5A54;">DISCOVERED</span><br/><span style="color:#E8E6E0;">${escapeHtml(discovered)}</span></div>
+        </div>
+        ${p.link ? `<a href="${escapeHtml(String(p.link))}" target="_blank" rel="noopener" style="${linkStyle}color:#FF6B6B;border:1px solid rgba(211,47,47,0.4);background:rgba(211,47,47,0.1);display:inline-block;width:100%;box-sizing:border-box;text-align:center;">VIEW LEAK POST ↗</a>` : ''}
+      </div>`);
+    });
+
+
     // ── GDELT Conflicts (with source article) ──
     map.on('click', 'gdelt-dots', e => {
       if (!e.features?.length) return;
@@ -777,7 +813,7 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     });
 
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','surv-dots','police-dots','flock-dots','mass-dots','dossier-nearby-dots','route-surveil-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','sigint-news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots'].forEach(layer => {
+    ['conflict-icons','cctv-dots','surv-dots','police-dots','flock-dots','mass-dots','dossier-nearby-dots','route-surveil-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','sigint-news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','ransomware-dots'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });

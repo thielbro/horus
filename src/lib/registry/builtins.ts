@@ -176,7 +176,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
       { source: 'ransomware-victims', toFeatures: (data, active) => (active.sdk_ransomware && Array.isArray(data.ransomware_posts))
         ? data.ransomware_posts
             .filter((p: any) => typeof p?.lat === 'number' && typeof p?.lng === 'number')
-            .map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { victim: p.victim, group: p.group, sector: p.sector || '', country: p.country || '', city: p.city || '', discovered: p.discovered, link: p.link || '' } }))
+            .map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { id: p.id, victim: p.victim, group: p.group, sector: p.sector || '', country: p.country || '', city: p.city || '', discovered: p.discovered, link: p.link || '' } }))
         : [] },
     ],
   },

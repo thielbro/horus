@@ -229,6 +229,7 @@ export default function Dashboard() {
   const [showScmPanel, setShowScmPanel] = useState(true);
   const [showIntel, setShowIntel] = useState(false);
   const [showRansomware, setShowRansomware] = useState(false);
+  const [ransomwareFocus, setRansomwareFocus] = useState<{ id: string; ts: number } | null>(null);
   const [showEntityGraph, setShowEntityGraph] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|'recon'|null>(null);
@@ -588,6 +589,16 @@ export default function Dashboard() {
         properties: {},
       });
       setShowEntityGraph(true);
+    }
+    if (entity?.type === 'ransomware' && entity.id) {
+      // Route the clicked map victim into the Ransomware Feed: open the panel and
+      // highlight/scroll to its post.
+      setShowRansomware(true);
+      setShowIntel(false);
+      setShowMarkets(false);
+      setShowAlerts(false);
+      setShowEntityGraph(false);
+      setRansomwareFocus({ id: entity.id, ts: Date.now() });
     }
   }, []);
   const handleSweepVisualize = useCallback((nextSweepData: any) => {
@@ -1337,7 +1348,7 @@ export default function Dashboard() {
           <AnimatePresence>
             {showRansomware && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-12 top-1/2 -translate-y-1/2 w-80">
-                <RansomwareFeed data={data} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />
+                <RansomwareFeed data={data} focus={ransomwareFocus} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />
               </motion.div>
             )}
           </AnimatePresence>

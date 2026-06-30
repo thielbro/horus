@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Skull, ChevronDown, ChevronUp, ExternalLink, MapPin, Search } from 'lucide-react';
 
@@ -27,6 +27,8 @@ interface RansomwarePost {
 interface RansomwareFeedProps {
   data: any;
   onLocate?: (lat: number, lng: number) => void;
+  /** A victim routed in from the map; opens the panel and highlights its post. `ts` lets a repeat click on the same victim re-trigger. */
+  focus?: { id: string; ts: number } | null;
 }
 
 function timeAgo(dateStr: string): string {
@@ -50,7 +52,7 @@ function groupColor(group: string): string {
   return `hsl(${h}, 70%, 62%)`;
 }
 
-export default function RansomwareFeed({ data, onLocate }: RansomwareFeedProps) {
+export default function RansomwareFeed({ data, focus, onLocate }: RansomwareFeedProps) {
   const [expanded, setExpanded] = useState(true);
   const [query, setQuery] = useState('');
 
@@ -68,6 +70,33 @@ export default function RansomwareFeed({ data, onLocate }: RansomwareFeedProps) 
   }, [posts, query]);
 
   const geoCount = useMemo(() => posts.filter((p) => p.lat != null).length, [posts]);
+
+  // The rendered window. When a victim is routed in from the map but falls outside
+  // the first 60 rows, splice it in at the top so its row exists to scroll to.
+  const visible = useMemo(() => {
+    const base = filtered.slice(0, 60);
+    if (focus?.id && !base.some((p) => p.id === focus.id)) {
+      const extra = filtered.find((p) => p.id === focus.id);
+      if (extra) return [extra, ...base];
+    }
+    return base;
+  }, [filtered, focus?.id]);
+
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  // A map dot was clicked: expand, clear any filter, then scroll to and flash the post.
+  useEffect(() => {
+    if (!focus?.id) return;
+    setExpanded(true);
+    setQuery('');
+    setHighlightId(focus.id);
+    const scrollT = setTimeout(() => {
+      rowRefs.current[focus.id]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 160);
+    const clearT = setTimeout(() => setHighlightId(null), 2600);
+    return () => { clearTimeout(scrollT); clearTimeout(clearT); };
+  }, [focus?.id, focus?.ts]);
 
   return (
     <motion.div
@@ -119,14 +148,16 @@ export default function RansomwareFeed({ data, onLocate }: RansomwareFeedProps) 
                   </span>
                 </div>
               ) : (
-                filtered.slice(0, 60).map((p) => {
+                visible.map((p) => {
                   const placed = p.lat != null && p.lng != null;
                   return (
                     <div
                       key={p.id}
+                      ref={(el) => { rowRefs.current[p.id] = el; }}
                       role="button"
                       tabIndex={0}
                       className="px-4 py-2.5 hover:bg-[var(--hover-accent)] transition-colors cursor-pointer"
+                      style={highlightId === p.id ? { background: 'rgba(255,107,107,0.10)', boxShadow: 'inset 0 0 0 1px rgba(255,107,107,0.55)' } : undefined}
                       onClick={() => { if (p.link) window.open(p.link, '_blank', 'noopener,noreferrer'); }}
                       onKeyDown={(e) => { if (e.key === 'Enter' && p.link) window.open(p.link, '_blank', 'noopener,noreferrer'); }}
                     >
