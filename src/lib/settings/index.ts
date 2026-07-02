@@ -19,6 +19,7 @@ export interface ApiKeys {
   INTEL_URL?: string;
   SCANNER_URL?: string;
   SCANNER_KEY?: string;
+  LIVE_FEED_URL?: string;
   SURVEILLANCE_FEED_URL?: string;
   FIRMS_API_KEY?: string;
   OPENSKY_CLIENT_ID?: string;

@@ -14,7 +14,14 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    files: ["desktop/**/*.js", "intel/**/*.js", "scanner/**/*.js", "scripts/**/*.js", "surveillance-feed/**/*.js"],
+    files: [
+      "desktop/**/*.js",
+      "intel/**/*.js",
+      "live-feed/**/*.js",
+      "scanner/**/*.js",
+      "scripts/**/*.js",
+      "surveillance-feed/**/*.js",
+    ],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },

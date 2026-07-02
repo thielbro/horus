@@ -40,6 +40,7 @@ next-env.d.ts
 intel/node_modules/
 scanner/node_modules/
 surveillance-feed/node_modules/
+live-feed/node_modules/
 scanner/.env
 scanner/.env.local
 surveillance-feed/.env

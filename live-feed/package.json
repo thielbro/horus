@@ -1,0 +1,18 @@
+{
+  "name": "horus-live-feed",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HORUS activation-gated live feed sidecar",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test server.test.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.21.0"
+  }
+}

@@ -8,6 +8,7 @@ test('buildEngineEnv defaults desktop service endpoints to localhost', () => {
 
   assert.equal(env.INTEL_URL, 'http://127.0.0.1:4000');
   assert.equal(env.SCANNER_URL, 'http://127.0.0.1:7700');
+  assert.equal(env.LIVE_FEED_URL, 'http://127.0.0.1:7900');
 });
 
 test('buildEngineEnv lets saved settings override process env and defaults', () => {
@@ -49,24 +50,27 @@ test('buildEngineEnv applies launch overrides above defaults', () => {
   assert.equal(env.SCANNER_URL, 'http://127.0.0.1:51234');
   assert.equal(env.SCANNER_KEY, 'auto-secret');
   assert.equal(env.INTEL_URL, 'http://127.0.0.1:51235');
+  assert.equal(env.LIVE_FEED_URL, 'http://127.0.0.1:7900');
 });
 
 test('buildEngineEnv lets launch overrides win over saved settings', () => {
   // Launch/session overrides are the highest-priority layer.
   const env = buildEngineEnv(
     {},
-    { SCANNER_URL: 'https://remote.scanner', SCANNER_KEY: 'user-key' },
-    { SCANNER_URL: 'http://127.0.0.1:51234', SCANNER_KEY: 'auto-secret', INTEL_URL: 'http://127.0.0.1:51235' },
+    { SCANNER_URL: 'https://remote.scanner', SCANNER_KEY: 'user-key', LIVE_FEED_URL: 'https://remote.live-feed' },
+    { SCANNER_URL: 'http://127.0.0.1:51234', SCANNER_KEY: 'auto-secret', INTEL_URL: 'http://127.0.0.1:51235', LIVE_FEED_URL: 'http://127.0.0.1:51236' },
   );
 
   assert.equal(env.SCANNER_URL, 'http://127.0.0.1:51234');
   assert.equal(env.SCANNER_KEY, 'auto-secret');
   assert.equal(env.INTEL_URL, 'http://127.0.0.1:51235');
+  assert.equal(env.LIVE_FEED_URL, 'http://127.0.0.1:51236');
 });
 
 test('buildEngineEnv ignores blank launch overrides', () => {
-  const env = buildEngineEnv({}, {}, { SCANNER_URL: '', INTEL_URL: '   ' });
+  const env = buildEngineEnv({}, {}, { SCANNER_URL: '', INTEL_URL: '   ', LIVE_FEED_URL: '' });
 
   assert.equal(env.SCANNER_URL, 'http://127.0.0.1:7700');
   assert.equal(env.INTEL_URL, 'http://127.0.0.1:4000');
+  assert.equal(env.LIVE_FEED_URL, 'http://127.0.0.1:7900');
 });

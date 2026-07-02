@@ -20,6 +20,7 @@ type SettingsField = { key: keyof ApiKeys; label: string; type: 'text' | 'passwo
 const SERVICE_URL_FIELDS: SettingsField[] = [
   { key: 'INTEL_URL', label: 'Intel URL', type: 'text', hint: 'entity graph backend base URL' },
   { key: 'SCANNER_URL', label: 'Scanner URL', type: 'text', hint: 'RECON backend base URL' },
+  { key: 'LIVE_FEED_URL', label: 'Live Feed URL', type: 'text', hint: 'activation-gated live feed backend' },
   { key: 'SURVEILLANCE_FEED_URL', label: 'Surveillance Feed URL', type: 'text', hint: 'fixed surveillance layer backend' },
   { key: 'LLM_URL', label: 'Local LLM URL', type: 'text', hint: 'OpenAI-compatible (Ollama: http://127.0.0.1:11434/v1)' },
   { key: 'FIRECRAWL_URL', label: 'Firecrawl URL', type: 'text', hint: 'self-hosted search/scrape (http://127.0.0.1:3002)' },

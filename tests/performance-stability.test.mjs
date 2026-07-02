@@ -77,11 +77,15 @@ test('reviewed network helpers release pooled connections and reconnect with bac
   assert.match(ssrf, /await res\.body\?\.cancel\(\)/);
 
   const maritime = file('src/app/api/maritime/route.ts');
-  assert.match(maritime, /aisReconnectAttempts/);
-  assert.match(maritime, /AIS_RECONNECT_MAX_MS/);
-  assert.match(maritime, /scheduleAisReconnect/);
-  assert.match(maritime, /globalForAis\.aisSocket = null/);
-  assert.match(maritime, /while\s*\(\s*shipsCache\.size\s*>\s*MAX_SHIPS_CACHE/);
+  assert.match(maritime, /proxyMaritimeSnapshot/);
+  assert.doesNotMatch(maritime, /new WebSocket|aisSocket|shipsCache/);
+
+  const liveFeed = file('live-feed/server.js');
+  assert.match(liveFeed, /POLL_INTERVAL_MS/);
+  assert.match(liveFeed, /SAMPLE_DURATION_MS/);
+  assert.match(liveFeed, /LEASE_TTL_MS/);
+  assert.match(liveFeed, /closeActiveSocket/);
+  assert.match(liveFeed, /pruneStaleShips/);
 });
 
 test('reviewed frontend caches and viewers stay bounded while preserving map view', () => {
@@ -473,7 +477,7 @@ test('bounded-input and lifecycle fixes remain wired', () => {
   assert.match(file('src/lib/settings/index.ts'), /patch === null/);
   assert.match(file('src/lib/sdk/LatticeAdapter.ts'), /validateTrackPosition/);
   assert.match(file('intel/server.js'), /sanctionsRefreshInterval/);
-  assert.match(file('src/app/api/maritime/route.ts'), /cleanupAisStream/);
+  assert.match(file('live-feed/server.js'), /function closeActiveSocket/);
 });
 
 test('map popups and computed meshes guard malformed or oversized data', () => {

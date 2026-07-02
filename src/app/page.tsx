@@ -17,7 +17,7 @@ import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import GlobalStatusBar from '@/components/GlobalStatusBar';
 import LiveAlerts from '@/components/LiveAlerts';
 import { useSettings, applyAppearance } from '@/lib/settings';
-import { useFeedEngine, useViewportLayers, getLayers } from '@/lib/registry';
+import { useFeedEngine, useLiveFeedActivity, useViewportLayers, getLayers } from '@/lib/registry';
 import { setHostServices, bootstrapExtensions } from '@/lib/plugins';
 import { normalizeWorkspaceSnapshot, restoreActiveLayers, type WorkspaceSnapshot } from '@/lib/workspaces';
 
@@ -173,7 +173,7 @@ const DEFAULT_ACTIVE_LAYERS = {
   private: false,
   jets: false,
   military: false,
-  maritime: true,
+  maritime: false,
   satellites: false,
   balloons: false,
   cctv_europe: false,
@@ -825,6 +825,7 @@ export default function Dashboard() {
   // Core feeds (earthquakes/news/markets), lazy once-load on layer activation, and the
   // lazy polling subset all come from src/lib/registry/feeds. Behavior is identical to
   // the former hand-written effects; the feed list now lives in the registry.
+  useLiveFeedActivity(activeLayers, mapView, fetchEndpoint);
   useFeedEngine(activeLayers, fetchEndpoint, ifVisible);
 
   // Viewport-driven fixed point layers (police/flock/mass-surveillance/surveillance)
