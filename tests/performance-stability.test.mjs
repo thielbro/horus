@@ -141,6 +141,7 @@ test('scanner docker image installs from lockfile', () => {
   const dockerfile = file('scanner/Dockerfile');
   assert.match(dockerfile, /npm ci --omit=dev/);
   assert.doesNotMatch(dockerfile, /npm install --omit=dev/);
+  assert.match(dockerfile, /COPY server\.js portscan\.js \.\//);
 });
 
 test('elasticsearch compose image uses a published stable tag', () => {
