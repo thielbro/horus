@@ -14,13 +14,14 @@ export const BUILTIN_FEEDS: FeedDef[] = [
   { id: 'ransomware', url: '/api/ransomware', transform: (d) => ({ ransomware_posts: d.posts }), priority: 'core', startupDelayMs: 1500, intervalMs: 900_000 },
 
   // ── Lazy (load once on layer activation; poll only if intervalMs set) ──
-  { id: 'flights', url: '/api/flights', priority: 'lazy', activatedBy: ['flights', 'military', 'jets', 'private'], intervalMs: 300_000 },
+  { id: 'flights', url: '/api/flights', priority: 'lazy', activatedBy: ['flights', 'military', 'jets', 'private'], intervalMs: 30_000 },
   { id: 'satellites', url: '/api/satellites', priority: 'lazy', activatedBy: ['satellites'] },
   { id: 'fires', url: '/api/fires', priority: 'lazy', activatedBy: ['fires'] },
   // CCTV is split per continent so each request stays under the camera cap (no region can be
   // starved) and continents toggle independently. Each writes its own bucket.
   { id: 'cctv_europe', url: '/api/cctv?continent=europe', transform: (d) => ({ cameras_europe: d.cameras }), priority: 'lazy', activatedBy: ['cctv_europe'] },
   { id: 'cctv_north_america', url: '/api/cctv?continent=north-america', transform: (d) => ({ cameras_north_america: d.cameras }), priority: 'lazy', activatedBy: ['cctv_north_america'] },
+  { id: 'cctv_united_states', url: '/api/cctv?continent=united-states', transform: (d) => ({ cameras_united_states: d.cameras }), priority: 'lazy', activatedBy: ['cctv_united_states'] },
   { id: 'cctv_asia', url: '/api/cctv?continent=asia', transform: (d) => ({ cameras_asia: d.cameras }), priority: 'lazy', activatedBy: ['cctv_asia'] },
   { id: 'cctv_oceania', url: '/api/cctv?continent=oceania', transform: (d) => ({ cameras_oceania: d.cameras }), priority: 'lazy', activatedBy: ['cctv_oceania'] },
   // NOTE: the OSM positions-only point layers (surveillance, police, flock,

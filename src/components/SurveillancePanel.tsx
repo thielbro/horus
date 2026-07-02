@@ -37,6 +37,7 @@ interface SurveillancePanelProps {
 const CONTINENTS: Array<{ key: string; label: string; bucket: string }> = [
   { key: 'cctv_europe', label: 'Europe', bucket: 'cameras_europe' },
   { key: 'cctv_north_america', label: 'North America', bucket: 'cameras_north_america' },
+  { key: 'cctv_united_states', label: 'United States', bucket: 'cameras_united_states' },
   { key: 'cctv_asia', label: 'Asia', bucket: 'cameras_asia' },
   { key: 'cctv_oceania', label: 'Oceania', bucket: 'cameras_oceania' },
 ];
@@ -52,6 +53,7 @@ const COUNTER_LAYERS: Array<{ key: string; label: string; bucket: string; color:
 const BUILTIN_SOURCES: Array<{ label: string; url: string }> = [
   { label: 'CCTV — Europe', url: '/api/cctv?continent=europe' },
   { label: 'CCTV — North America', url: '/api/cctv?continent=north-america' },
+  { label: 'CCTV — United States', url: '/api/cctv?continent=united-states' },
   { label: 'CCTV — Asia', url: '/api/cctv?continent=asia' },
   { label: 'CCTV — Oceania', url: '/api/cctv?continent=oceania' },
   { label: 'OSM Surveillance', url: '/api/surveillance' },

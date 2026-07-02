@@ -132,9 +132,101 @@ async function fetchNearby(lat: number, lng: number, radiusM: number, signal?: A
     .slice(0, MAX_NEARBY);
 }
 
+const COMMONS_RADIUS_M = 500;
+const COMMONS_TIMEOUT_MS = 8_000;
+
+// Keyless street/place imagery: geotagged photos from Wikimedia Commons (File namespace) near
+// the point. Used when no MAPILLARY_TOKEN is configured, so address dossiers show real photos
+// out of the box. Strong for landmarks/public buildings; intentionally sparse for pure-residential.
+async function fetchCommonsPhotos(lat: number, lng: number, signal?: AbortSignal): Promise<MediaItem[]> {
+  const url =
+    `https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*` +
+    `&generator=geosearch&ggsnamespace=6&ggscoord=${lat}%7C${lng}&ggsradius=${COMMONS_RADIUS_M}&ggslimit=${MAX_PHOTOS * 2}` +
+    `&prop=imageinfo&iiprop=url%7Cthumburl%7Ctimestamp%7Ccoordinates&iiurlwidth=1024`;
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'HORUS-map/1.0 (address intel; Wikimedia Commons)', Accept: 'application/json' },
+      signal: safeAbortAny([signal, safeAbortTimeout(COMMONS_TIMEOUT_MS)]),
+    });
+    if (!res.ok) {
+      await releaseResponseBody(res);
+      return [];
+    }
+    const data = await res.json();
+    const pages: any[] = data?.query?.pages ? Object.values(data.query.pages) : [];
+    return pages
+      .map((p): (MediaItem & { _d: number }) | null => {
+        const info = Array.isArray(p?.imageinfo) ? p.imageinfo[0] : null;
+        if (!info) return null;
+        const thumb = info.thumburl as string | undefined;
+        const full = info.url as string | undefined;
+        if (!thumb && !full) return null;
+        const c = info.coordinates?.[0];
+        const pLat = typeof c?.lat === 'number' ? c.lat : undefined;
+        const pLng = typeof c?.lon === 'number' ? c.lon : undefined;
+        return {
+          type: 'image',
+          url: full || thumb!,
+          thumbUrl: thumb,
+          lat: pLat,
+          lng: pLng,
+          capturedAt: typeof info.timestamp === 'string' ? info.timestamp : undefined,
+          source: 'Wikimedia Commons',
+          sourceUrl: typeof p.title === 'string' ? `https://commons.wikimedia.org/wiki/${encodeURIComponent(p.title)}` : undefined,
+          _d: pLat != null && pLng != null ? haversineMeters(lat, lng, pLat, pLng) : 1e9,
+        };
+      })
+      .filter((m): m is MediaItem & { _d: number } => m !== null)
+      .sort((a, b) => a._d - b._d)
+      .slice(0, MAX_PHOTOS)
+      .map(({ _d, ...m }) => m);
+  } catch {
+    return [];
+  }
+}
+
+const WIKI_TIMEOUT_MS = 8_000;
+const WIKI_RADIUS_M = 800;
+
+interface WebLead { title: string; url: string; snippet: string; source: string; }
+
+// Reliable keyless leads: notable places near the point from Wikipedia geosearch (+ intro
+// extracts). Unlike scraped SERPs (which bot-challenge datacenter/undici clients), this is a
+// stable public API and gives real, sourced context about what's at/around a location.
+async function fetchWikiNearby(lat: number, lng: number, signal?: AbortSignal): Promise<WebLead[]> {
+  const url =
+    `https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*` +
+    `&generator=geosearch&ggscoord=${lat}%7C${lng}&ggsradius=${WIKI_RADIUS_M}&ggslimit=6` +
+    `&prop=extracts%7Cinfo&exintro&explaintext&exchars=400&inprop=url`;
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'HORUS-map/1.0 (address intel; Wikipedia)', Accept: 'application/json' },
+      signal: safeAbortAny([signal, safeAbortTimeout(WIKI_TIMEOUT_MS)]),
+    });
+    if (!res.ok) {
+      await releaseResponseBody(res);
+      return [];
+    }
+    const data = await res.json();
+    const pages: any[] = data?.query?.pages ? Object.values(data.query.pages) : [];
+    return pages
+      .sort((a, b) => (a.index || 0) - (b.index || 0))
+      .map((p): WebLead => ({
+        title: p.title,
+        url: p.fullurl || `https://en.wikipedia.org/?curid=${p.pageid}`,
+        snippet: typeof p.extract === 'string' ? p.extract.replace(/\s+/g, ' ').trim().slice(0, 300) : '',
+        source: 'wikipedia',
+      }))
+      .filter((h) => h.title && h.url);
+  } catch {
+    return [];
+  }
+}
+
 async function fetchPhotos(lat: number, lng: number, signal?: AbortSignal): Promise<MediaItem[]> {
   const token = process.env.MAPILLARY_TOKEN;
-  if (!token || !token.trim()) return [];
+  // No Mapillary token → keyless Wikimedia Commons imagery so photos still appear.
+  if (!token || !token.trim()) return fetchCommonsPhotos(lat, lng, signal);
   const [s, w, n, e] = pointBbox(lat, lng, PHOTO_BBOX_M); // [south,west,north,east]
   const mapillaryBbox = `${w},${s},${e},${n}`; // Mapillary wants minLng,minLat,maxLng,maxLat
   const url =
@@ -209,15 +301,47 @@ export const addressProvider: IntelProvider = {
     const radiusM = DEFAULT_RADIUS_M;
     ctx.emit({ event: 'status', data: { stage: 'nearby', formatted } });
 
-    // 2. Parallel gather — tolerate partial failure (Overpass / Firecrawl / Mapillary may be down).
-    const [nearbyR, searchR, photosR] = await Promise.allSettled([
+    // Build a lead-oriented query. A quoted full address usually returns nothing; search the
+    // occupant/business name + locality when this is a commercial POI, else the plain address.
+    const locality = [geo.address.city || geo.address.town || geo.address.village, geo.address.state]
+      .filter(Boolean).join(' ');
+    const occupantName =
+      geo.name && /office|shop|commercial|company|amenity|tourism|leisure|craft|building|industrial/.test(geo.category || '')
+        ? geo.name
+        : '';
+    const searchQuery = occupantName ? `${occupantName} ${locality}`.trim() : formatted;
+
+    // 2. Parallel gather — tolerate partial failure (Overpass / search / imagery may be down).
+    // Leads come from Wikipedia geosearch (reliable, keyless) plus a best-effort general web
+    // search (DuckDuckGo, which frequently bot-challenges server clients — treated as a bonus).
+    const [nearbyR, searchR, wikiR, photosR] = await Promise.allSettled([
       fetchNearby(lat, lng, radiusM, ctx.signal),
-      ctx.search.search(`"${formatted}"`, { count: SEARCH_COUNT, signal: ctx.signal }).catch(() => []),
+      ctx.search.search(searchQuery, { count: SEARCH_COUNT, signal: ctx.signal }).catch(() => []),
+      fetchWikiNearby(lat, lng, ctx.signal),
       fetchPhotos(lat, lng, ctx.signal),
     ]);
     const nearby = nearbyR.status === 'fulfilled' ? nearbyR.value : [];
-    const hits = searchR.status === 'fulfilled' ? searchR.value : [];
+    const webHits = searchR.status === 'fulfilled' ? searchR.value : [];
+    const wikiHits = wikiR.status === 'fulfilled' ? wikiR.value : [];
     const photos = photosR.status === 'fulfilled' ? photosR.value : [];
+
+    // Merge leads (Wikipedia first — sourced + reliable), de-duped by URL, capped.
+    const hits: Array<{ title: string; url: string; snippet?: string }> = [];
+    const seenUrls = new Set<string>();
+    for (const h of [...wikiHits, ...webHits]) {
+      if (!h.url || seenUrls.has(h.url)) continue;
+      seenUrls.add(h.url);
+      hits.push(h);
+      if (hits.length >= SEARCH_COUNT + 2) break;
+    }
+
+    // Pull the top lead's page text so the LLM gets real content (not just a snippet) → less
+    // "useless" prose. Best-effort and SSRF-guarded by the search provider's fetchPage.
+    let leadExcerpt = '';
+    if (hits.length) {
+      const page = await ctx.fetchPage(hits[0].url).catch(() => null);
+      if (page) leadExcerpt = page.replace(/\s+/g, ' ').trim().slice(0, 1200);
+    }
 
     const counts: Record<NearbyKind, number> = { camera: 0, alpr: 0, speed: 0, police: 0 };
     for (const it of nearby) counts[it.kind]++;
@@ -267,7 +391,10 @@ export const addressProvider: IntelProvider = {
     const citations: Citation[] = hits.map((h, i) => ({
       id: `web-${i + 1}`, title: h.title, url: h.url, source: 'web', fetchedAt: new Date().toISOString(),
     }));
-    const webContext = hits.map((h, i) => `[${i + 1}] ${h.title} — ${h.snippet || ''} (${h.url})`).join('\n');
+    const webContext = [
+      hits.map((h, i) => `[${i + 1}] ${h.title} — ${h.snippet || ''} (${h.url})`).join('\n'),
+      leadExcerpt ? `\nTOP RESULT EXCERPT (${hits[0].url}):\n${leadExcerpt}` : '',
+    ].join('').trim();
 
     const signals: Signal[] = [
       { key: 'address', label: 'Address', value: formatted, source: 'nominatim' },
@@ -277,7 +404,7 @@ export const addressProvider: IntelProvider = {
       { key: 'exposure', label: 'Surveillance exposure', value: `${counts.camera} CCTV, ${counts.alpr} ALPR, ${counts.speed} speed within ${radiusM}m · ${counts.police} police within ${POLICE_RADIUS_M}m`, source: 'overpass' },
       ...(nearestCam ? [{ key: 'nearest', label: 'Nearest camera', value: `${nearestCam.name} at ${nearestCam.distanceM}m`, source: 'overpass' }] : []),
       ...(nearestPolice ? [{ key: 'nearestPolice', label: 'Nearest police', value: `${nearestPolice.name} at ${nearestPolice.distanceM}m`, source: 'overpass' }] : []),
-      ...(photos.length ? [{ key: 'photos', label: 'Street-level photos', value: `${photos.length} (Mapillary)`, source: 'mapillary' }] : []),
+      ...(photos.length ? [{ key: 'photos', label: 'Street-level photos', value: `${photos.length} (${photos[0].source})`, source: photos[0].source }] : []),
       ...(webContext ? [{ key: 'web', label: 'Web results', value: webContext, source: 'web' }] : []),
     ];
 

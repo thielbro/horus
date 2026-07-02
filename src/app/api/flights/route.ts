@@ -6,292 +6,363 @@ import { releaseResponseBody, safeAbortTimeout } from '@/lib/http-utils';
 
 /**
  * HORUS — Flight Data API
- * Fetches real-time aircraft positions from adsb.lol (no API key required)
- * Covers 6 global regions for maximum coverage
+ *
+ * Primary source: OpenSky Network `/api/states/all` — a single-request GLOBAL snapshot
+ * (~8–12k aircraft worldwide) that reliably returns in a few seconds. This replaces the old
+ * 6×`dist=2000` adsb.lol fan-out, whose oversized payloads took 30s+ and timed out at 12s,
+ * leaving the map empty "half the time" and never truly global.
+ *
+ * Fallback: adsb.fi point queries (capped at 250nm, fast) when OpenSky is unavailable or
+ * rate-limited. Anonymous OpenSky is throttled per day, so we cache + coalesce aggressively
+ * and use OAuth2 client credentials when OPENSKY_CLIENT_ID/SECRET are configured.
+ *
+ * Rich per-aircraft detail (type, registration, route, owner) is resolved on click via
+ * /api/entity/expand (adsbdb.com) — not for every aircraft here.
  */
 
-const REGIONS = [
-  { lat: 39.8, lon: -98.5, dist: 2000 },   // North America
-  { lat: 50.0, lon: 15.0, dist: 2000 },     // Europe
-  { lat: 35.0, lon: 105.0, dist: 2000 },    // Asia
-  { lat: -25.0, lon: 133.0, dist: 2000 },   // Australia
-  { lat: 0.0, lon: 20.0, dist: 2500 },      // Africa
-  { lat: -15.0, lon: -60.0, dist: 2000 },   // South America
+export const maxDuration = 30;
+
+const OPENSKY_STATES_URL = 'https://opensky-network.org/api/states/all';
+const OPENSKY_TOKEN_URL =
+  'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
+const OPENSKY_TIMEOUT_MS = 20_000;
+const MAX_TOTAL_FLIGHTS = 12_000;
+
+// Fallback adsb.fi point queries (dist capped at 250nm by the API → fast, reliable).
+const FALLBACK_REGIONS = [
+  { lat: 39.8, lon: -98.5 },   // North America
+  { lat: 50.0, lon: 15.0 },    // Europe
+  { lat: 35.0, lon: 105.0 },   // Asia
+  { lat: -25.0, lon: 133.0 },  // Australia
+  { lat: 0.0, lon: 20.0 },     // Africa
+  { lat: -15.0, lon: -60.0 },  // South America
 ];
+const FALLBACK_DIST = 250;
+const FALLBACK_TIMEOUT_MS = 12_000;
 
-// Helicopter type codes
-const HELI_TYPES = new Set([
-  'R22','R44','R66','B06','B06T','B204','B205','B206','B212','B222','B230',
-  'B407','B412','B427','B429','B430','B505','B525',
-  'AS32','AS35','AS50','AS55','AS65',
-  'EC20','EC25','EC30','EC35','EC45','EC55','EC75',
-  'H125','H130','H135','H145','H155','H160','H175','H215','H225',
-  'S55','S58','S61','S64','S70','S76','S92',
-  'A109','A119','A139','A169','A189','AW09',
-  'MD52','MD60','MDHI','MD90','NOTR',
-  'B47G','HUEY','GAMA','CABR','EXE',
-]);
-
-// Private jet types
-const PRIVATE_JET_TYPES = new Set([
-  'G150','G200','G280','GLEX','G500','G550','G600','G650','G700',
-  'GLF2','GLF3','GLF4','GLF5','GLF6','GL5T','GL7T','GV','GIV',
-  'CL30','CL35','CL60','BD70','BD10',
-  'C25A','C25B','C25C','C500','C510','C525','C550','C560','C56X','C680','C700','C750',
-  'E35L','E50P','E55P','E545','E550',
-  'FA50','FA7X','FA8X','F900','F2TH',
-  'LJ35','LJ40','LJ45','LJ60','LJ70','LJ75',
-  'PC12','PC24','TBM7','TBM8','TBM9',
-  'PRM1','SF50','EA50','VLJ',
-]);
-
-// Military type indicators
-const MILITARY_INDICATORS = new Set([
-  'C17','C5M','C130','C30J','KC10','KC46','KC35','E3CF','E3TF','E8A',
-  'B1B','B2','B52','F16','F15','F18','F22','F35','A10','F117',
-  'RC135','E6B','P8A','P3','MQ9','RQ4','U2','EP3','RC12',
-  'V22','CH47','UH60','AH64','AH1Z','MV22',
-  'EUFI','RFAL','TORD','TYP','GR4',
-]);
-
+// ── Classification ──────────────────────────────────────────────────────────────
+// OpenSky /states/all carries no aircraft type or dbFlags, so buckets are derived from the
+// callsign and the ICAO24 hex. Military-callsign prefixes + the US military hex block catch
+// most military traffic; airline-style callsigns (3 letters + digit) are commercial; the rest
+// is general aviation. "Private jets" can't be split from GA on positions alone, so that bucket
+// stays empty here and is identified on click via adsbdb.
 const AIRLINE_CODE_RE = /^([A-Z]{3})\d/;
-const MAX_TOTAL_FLIGHTS = 5000;
+const MIL_CALLSIGN_RE =
+  /^(RCH|RRR|CFC|ASCOT|NATO|BAF|EGY|KING|DUKE|EVAC|JAKE|REACH|CONVOY|SENTRY|GRZLY|HOBO|SLAM|VADER|NOBLE|OMEN|PYTHON|BLKCT|SPAR|POLO|GORDO)\d*/i;
 
-async function fetchRegion(region: typeof REGIONS[0]): Promise<any[]> {
+// US military ICAO24 allocation block (0xAE0000–0xAFFFFF). A heuristic, not exhaustive, but a
+// strong signal for US military aircraft that don't fly under a recognisable callsign.
+function isMilitaryHex(hex: string): boolean {
+  const n = parseInt(hex, 16);
+  return Number.isFinite(n) && n >= 0xae0000 && n <= 0xafffff;
+}
+
+interface Flight {
+  callsign: string;
+  lat: number;
+  lng: number;
+  alt: number;
+  heading: number;
+  speed_knots: number | null;
+  model: string;
+  icao24: string;
+  registration: string;
+  squawk: string;
+  airline_code: string;
+  aircraft_category: 'plane' | 'heli';
+  category: 'commercial' | 'private' | 'jet' | 'military';
+  grounded: boolean;
+  origin_country?: string;
+  type: 'flight';
+}
+
+const round5 = (n: number) => Math.round(n * 100000) / 100000;
+
+// Map one OpenSky state vector (array form) into a HORUS flight.
+// Indices: 0 icao24, 1 callsign, 2 origin_country, 5 lon, 6 lat, 7 baro_alt(m),
+//          8 on_ground, 9 velocity(m/s), 10 true_track(deg), 13 geo_alt(m).
+function classifyOpenSky(s: unknown[]): Flight | null {
+  const icao24 = String(s[0] ?? '').trim().toLowerCase();
+  const callsignRaw = String(s[1] ?? '').trim().toUpperCase();
+  const lon = s[5];
+  const lat = s[6];
+  if (typeof lat !== 'number' || typeof lon !== 'number') return null;
+
+  const onGround = Boolean(s[8]);
+  const velocityMs = typeof s[9] === 'number' ? s[9] : null;
+  const track = typeof s[10] === 'number' ? s[10] : 0;
+  const baroAlt = typeof s[7] === 'number' ? s[7] : typeof s[13] === 'number' ? s[13] : 0;
+
+  const callsign = callsignRaw || icao24 || 'UNKNOWN';
+  const airlineMatch = AIRLINE_CODE_RE.exec(callsign);
+  const airlineCode = airlineMatch ? airlineMatch[1] : '';
+
+  let category: Flight['category'];
+  if (isMilitaryHex(icao24) || MIL_CALLSIGN_RE.test(callsign)) category = 'military';
+  else if (airlineCode) category = 'commercial';
+  else category = 'private';
+
+  return {
+    callsign,
+    lat: round5(lat),
+    lng: round5(lon),
+    alt: Math.round(baroAlt),
+    heading: Math.round(track),
+    speed_knots: velocityMs != null ? Math.round(velocityMs * 1.94384 * 10) / 10 : null,
+    model: 'Unknown',
+    icao24,
+    registration: 'N/A',
+    squawk: typeof s[14] === 'string' ? s[14] : '',
+    airline_code: airlineCode,
+    aircraft_category: 'plane',
+    category,
+    grounded: onGround,
+    origin_country: typeof s[2] === 'string' ? s[2] : '',
+    type: 'flight',
+  };
+}
+
+interface FlightPayload {
+  commercial_flights: Flight[];
+  private_flights: Flight[];
+  private_jets: Flight[];
+  military_flights: Flight[];
+  gps_jamming: unknown[];
+  total: number;
+  returned_total: number;
+  source: string;
+  timestamp: string;
+}
+
+function bucketAndCap(flights: Flight[], source: string, rawTotal: number): FlightPayload {
+  const commercial: Flight[] = [];
+  const privateFl: Flight[] = [];
+  const jets: Flight[] = [];
+  const military: Flight[] = [];
+  for (const f of flights) {
+    switch (f.category) {
+      case 'military': military.push(f); break;
+      case 'jet': jets.push(f); break;
+      case 'private': privateFl.push(f); break;
+      default: commercial.push(f);
+    }
+  }
+
+  let remaining = MAX_TOTAL_FLIGHTS;
+  const take = (arr: Flight[]) => {
+    const out = arr.slice(0, Math.max(0, remaining));
+    remaining -= out.length;
+    return out;
+  };
+  const militaryFlights = take(military);
+  const privateJets = take(jets);
+  const privateFlights = take(privateFl);
+  const commercialFlights = take(commercial);
+
+  return {
+    commercial_flights: commercialFlights,
+    private_flights: privateFlights,
+    private_jets: privateJets,
+    military_flights: militaryFlights,
+    gps_jamming: [],
+    total: rawTotal,
+    returned_total:
+      militaryFlights.length + privateJets.length + privateFlights.length + commercialFlights.length,
+    source,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ── OpenSky OAuth2 (optional — raises rate limits when creds are configured) ──
+let osToken: { value: string; exp: number } | null = null;
+async function getOpenSkyToken(): Promise<string | null> {
+  const clientId = process.env.OPENSKY_CLIENT_ID?.trim();
+  const clientSecret = process.env.OPENSKY_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) return null;
+  if (osToken && Date.now() < osToken.exp - 30_000) return osToken.value;
   try {
-    const url = `https://api.adsb.lol/v2/lat/${region.lat}/lon/${region.lon}/dist/${region.dist}`;
-    const res = await stealthFetch(url, {
-      signal: safeAbortTimeout(12000),
+    const res = await fetch(OPENSKY_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+      signal: safeAbortTimeout(8000),
     });
+    if (!res.ok) {
+      await releaseResponseBody(res);
+      return null;
+    }
+    const data = await res.json();
+    if (typeof data?.access_token !== 'string') return null;
+    osToken = { value: data.access_token, exp: Date.now() + (Number(data.expires_in) || 300) * 1000 };
+    return osToken.value;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchFromOpenSky(): Promise<FlightPayload | null> {
+  const token = await getOpenSkyToken();
+  // NOTE: plain fetch (not stealthFetch) — stealthFetch hard-aborts at 10s, but the global
+  // OpenSky snapshot can take up to ~12s. We set our own longer timeout here.
+  const headers: Record<string, string> = {
+    'User-Agent': 'HORUS-map/1.0 (flight tracking)',
+    Accept: 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(OPENSKY_STATES_URL, {
+    headers,
+    signal: safeAbortTimeout(OPENSKY_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    await releaseResponseBody(res);
+    return null;
+  }
+  const data = await res.json();
+  const states: unknown[] = Array.isArray(data?.states) ? data.states : [];
+  if (states.length === 0) return null;
+
+  const flights: Flight[] = [];
+  for (const s of states) {
+    if (!Array.isArray(s)) continue;
+    const f = classifyOpenSky(s);
+    if (f) flights.push(f);
+  }
+  if (flights.length === 0) return null;
+  return bucketAndCap(flights, 'opensky', states.length);
+}
+
+// ── Fallback: adsb.fi point queries (dist capped at 250nm → fast). Degraded coverage
+// (six regional clusters) but keeps the layer alive when OpenSky is down/limited. ──
+async function fetchFallbackRegion(region: { lat: number; lon: number }): Promise<any[]> {
+  try {
+    const url = `https://opendata.adsb.fi/api/v2/lat/${region.lat}/lon/${region.lon}/dist/${FALLBACK_DIST}`;
+    const res = await stealthFetch(url, { signal: safeAbortTimeout(FALLBACK_TIMEOUT_MS) });
     if (res.ok) {
       const data = await res.json();
-      return data.ac || [];
+      return Array.isArray(data?.ac) ? data.ac : [];
     }
     await releaseResponseBody(res);
-  } catch (e) {
-    console.warn(`Region fetch failed for lat=${region.lat}:`, e);
+  } catch {
+    /* silent — one region failing must not blank the layer */
   }
   return [];
 }
 
-function classifyFlight(f: any) {
-  const modelUpper = (f.t || '').toUpperCase();
-  const flightStr = (f.flight || '').trim().toUpperCase();
-  const dbFlags = (f.dbFlags || 0);
-
-  // Skip fixed structures
-  if (modelUpper === 'TWR') return null;
-
+function classifyAdsb(f: any): Flight | null {
   const lat = f.lat;
   const lon = f.lon;
-  if (lat == null || lon == null) return null;
-
-  const callsign = flightStr || f.hex || 'UNKNOWN';
+  if (typeof lat !== 'number' || typeof lon !== 'number') return null;
+  const modelUpper = (f.t || '').toUpperCase();
+  if (modelUpper === 'TWR') return null;
+  const callsign = (f.flight || '').trim().toUpperCase() || f.hex || 'UNKNOWN';
   const altRaw = f.alt_baro;
   const altMeters = typeof altRaw === 'number' ? altRaw * 0.3048 : 0;
-  const speedKnots = typeof f.gs === 'number' ? Math.round(f.gs * 10) / 10 : null;
-  const heading = f.track || 0;
-  const isHeli = HELI_TYPES.has(modelUpper);
-  const isGrounded = typeof altRaw === 'number' && altRaw < 100;
-
-  // Extract airline code
   const airlineMatch = AIRLINE_CODE_RE.exec(callsign);
   const airlineCode = airlineMatch ? airlineMatch[1] : '';
+  const dbFlags = f.dbFlags || 0;
 
-  // Classification
-  let category: 'commercial' | 'private' | 'jet' | 'military' = 'commercial';
-  if (dbFlags & 1 || MILITARY_INDICATORS.has(modelUpper) || (f.flight || '').match(/^(RCH|KING|DUKE|EVAC|JAKE|REACH|CONVOY)\d/i)) {
+  let category: Flight['category'] = 'commercial';
+  if (dbFlags & 1 || isMilitaryHex((f.hex || '').toLowerCase()) || MIL_CALLSIGN_RE.test(callsign)) {
     category = 'military';
-  } else if (PRIVATE_JET_TYPES.has(modelUpper)) {
-    category = 'jet';
-  } else if (!airlineCode && modelUpper && !['A319','A320','A321','A332','A333','A339','A343','A359','A388','B737','B738','B739','B38M','B39M','B752','B753','B763','B764','B772','B77L','B77W','B788','B789','B78X','E170','E175','E190','E195','CRJ7','CRJ9','AT43','AT72','DH8D'].includes(modelUpper)) {
+  } else if (!airlineCode) {
     category = 'private';
   }
 
   return {
     callsign,
-    lat: Math.round(lat * 100000) / 100000,
-    lng: Math.round(lon * 100000) / 100000,
+    lat: round5(lat),
+    lng: round5(lon),
     alt: Math.round(altMeters),
-    heading: Math.round(heading),
-    speed_knots: speedKnots,
+    heading: Math.round(f.track || 0),
+    speed_knots: typeof f.gs === 'number' ? Math.round(f.gs * 10) / 10 : null,
     model: f.t || 'Unknown',
-    icao24: f.hex || '',
+    icao24: (f.hex || '').toLowerCase(),
     registration: f.r || 'N/A',
     squawk: f.squawk || '',
     airline_code: airlineCode,
-    aircraft_category: isHeli ? 'heli' : 'plane',
+    aircraft_category: 'plane',
     category,
-    grounded: isGrounded,
-    nac_p: f.nac_p,
+    grounded: typeof altRaw === 'number' && altRaw < 100,
     type: 'flight',
   };
 }
 
-// In-memory cache to prevent global fan-out abuse
-// NOTE (Issue #110): This cache is per-isolate in serverless environments (Vercel).
-// Multiple isolates may each hold their own cache, but this is acceptable because:
-// 1. It coalesces concurrent requests within the same isolate
-// 2. It prevents hammering adsb.lol which would cause rate-limit bans
-// For a globally shared cache, migrate to Vercel KV or similar persistent store.
-let cachedData: any = null;
+async function fetchFromAdsbFallback(): Promise<FlightPayload | null> {
+  const results = await Promise.allSettled(FALLBACK_REGIONS.map(fetchFallbackRegion));
+  const seen = new Set<string>();
+  const flights: Flight[] = [];
+  for (const r of results) {
+    if (r.status !== 'fulfilled') continue;
+    for (const ac of r.value) {
+      const hex = (ac.hex || '').toLowerCase().trim();
+      if (hex && seen.has(hex)) continue;
+      if (hex) seen.add(hex);
+      const f = classifyAdsb(ac);
+      if (f) flights.push(f);
+    }
+  }
+  if (flights.length === 0) return null;
+  return bucketAndCap(flights, 'adsb.fi', flights.length);
+}
+
+// ── In-memory cache + request coalescing (per-isolate; protects the upstream from bursts) ──
+let cachedData: FlightPayload | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL = 45000; // 45 seconds cache window
-let fetchPromise: Promise<any> | null = null;
+const CACHE_TTL = 30_000;
+let fetchPromise: Promise<FlightPayload | null> | null = null;
+
+async function loadFlights(): Promise<FlightPayload | null> {
+  const viaOpenSky = await fetchFromOpenSky().catch(() => null);
+  if (viaOpenSky) return viaOpenSky;
+  return fetchFromAdsbFallback().catch(() => null);
+}
 
 export async function GET(request: Request) {
-  const limited = rateLimitOr429(request, 60); if (limited) return limited;
+  const limited = rateLimitOr429(request, 60);
+  if (limited) return limited;
   const now = Date.now();
 
-  // Return cached data if within TTL
   if (cachedData && now - lastFetchTime < CACHE_TTL) {
     return NextResponse.json(cachedData, {
       headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
     });
   }
 
-  // Coalesce concurrent requests: wait for the active fetch rather than starting a new one
   if (fetchPromise) {
-    try {
-      const data = await fetchPromise;
+    const data = await fetchPromise.catch(() => null);
+    if (data) {
       return NextResponse.json(data, {
         headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
       });
-    } catch {
-      // Fallback to error if the pending fetch failed
-      return NextResponse.json({ error: 'Failed to fetch flight data' }, { status: 500 });
     }
+    if (cachedData) return NextResponse.json(cachedData);
+    return NextResponse.json({ error: 'Failed to fetch flight data' }, { status: 502 });
   }
 
-  const JAMMING_NACAP_THRESHOLD = 4;
-
-  // Start new global fetch
-  fetchPromise = (async () => {
-    // Fetch all 6 regions in parallel
-    const regionResults = await Promise.allSettled(
-      REGIONS.map(r => fetchRegion(r))
-    );
-
-    const allRaw: any[] = [];
-    const seenHex = new Set<string>();
-
-    for (const result of regionResults) {
-      if (result.status === 'fulfilled') {
-        for (const ac of result.value) {
-          const hex = (ac.hex || '').toLowerCase().trim();
-          if (hex && !seenHex.has(hex)) {
-            seenHex.add(hex);
-            allRaw.push(ac);
-          }
-        }
-      }
-    }
-
-    // Classify all flights
-    const commercial: any[] = [];
-    const privateFl: any[] = [];
-    const jets: any[] = [];
-    const military: any[] = [];
-    const gpsJamming: any[] = [];
-
-    for (const raw of allRaw) {
-      const flight = classifyFlight(raw);
-      if (!flight) continue;
-
-      // GPS jamming detection
-      if (typeof flight.nac_p === 'number' && flight.nac_p <= JAMMING_NACAP_THRESHOLD && !flight.grounded) {
-        gpsJamming.push({
-          lat: flight.lat,
-          lng: flight.lng,
-          nac_p: flight.nac_p,
-          callsign: flight.callsign,
-        });
-      }
-
-      switch (flight.category) {
-        case 'military': military.push(flight); break;
-        case 'jet': jets.push(flight); break;
-        case 'private': privateFl.push(flight); break;
-        default: commercial.push(flight);
-      }
-    }
-
-    // Aggregate GPS jamming zones (grid-based)
-    const jammingZones = aggregateJamming(gpsJamming, JAMMING_NACAP_THRESHOLD);
-
-    let remaining = MAX_TOTAL_FLIGHTS;
-    const take = (arr: any[]) => {
-      const out = arr.slice(0, remaining);
-      remaining -= out.length;
-      return out;
-    };
-    const militaryFlights = take(military);
-    const privateJets = take(jets);
-    const privateFlights = take(privateFl);
-    const commercialFlights = take(commercial);
-
-    return {
-      commercial_flights: commercialFlights,
-      private_flights: privateFlights,
-      private_jets: privateJets,
-      military_flights: militaryFlights,
-      gps_jamming: jammingZones,
-      total: allRaw.length,
-      returned_total: militaryFlights.length + privateJets.length + privateFlights.length + commercialFlights.length,
-      timestamp: new Date().toISOString(),
-    };
-  })();
-
+  fetchPromise = loadFlights();
   try {
     const data = await fetchPromise;
-    cachedData = data;
-    lastFetchTime = Date.now();
-    fetchPromise = null;
-
-    const cacheControl = data.total < 100 
-      ? 'no-store, max-age=0' 
-      : 'public, s-maxage=30, stale-while-revalidate=60';
-
-    return NextResponse.json(data, {
-      headers: {
-        'Cache-Control': cacheControl,
-      },
-    });
+    if (data) {
+      cachedData = data;
+      lastFetchTime = Date.now();
+      return NextResponse.json(data, {
+        headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
+      });
+    }
+    // Both sources failed — serve stale if we have it, otherwise error.
+    if (cachedData) {
+      return NextResponse.json(cachedData, { headers: { 'Cache-Control': 'no-store' } });
+    }
+    return NextResponse.json({ error: 'Failed to fetch flight data' }, { status: 502 });
   } catch (error) {
     console.error('Flight fetch error:', error);
+    if (cachedData) return NextResponse.json(cachedData, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ error: 'Failed to fetch flight data' }, { status: 500 });
+  } finally {
     fetchPromise = null;
-    return NextResponse.json(
-      { error: 'Failed to fetch flight data' },
-      { status: 500 }
-    );
   }
 }
-
-function aggregateJamming(points: any[], threshold: number) {
-  if (points.length === 0) return [];
-  const grid = new Map<string, { lat: number; lng: number; count: number; total_nac_p: number }>();
-  const GRID_SIZE = 2; // degrees
-
-  for (const p of points) {
-    const gLat = Math.floor(p.lat / GRID_SIZE) * GRID_SIZE;
-    const gLng = Math.floor(p.lng / GRID_SIZE) * GRID_SIZE;
-    const key = `${gLat},${gLng}`;
-
-    if (!grid.has(key)) {
-      grid.set(key, { lat: gLat + GRID_SIZE / 2, lng: gLng + GRID_SIZE / 2, count: 0, total_nac_p: 0 });
-    }
-    const cell = grid.get(key)!;
-    cell.count++;
-    cell.total_nac_p += p.nac_p;
-  }
-
-  return Array.from(grid.values())
-    .filter(z => z.count >= 3) // Minimum 3 aircraft with degraded NACp
-    .map(z => ({
-      lat: z.lat,
-      lng: z.lng,
-      severity: Math.round((1 - (z.total_nac_p / z.count) / threshold) * 100),
-      count: z.count,
-    }));
-}
-

@@ -24,6 +24,7 @@ const WAZE_KIND_COLOR: unknown[] = ['match', ['get', 'kind'], 'police', '#FF1744
 const CCTV_CONTINENTS: ReadonlyArray<readonly [string, string]> = [
   ['cctv_europe', 'cameras_europe'],
   ['cctv_north_america', 'cameras_north_america'],
+  ['cctv_united_states', 'cameras_united_states'],
   ['cctv_asia', 'cameras_asia'],
   ['cctv_oceania', 'cameras_oceania'],
 ];
@@ -235,7 +236,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
     // Headless: cameras are toggled per-continent from the Surveillance panel, not the rail.
     // The continent feeds fill cameras_<continent> buckets; this single source unions them.
     id: 'cctv', label: 'CCTV Cameras', group: 'SURVEIL', icon: 'Camera', color: '#7E57C2', headless: true,
-    countBuckets: ['cameras_europe', 'cameras_north_america', 'cameras_asia', 'cameras_oceania'],
+    countBuckets: ['cameras_europe', 'cameras_north_america', 'cameras_united_states', 'cameras_asia', 'cameras_oceania'],
     styleLayers: [
       { id: 'cctv-glow', source: 'cctv', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 5,8, 10,14, 14,20], 'circle-color': '#000000', 'circle-opacity': 0.35, 'circle-blur': 1 } },
       { id: 'cctv-dots', source: 'cctv', type: 'circle', paint: (t) => ({ 'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,5, 10,8, 14,12], 'circle-color': cameraColor(t), 'circle-opacity': 0.9, 'circle-stroke-width': 2.5, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.9 }) },

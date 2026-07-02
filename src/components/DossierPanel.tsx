@@ -293,6 +293,14 @@ function DossierPanel({ open, target, requestId, onClose, onLoaded, onLocate }: 
               </section>
             )}
 
+            {/* Photos — honest empty state (address/route only) */}
+            {dossier && (dossier.kind === 'address' || dossier.kind === 'route') && (!dossier.media || dossier.media.length === 0) && (
+              <section>
+                <div className="text-[10px] font-mono font-bold tracking-widest text-[var(--gold-primary)] border-b border-[var(--border-primary)] pb-1.5 mb-2">STREET-LEVEL IMAGERY</div>
+                <div className="text-[10px] font-mono text-white/40 py-1">No street-level imagery found near this location.</div>
+              </section>
+            )}
+
             {/* Sections */}
             {sections.filter((s) => s.body && s.body !== summary).map((s) => (
               <section key={s.id}>
@@ -347,6 +355,14 @@ function DossierPanel({ open, target, requestId, onClose, onLoaded, onLocate }: 
                     </a>
                   ))}
                 </div>
+              </section>
+            )}
+
+            {/* Web leads — honest empty state (address/route only) */}
+            {dossier && (dossier.kind === 'address' || dossier.kind === 'route') && (!dossier.citations || dossier.citations.filter((c) => c.source === 'web').length === 0) && (
+              <section>
+                <div className="text-[10px] font-mono font-bold tracking-widest text-[var(--gold-primary)] border-b border-[var(--border-primary)] pb-1.5 mb-2">WEB LEADS</div>
+                <div className="text-[10px] font-mono text-white/40 py-1">No web leads found for this location.</div>
               </section>
             )}
 

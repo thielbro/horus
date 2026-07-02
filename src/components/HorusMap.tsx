@@ -77,6 +77,46 @@ function safeJsonArray<T = unknown>(value: unknown): T[] {
   }
 }
 
+// Shared airplane-icon renderer — used by both the initial createIcon (addImage) and the
+// theme-switch updateMapIcon (updateImage). Kept in one place so the two never drift in shape
+// or canvas dimensions (updateImage requires the new bitmap to match the original's size).
+const PLANE_ICON_SCALE = 2;
+function drawPlaneIcon(color: string, size: number): { px: number; data: Uint8Array } | null {
+  const px = size * PLANE_ICON_SCALE;
+  const canvas = document.createElement('canvas');
+  canvas.width = px; canvas.height = px;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.translate(px / 2, px / 2);
+  ctx.scale(px / 100, px / 100); // draw in a 100×100 nose-up coordinate space
+  ctx.beginPath();
+  ctx.moveTo(0, -46);                 // nose
+  ctx.bezierCurveTo(5, -40, 6, -22, 6, -12);
+  ctx.lineTo(44, 10);                 // right wingtip
+  ctx.lineTo(44, 18);
+  ctx.lineTo(6, 6);                   // wing trailing edge → fuselage
+  ctx.lineTo(6, 30);
+  ctx.lineTo(20, 40);                 // right tailplane
+  ctx.lineTo(20, 46);
+  ctx.lineTo(0, 40);                  // tail centre
+  ctx.lineTo(-20, 46);                // left tailplane
+  ctx.lineTo(-20, 40);
+  ctx.lineTo(-6, 30);
+  ctx.lineTo(-6, 6);
+  ctx.lineTo(-44, 18);                // left wingtip
+  ctx.lineTo(-44, 10);
+  ctx.lineTo(-6, -12);
+  ctx.bezierCurveTo(-6, -22, -5, -40, 0, -46);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.stroke();
+  return { px, data: new Uint8Array(ctx.getImageData(0, 0, px, px).data) };
+}
+
 function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], dossierOverlay = null, userPosition = null, routeOverlay = null, fitRouteBounds = null, demoMode = false, theme = 'core' }: HorusMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -85,35 +125,24 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
   const themeRef = useRef(theme);
   const dossierOverlayFrameRef = useRef<number | null>(null);
   const geoBatchUpdatesRef = useRef<Record<string, any[]>>({});
+  // Aircraft dead-reckoning: latest polled positions per source + the time they arrived, so a
+  // rAF loop can smoothly advance planes between the (now 30s) polls instead of teleporting.
+  const flightBaseRef = useRef<{ at: number; sources: Record<string, any[]> }>({ at: 0, sources: {} });
+  const flightRafRef = useRef<number | null>(null);
+  const flightFrameTsRef = useRef(0);
   const [mapReady, setMapReady] = useState(false);
   const prevStyleRef = useRef(mapStyle);
 
   useEffect(() => { onEntityClickRef.current = onEntityClick; }, [onEntityClick]);
   useEffect(() => { themeRef.current = theme; }, [theme]);
 
-  // Create aircraft icon on canvas (for WebGL symbol layer)
+  // Create a clean airplane icon (for WebGL symbol layer) via the shared renderer. Rendered at
+  // 2× for crisp edges on HiDPI, with a thin dark outline so planes stay legible over bright tiles.
   const createIcon = useCallback((map: maplibregl.Map, id: string, color: string, size: number) => {
     if (map.hasImage(id)) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const cx = size / 2, cy = size / 2;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - size * 0.4);
-    ctx.lineTo(cx - size * 0.12, cy + size * 0.1);
-    ctx.lineTo(cx - size * 0.4, cy + size * 0.2);
-    ctx.lineTo(cx - size * 0.4, cy + size * 0.3);
-    ctx.lineTo(cx - size * 0.12, cy + size * 0.15);
-    ctx.lineTo(cx, cy + size * 0.35);
-    ctx.lineTo(cx + size * 0.12, cy + size * 0.15);
-    ctx.lineTo(cx + size * 0.4, cy + size * 0.3);
-    ctx.lineTo(cx + size * 0.4, cy + size * 0.2);
-    ctx.lineTo(cx + size * 0.12, cy + size * 0.1);
-    ctx.closePath();
-    ctx.fill();
-    map.addImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
+    const img = drawPlaneIcon(color, size);
+    if (!img) return;
+    map.addImage(id, { width: img.px, height: img.px, data: img.data }, { pixelRatio: PLANE_ICON_SCALE });
   }, []);
 
   const createDot = useCallback((map: maplibregl.Map, id: string, color: string, size: number) => {
@@ -1203,13 +1232,89 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     }
   }, [mapReady, registryVersion, data, activeLayers, setGeo]);
 
-  // Flight data → GeoJSON (GPU rendered, registry-driven with per-layer decimation)
+  // Flight data → GeoJSON (GPU rendered). Positions are dead-reckoned between polls by a rAF
+  // loop so planes glide continuously (MTS-style) instead of jumping every 30s. Each source
+  // keeps the same per-layer decimation as the registry builtins.
   useEffect(() => {
     if (!mapReady) return;
-    renderRegistryLayer(setGeo, 'flights', data, activeLayers);
-    renderRegistryLayer(setGeo, 'private', data, activeLayers);
-    renderRegistryLayer(setGeo, 'jets', data, activeLayers);
-    renderRegistryLayer(setGeo, 'military', data, activeLayers);
+
+    // Build the base feature set per source from the latest poll. Mirrors builtins' flightFeatures.
+    const buildBase = (arr: any[] | undefined, decimate: number) => {
+      const list = Array.isArray(arr) ? arr : [];
+      const out: any[] = [];
+      for (let i = 0; i < list.length; i++) {
+        if (decimate > 1 && i % decimate !== 0) continue;
+        const f = list[i];
+        if (typeof f?.lat !== 'number' || typeof f?.lng !== 'number') continue;
+        out.push({
+          lat0: f.lat, lng0: f.lng,
+          heading: f.heading || 0,
+          // knots → degrees/sec of great-circle travel (1 nm = 1/60°).
+          degPerSec: typeof f.speed_knots === 'number' && !f.grounded ? (f.speed_knots / 3600) / 60 : 0,
+          props: { callsign: f.callsign, heading: f.heading || 0, alt: f.alt, model: f.model, speed_knots: f.speed_knots, registration: f.registration, icao24: f.icao24 },
+        });
+      }
+      return out;
+    };
+
+    const SPECS: Array<{ source: string; arr: any[] | undefined; decimate: number; active: boolean }> = [
+      { source: 'flights', arr: data.commercial_flights, decimate: 10, active: !!activeLayers.flights },
+      { source: 'private-fl', arr: data.private_flights, decimate: 2, active: !!activeLayers.private },
+      { source: 'jets', arr: data.private_jets, decimate: 2, active: !!activeLayers.jets },
+      { source: 'military', arr: data.military_flights, decimate: 1, active: !!activeLayers.military },
+    ];
+
+    const sources: Record<string, any[]> = {};
+    for (const spec of SPECS) {
+      sources[spec.source] = spec.active ? buildBase(spec.arr, spec.decimate) : [];
+    }
+    flightBaseRef.current = { at: performance.now(), sources };
+
+    const MAX_ADVANCE_SEC = 90;   // clamp so a missed poll can't fling planes across the map
+    const FRAME_MS = 100;         // ~10 fps is plenty for smooth motion and cheap on setData
+
+    const toFeature = (a: any, elapsedSec: number) => {
+      let lat = a.lat0, lng = a.lng0;
+      if (a.degPerSec > 0 && elapsedSec > 0) {
+        const dist = a.degPerSec * elapsedSec;          // degrees of travel
+        const hdg = (a.heading * Math.PI) / 180;
+        lat = a.lat0 + dist * Math.cos(hdg);
+        const cosLat = Math.cos((a.lat0 * Math.PI) / 180) || 1e-6;
+        lng = a.lng0 + (dist * Math.sin(hdg)) / cosLat;
+      }
+      return { type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: a.props };
+    };
+
+    const anyMotion = Object.values(sources).some((list) => list.some((a) => a.degPerSec > 0));
+
+    const draw = (elapsedSec: number) => {
+      const base = flightBaseRef.current.sources;
+      for (const spec of SPECS) {
+        const list = base[spec.source] || [];
+        setGeo(spec.source, list.map((a) => toFeature(a, elapsedSec)));
+      }
+    };
+
+    // Initial snap to the real reported positions.
+    draw(0);
+
+    const frame = (ts: number) => {
+      if (ts - flightFrameTsRef.current >= FRAME_MS) {
+        flightFrameTsRef.current = ts;
+        const elapsed = Math.min(MAX_ADVANCE_SEC, (performance.now() - flightBaseRef.current.at) / 1000);
+        draw(elapsed);
+      }
+      flightRafRef.current = requestAnimationFrame(frame);
+    };
+
+    if (anyMotion) flightRafRef.current = requestAnimationFrame(frame);
+
+    return () => {
+      if (flightRafRef.current != null) {
+        cancelAnimationFrame(flightRafRef.current);
+        flightRafRef.current = null;
+      }
+    };
   }, [mapReady, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military, setGeo]);
 
     // Update aircraft icon colors dynamically on theme switch
@@ -1232,26 +1337,9 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
 
       const updateMapIcon = (id: string, color: string, size: number) => {
         if (!map.hasImage(id)) return;
-        const canvas = document.createElement('canvas');
-        canvas.width = size; canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        const cx = size / 2, cy = size / 2;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy - size * 0.4);
-        ctx.lineTo(cx - size * 0.12, cy + size * 0.1);
-        ctx.lineTo(cx - size * 0.4, cy + size * 0.2);
-        ctx.lineTo(cx - size * 0.4, cy + size * 0.3);
-        ctx.lineTo(cx - size * 0.12, cy + size * 0.15);
-        ctx.lineTo(cx, cy + size * 0.35);
-        ctx.lineTo(cx + size * 0.12, cy + size * 0.15);
-        ctx.lineTo(cx + size * 0.4, cy + size * 0.3);
-        ctx.lineTo(cx + size * 0.4, cy + size * 0.2);
-        ctx.lineTo(cx + size * 0.12, cy + size * 0.1);
-        ctx.closePath();
-        ctx.fill();
-        map.updateImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
+        const img = drawPlaneIcon(color, size);
+        if (!img) return;
+        map.updateImage(id, { width: img.px, height: img.px, data: img.data });
       };
 
       const updateDotIcon = (id: string, color: string, size: number) => {

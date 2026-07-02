@@ -21,6 +21,14 @@ import { fetchNewZealandCameras } from '@/app/api/cctv/newzealand';
 import { fetchQueenslandCameras } from '@/app/api/cctv/queensland';
 import { fetchVictoriaCameras } from '@/app/api/cctv/victoria';
 import { fetchSurveillanceMapFoundationCameras } from '@/app/api/cctv/surveillance-map-foundation';
+import {
+  fetchNewYorkCameras,
+  fetchGeorgiaCameras,
+  fetchNorthCarolinaCameras,
+  fetchPennsylvaniaCameras,
+  fetchConnecticutCameras,
+  fetchNewEnglandCameras,
+} from '@/app/api/cctv/us-atms';
 import { settleCameraFetchers } from '@/app/api/cctv/fanout';
 
 /**
@@ -485,6 +493,13 @@ const REGION_FETCHERS: Record<string, () => Promise<any[]>> = {
   'us-west': async () => [...await fetchWSDOTCameras(), ...await fetchCaltransCameras(), ...fetchSurveillanceMapFoundationCameras('us-west')],
   'us-east': fetchUSEastCameras,
   'us-central': fetchUSCentralCameras,
+  // Broad US state-DOT coverage (Castle Rock ATMS 511 platform).
+  'us-ny': fetchNewYorkCameras,
+  'us-ga': fetchGeorgiaCameras,
+  'us-nc': fetchNorthCarolinaCameras,
+  'us-pa': fetchPennsylvaniaCameras,
+  'us-ct': fetchConnecticutCameras,
+  'us-newengland': fetchNewEnglandCameras,
   'canada': fetchCanadaCameras,
   'europe': fetchEuropeCameras,
   'asia': fetchAsiaCameras,
@@ -517,6 +532,8 @@ const REGION_FETCHERS: Record<string, () => Promise<any[]>> = {
 const CONTINENTS: Record<string, string[]> = {
   europe: ['uk', 'europe', 'bulgaria', 'greece', 'serbia', 'macedonia', 'turkey', 'romania', 'italy', 'czechia', 'slovakia', 'germany', 'france', 'spain', 'poland', 'switzerland'],
   'north-america': ['us-west', 'us-east', 'us-central', 'canada'],
+  // Dedicated United States bucket — all US regions incl. the state-DOT ATMS sources.
+  'united-states': ['us-west', 'us-east', 'us-central', 'us-ny', 'us-ga', 'us-nc', 'us-pa', 'us-ct', 'us-newengland'],
   asia: ['asia', 'japan', 'middle-east'],
   oceania: ['australia', 'queensland', 'victoria', 'newzealand'],
 };
