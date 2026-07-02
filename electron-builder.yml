@@ -12,6 +12,7 @@ directories:
 files:
   - desktop/**/*
   - "!desktop/release/**"
+  - "!desktop/release-*/**"
   - "!desktop/.staging/**"
   - "!desktop/build/**"
   - package.json

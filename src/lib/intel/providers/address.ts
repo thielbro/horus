@@ -14,6 +14,7 @@ import { haversineMeters, pointBbox } from '@/lib/geo';
 import type { BBox } from '@/lib/overpass';
 import { curatedPoliceInBoxes, isWithinCuratedCoverage } from '@/lib/police/curated';
 import { safeAbortTimeout, safeAbortAny, releaseResponseBody } from '@/lib/http-utils';
+import { findPanorama } from '@/lib/streetview/scrape';
 
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const DEFAULT_RADIUS_M = 400;
@@ -223,14 +224,60 @@ async function fetchWikiNearby(lat: number, lng: number, signal?: AbortSignal): 
   }
 }
 
-async function fetchPhotos(lat: number, lng: number, signal?: AbortSignal): Promise<MediaItem[]> {
-  const token = process.env.MAPILLARY_TOKEN;
-  // No Mapillary token → keyless Wikimedia Commons imagery so photos still appear.
-  if (!token || !token.trim()) return fetchCommonsPhotos(lat, lng, signal);
+// Initial great-circle bearing (degrees, 0=N) from point A to point B — used to aim the Street
+// View camera from the nearest panorama AT the building.
+function bearingDeg(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const d2r = Math.PI / 180;
+  const φ1 = aLat * d2r, φ2 = bLat * d2r, Δλ = (bLng - aLng) * d2r;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+// Building-facing street-level imagery scraped KEYLESS from Google Street View: resolve the
+// nearest panorama, aim the camera FROM that panorama AT the requested building (so shots show
+// the building itself, not just the general area), and return a few views. Image URLs point at
+// /api/streetview, which fetches the actual thumbnails. Returns [] when there's no coverage.
+async function fetchStreetViewPhotos(lat: number, lng: number, signal?: AbortSignal): Promise<MediaItem[]> {
+  const pano = await findPanorama(lat, lng, 60, signal).catch(() => null);
+  if (!pano) return [];
+
+  // Face the building from the panorama; if the pano sits on the point, sweep from due north.
+  const facing = haversineMeters(lat, lng, pano.lat, pano.lng) > 2
+    ? bearingDeg(pano.lat, pano.lng, lat, lng)
+    : 0;
+  const panoUrl = `https://www.google.com/maps?q=&layer=c&cbll=${pano.lat},${pano.lng}&cbp=12,${Math.round(facing)},0,0,0`;
+
+  // A frontal view, a zoomed/tilted-up view (tall buildings), and two oblique angles.
+  const shots = [
+    { heading: facing, fov: 75, pitch: 6 },
+    { heading: facing, fov: 45, pitch: 18 },
+    { heading: (facing - 32 + 360) % 360, fov: 80, pitch: 6 },
+    { heading: (facing + 32) % 360, fov: 80, pitch: 6 },
+  ].slice(0, MAX_PHOTOS);
+
+  return shots.map((s): MediaItem => {
+    const q = (w: number, h: number) =>
+      `/api/streetview?panoid=${encodeURIComponent(pano.panoid)}&yaw=${Math.round(s.heading)}&fov=${s.fov}&pitch=${s.pitch}&w=${w}&h=${h}`;
+    return {
+      type: 'image',
+      url: q(640, 480),
+      thumbUrl: q(400, 300),
+      lat: pano.lat,
+      lng: pano.lng,
+      heading: s.heading,
+      capturedAt: pano.date,
+      source: 'Google Street View',
+      sourceUrl: panoUrl,
+    };
+  });
+}
+
+async function fetchMapillaryPhotos(lat: number, lng: number, token: string, signal?: AbortSignal): Promise<MediaItem[]> {
   const [s, w, n, e] = pointBbox(lat, lng, PHOTO_BBOX_M); // [south,west,north,east]
   const mapillaryBbox = `${w},${s},${e},${n}`; // Mapillary wants minLng,minLat,maxLng,maxLat
   const url =
-    `https://graph.mapillary.com/images?access_token=${encodeURIComponent(token.trim())}` +
+    `https://graph.mapillary.com/images?access_token=${encodeURIComponent(token)}` +
     `&fields=id,thumb_1024_url,thumb_256_url,captured_at,compass_angle,geometry&bbox=${mapillaryBbox}&limit=20`;
   try {
     const res = await fetch(url, { signal: safeAbortAny([signal, safeAbortTimeout(MAPILLARY_TIMEOUT_MS)]) });
@@ -265,6 +312,21 @@ async function fetchPhotos(lat: number, lng: number, signal?: AbortSignal): Prom
   } catch {
     return [];
   }
+}
+
+// Priority: Google Street View (building-facing, when GOOGLE_MAPS_API_KEY set + coverage) →
+// Mapillary (if token) → keyless Wikimedia Commons (general-area landmarks).
+async function fetchPhotos(lat: number, lng: number, signal?: AbortSignal): Promise<MediaItem[]> {
+  const streetView = await fetchStreetViewPhotos(lat, lng, signal).catch(() => []);
+  if (streetView.length) return streetView;
+
+  const token = process.env.MAPILLARY_TOKEN;
+  if (token && token.trim()) {
+    const mapillary = await fetchMapillaryPhotos(lat, lng, token.trim(), signal).catch(() => []);
+    if (mapillary.length) return mapillary;
+  }
+
+  return fetchCommonsPhotos(lat, lng, signal);
 }
 
 function classifyPrivacy(geo: GeoResult, occupant?: string): Privacy {
