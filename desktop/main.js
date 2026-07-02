@@ -41,7 +41,8 @@ const BACKEND_RESTART_BASE_MS = 1000;
 const BACKEND_RESTART_MAX_MS = 10000;
 const MAX_SETTINGS_BYTES = 256 * 1024;
 
-// Bundled OSINT backends (scanner = RECON, intel = ontology engine). Each is a tiny
+// Bundled OSINT backends (scanner = RECON, intel = ontology engine, live-feed = live
+// activation broker). Each is a tiny
 // self-contained Express app forked the same way as the Next server (Electron's node via
 // ELECTRON_RUN_AS_NODE), shipped under resources/<dir> by desktop/after-pack.js.
 let managedBackends = [];
@@ -253,7 +254,7 @@ async function forkBackend(state) {
 // Start the bundled backends the app should manage and return the engine-env overrides
 // (their resolved URLs + the scanner shared key). Idempotent: a second call (e.g. on a
 // Next-server restart) returns the cached overrides without re-forking. A user-configured
-// SCANNER_URL / INTEL_URL opts that backend out — we don't launch a bundled copy.
+// SCANNER_URL / INTEL_URL / LIVE_FEED_URL opts that backend out; we don't launch a bundled copy.
 async function startManagedBackends(apiKeys) {
   if (backendUrlOverrides) return backendUrlOverrides;
   const overrides = {};
@@ -276,6 +277,13 @@ async function startManagedBackends(apiKeys) {
       id: 'intel', dirName: 'intel', entry: 'server.js', healthPath: '/health',
       portEnv: 'INTEL_PORT', extraEnv: {},
       urls: (port) => ({ INTEL_URL: `http://127.0.0.1:${port}` }),
+    });
+  }
+  if (!isNonBlank(apiKeys.LIVE_FEED_URL)) {
+    specs.push({
+      id: 'live-feed', dirName: 'live-feed', entry: 'server.js', healthPath: '/health',
+      portEnv: 'PORT', extraEnv: { AIS_API_KEY: apiKeys.AIS_API_KEY || process.env.AIS_API_KEY || '' },
+      urls: (port) => ({ LIVE_FEED_URL: `http://127.0.0.1:${port}` }),
     });
   }
 

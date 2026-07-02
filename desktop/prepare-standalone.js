@@ -4,9 +4,10 @@
 // and .next/static are copied in alongside server.js. Output goes to desktop/.staging/server,
 // which after-pack.js copies into resources/server (see electron-builder.yml).
 //
-// It also stages the two bundled OSINT backends (scanner = RECON, intel = ontology engine)
-// into desktop/.staging/{scanner,intel} with their production node_modules installed, so the
-// packaged app can fork them locally. after-pack.js copies those into resources/{scanner,intel}.
+// It also stages the bundled OSINT backends (scanner = RECON, intel = ontology engine,
+// live-feed = activation broker) into desktop/.staging/* with their production node_modules
+// installed, so the packaged app can fork them locally. after-pack.js copies those into
+// resources/*.
 //
 // Run AFTER `next build`:  node desktop/prepare-standalone.js
 
@@ -104,3 +105,4 @@ console.log('[prepare-standalone] assembled →', path.relative(root, out));
 // Bundled OSINT backends. intel additionally needs sources.js (required by server.js).
 stageBackend('scanner', ['server.js', 'portscan.js', 'package.json', 'package-lock.json']);
 stageBackend('intel', ['server.js', 'sources.js', 'package.json', 'package-lock.json']);
+stageBackend('live-feed', ['server.js', 'package.json', 'package-lock.json']);

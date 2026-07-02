@@ -1,6 +1,7 @@
 const DESKTOP_ENGINE_DEFAULTS = Object.freeze({
   INTEL_URL: 'http://127.0.0.1:4000',
   SCANNER_URL: 'http://127.0.0.1:7700',
+  LIVE_FEED_URL: 'http://127.0.0.1:7900',
   // On-the-go intel framework defaults (user-run external services; overridable in Settings).
   LLM_URL: 'http://127.0.0.1:11434/v1',
   FIRECRAWL_URL: 'http://127.0.0.1:3002',

@@ -26,6 +26,7 @@ services:
       # Umami analytics — opt-in. Leave UMAMI_ENDPOINT blank to disable it.
       # Set it in .env to a URL reachable from this container when needed.
       - UMAMI_ENDPOINT=${UMAMI_ENDPOINT:-}
+      - LIVE_FEED_URL=${LIVE_FEED_URL:-http://live-feed:7900}
       - SURVEILLANCE_FEED_URL=${SURVEILLANCE_FEED_URL:-http://surveillance-feed:7800}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -196,6 +197,33 @@ services:
     networks:
       - default
 
+  # Activation-gated live data backend. Maritime AIS sampling is memory-only and
+  # starts only after the renderer signals that the maritime layer is active.
+  live-feed:
+    build:
+      context: ./live-feed
+      dockerfile: Dockerfile
+    container_name: horus-live-feed
+    environment:
+      - PORT=7900
+      - AIS_API_KEY=${AIS_API_KEY:-}
+      - LIVE_FEED_MARITIME_POLL_MS=${LIVE_FEED_MARITIME_POLL_MS:-600000}
+      - LIVE_FEED_MARITIME_SAMPLE_MS=${LIVE_FEED_MARITIME_SAMPLE_MS:-45000}
+      - LIVE_FEED_LEASE_TTL_MS=${LIVE_FEED_LEASE_TTL_MS:-150000}
+    ports:
+      - "${LIVE_FEED_BIND:-127.0.0.1}:${LIVE_FEED_PORT:-7900}:7900"
+    expose:
+      - "7900"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:7900/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - default
+
 volumes:
   nginx-cache:
   yente-elasticsearch-data:
@@ -241,6 +269,9 @@ x-casaos:
     - container: SURVEILLANCE_FEED_URL
       description:
         en_us: "(Optional) Fixed surveillance feed backend URL, e.g. http://surveillance-feed:7800"
+    - container: LIVE_FEED_URL
+      description:
+        en_us: "(Optional) Activation-gated live feed backend URL, e.g. http://live-feed:7900"
     - container: SURVEILLANCE_FEED_ADMIN_TOKEN
       description:
         en_us: "(Optional) Bearer token for surveillance feed imports and refresh jobs."

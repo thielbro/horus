@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+
+const root = process.cwd();
+const file = (path) => readFileSync(join(root, path), 'utf8');
+
+test('maritime live data is activation-driven instead of a normal lazy feed', () => {
+  const page = file('src/app/page.tsx');
+  const feeds = file('src/lib/registry/feeds.ts');
+
+  assert.match(page, /maritime:\s*false/);
+  assert.match(page, /useLiveFeedActivity\(activeLayers,\s*mapView,\s*fetchEndpoint\)/);
+  assert.doesNotMatch(feeds, /id:\s*'maritime'/);
+});
+
+test('Next maritime routes proxy to the live-feed sidecar without owning AIS sockets', () => {
+  const maritimeRoute = file('src/app/api/maritime/route.ts');
+  const activityRoute = file('src/app/api/live-feed/activity/route.ts');
+  const proxy = file('src/lib/live-feed.ts');
+
+  assert.match(maritimeRoute, /runtime\s*=\s*'nodejs'/);
+  assert.match(maritimeRoute, /dynamic\s*=\s*'force-dynamic'/);
+  assert.match(maritimeRoute, /proxyMaritimeSnapshot/);
+  assert.doesNotMatch(maritimeRoute, /WebSocket|shipsCache|AIS_API_KEY/);
+
+  assert.match(activityRoute, /POST\(request: Request\)/);
+  assert.match(activityRoute, /proxyLiveFeedActivity/);
+  assert.match(proxy, /LIVE_FEED_URL/);
+  assert.match(proxy, /\/v1\/feeds\/maritime\/snapshot/);
+  assert.match(proxy, /\/v1\/activity/);
+});
+
+test('LIVE_FEED_URL is exposed in settings and environment documentation', () => {
+  assert.match(file('src/lib/settings/index.ts'), /LIVE_FEED_URL\?: string/);
+  assert.match(file('src/components/SettingsPanel.tsx'), /LIVE_FEED_URL/);
+  assert.match(file('.env.example'), /LIVE_FEED_URL/);
+  assert.match(file('.env.template'), /LIVE_FEED_URL/);
+  assert.match(file('docker-compose.yml'), /LIVE_FEED_URL/);
+});

@@ -7,6 +7,7 @@ export * from './store';
 export { resolveIcon } from './icons';
 export { registerFeed, unregisterFeed, clearFeedsByPlugin, getFeeds, BUILTIN_FEEDS } from './feeds';
 export { useFeedEngine } from './engine';
+export { useLiveFeedActivity } from './useLiveFeedActivity';
 export { useViewportLayers } from './useViewportLayers';
 export { addRegistryLayer, renderRegistryLayer, removeRegistryLayer, updateRegistryLayerTheme } from './mapEngine';
 export { getRegistryVersion, subscribeRegistry } from './events';

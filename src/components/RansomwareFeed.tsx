@@ -56,7 +56,13 @@ export default function RansomwareFeed({ data, focus, onLocate }: RansomwareFeed
   const [expanded, setExpanded] = useState(true);
   const [query, setQuery] = useState('');
 
-  const posts: RansomwarePost[] = Array.isArray(data?.ransomware_posts) ? data.ransomware_posts : [];
+  const rawPosts = data?.ransomware_posts;
+  const focusId = focus?.id;
+  const focusTs = focus?.ts;
+  const posts: RansomwarePost[] = useMemo(
+    () => (Array.isArray(rawPosts) ? rawPosts : []),
+    [rawPosts],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -75,28 +81,28 @@ export default function RansomwareFeed({ data, focus, onLocate }: RansomwareFeed
   // the first 60 rows, splice it in at the top so its row exists to scroll to.
   const visible = useMemo(() => {
     const base = filtered.slice(0, 60);
-    if (focus?.id && !base.some((p) => p.id === focus.id)) {
-      const extra = filtered.find((p) => p.id === focus.id);
+    if (focusId && !base.some((p) => p.id === focusId)) {
+      const extra = filtered.find((p) => p.id === focusId);
       if (extra) return [extra, ...base];
     }
     return base;
-  }, [filtered, focus?.id]);
+  }, [filtered, focusId]);
 
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // A map dot was clicked: expand, clear any filter, then scroll to and flash the post.
   useEffect(() => {
-    if (!focus?.id) return;
+    if (!focusId) return;
     setExpanded(true);
     setQuery('');
-    setHighlightId(focus.id);
+    setHighlightId(focusId);
     const scrollT = setTimeout(() => {
-      rowRefs.current[focus.id]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      rowRefs.current[focusId]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }, 160);
     const clearT = setTimeout(() => setHighlightId(null), 2600);
     return () => { clearTimeout(scrollT); clearTimeout(clearT); };
-  }, [focus?.id, focus?.ts]);
+  }, [focusId, focusTs]);
 
   return (
     <motion.div

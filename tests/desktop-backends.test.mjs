@@ -9,7 +9,7 @@ function file(path) {
   return readFileSync(join(root, path), 'utf8');
 }
 
-test('Electron main launches the bundled scanner + intel backends with the engine', () => {
+test('Electron main launches the bundled scanner, intel, and live-feed backends with the engine', () => {
   const main = file('desktop/main.js');
 
   // Backends are started during the packaged embedded-server boot and their resolved URLs
@@ -27,10 +27,13 @@ test('Electron main launches the bundled scanner + intel backends with the engin
   assert.match(main, /crypto\.randomUUID\(\)/);
   assert.match(main, /SCANNER_URL: `http:\/\/127\.0\.0\.1:\$\{port\}`/);
   assert.match(main, /INTEL_URL: `http:\/\/127\.0\.0\.1:\$\{port\}`/);
+  assert.match(main, /LIVE_FEED_URL: `http:\/\/127\.0\.0\.1:\$\{port\}`/);
+  assert.match(main, /AIS_API_KEY: apiKeys\.AIS_API_KEY/);
 
   // A user-configured remote URL opts that backend out of being launched locally.
   assert.match(main, /if \(!isNonBlank\(apiKeys\.SCANNER_URL\)\)/);
   assert.match(main, /if \(!isNonBlank\(apiKeys\.INTEL_URL\)\)/);
+  assert.match(main, /if \(!isNonBlank\(apiKeys\.LIVE_FEED_URL\)\)/);
 });
 
 test('Electron main waits for backend health and tears them down on quit', () => {
@@ -59,6 +62,7 @@ test('prepare-standalone stages both backends with production deps', () => {
 
   assert.match(prep, /stageBackend\('scanner', \['server\.js', 'portscan\.js', 'package\.json', 'package-lock\.json'\]\)/);
   assert.match(prep, /stageBackend\('intel', \['server\.js', 'sources\.js', 'package\.json', 'package-lock\.json'\]\)/);
+  assert.match(prep, /stageBackend\('live-feed', \['server\.js', 'package\.json', 'package-lock\.json'\]\)/);
   // Production-only install, verified by express landing in node_modules.
   assert.match(prep, /--omit=dev/);
   assert.match(prep, /node_modules', 'express'/);
@@ -68,12 +72,13 @@ test('prepare-standalone stages both backends with production deps', () => {
   assert.match(prep, /npm_config_allow\[_-\]\?scripts/i);
 });
 
-test('after-pack copies server, scanner, and intel into resources with their node_modules', () => {
+test('after-pack copies server, scanner, intel, and live-feed into resources with their node_modules', () => {
   const afterPack = file('desktop/after-pack.js');
 
   assert.match(afterPack, /name: 'server', requireModule: 'next'/);
   assert.match(afterPack, /name: 'scanner', requireModule: 'express'/);
   assert.match(afterPack, /name: 'intel', requireModule: 'express'/);
+  assert.match(afterPack, /name: 'live-feed', requireModule: 'express'/);
   assert.match(afterPack, /resources', tree\.name/);
   assert.match(afterPack, /node_modules', tree\.requireModule/);
   assert.match(afterPack, /throw new Error\(`\[after-pack\] node_modules\/\$\{tree\.requireModule\} missing/);

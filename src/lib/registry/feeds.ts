@@ -28,7 +28,6 @@ export const BUILTIN_FEEDS: FeedDef[] = [
   // mass_surveil) are NOT feed-engine fetches — they're viewport-driven via
   // useViewportLayers (src/lib/registry/useViewportLayers.ts), which queries
   // `/api/<layer>?bbox=<current view>` instead of fixed continent defaults.
-  { id: 'maritime', url: '/api/maritime', transform: (d) => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints, maritime_ships: d.ships }), priority: 'lazy', activatedBy: ['maritime'], intervalMs: 10_000 },
   { id: 'balloons', url: '/api/balloons', transform: (d) => ({ balloons: d.balloons }), priority: 'lazy', activatedBy: ['balloons'], intervalMs: 300_000 },
   { id: 'radiation', url: '/api/radiation', transform: (d) => ({ radiation: d.stations }), priority: 'lazy', activatedBy: ['radiation'], intervalMs: 300_000 },
   { id: 'live_news', url: '/api/live-news', transform: (d) => ({ live_feeds: d.feeds }), priority: 'lazy', activatedBy: ['live_news'] },
