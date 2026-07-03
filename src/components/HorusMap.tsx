@@ -352,8 +352,10 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
       addRegistryLayer(map, 'satellites');
 
       // Maritime — ports & naval bases + chokepoints (registry-driven).
-      // ship-dots / ship-label are added later (after the SDK mesh lines) to keep z-order.
       addRegistryLayer(map, 'maritime');
+      // Live ships use a separate toggle, but their style layers are added later
+      // after the SDK mesh to keep vessel markers above sea-domain lines.
+      addRegistryLayer(map, 'maritime_ships');
 
       // Live News — muted rose (registry-driven)
       addRegistryLayer(map, 'live_news');
@@ -763,13 +765,20 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     });
 
 
-    // ── GDELT Conflicts (with source article) ──
+    // ── GDELT geo-news events (typed, with source article) ──
+    // Mirrors the ['match', ['get','type']] palette in builtins.ts global_incidents.
+    const GDELT_TYPE_COLORS: Record<string, string> = {
+      conflict: '#FF1744', unrest: '#FF9500', political: '#D32F2F', disaster: '#FFD500',
+      cyber: '#7E57C2', diplomacy: '#00E5FF', health: '#00E676',
+    };
     map.on('click', 'gdelt-dots', e => {
       if (!e.features?.length) return;
       const p = e.features[0].properties as any;
       const coords = (e.features[0].geometry as any).coordinates;
-      
-      // Map coordinates to Liveuamap regions
+      const type = String(p.type || 'conflict');
+      const color = GDELT_TYPE_COLORS[type] || '#D32F2F';
+
+      // Regional live-map fallback when GDELT has no article URL for the point.
       let sourceUrl = p.url || '';
       if (!sourceUrl || sourceUrl.includes('google.com')) {
         const [lng, lat] = coords;
@@ -782,10 +791,14 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
         else sourceUrl = 'https://liveuamap.com/'; // Global fallback
       }
 
-      popup(coords, `<div style="${pStyle}border:1px solid rgba(255,61,61,0.3);">
-        <div style="color:#FF3D3D;font-size:12px;font-weight:700;margin-bottom:6px;">⚠️ CONFLICT EVENT</div>
-        <div style="font-size:9px;color:#E8E6E0;margin-bottom:8px;line-height:1.4;">${p.name||'Unclassified incident'}</div>
-        <a href="${sourceUrl}" target="_blank" style="${linkStyle}flex:1;text-align:center;color:#FF3D3D;border:1px solid rgba(255,61,61,0.4);background:rgba(255,61,61,0.15);display:inline-block;width:100%;box-sizing:border-box;margin-top:4px;">[ OPEN SOURCE ↗ ]</a>
+      const count = Number(p.count) || 1;
+      popup(coords, `<div style="${pStyle}border:1px solid ${color}4D;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="color:${color};font-size:12px;font-weight:700;letter-spacing:0.08em;">⚠ ${escapeHtml(type.toUpperCase())} EVENT</div>
+          <div style="color:#5C5A54;font-size:9px;">${count} report${count === 1 ? '' : 's'}</div>
+        </div>
+        <div style="font-size:9px;color:#E8E6E0;margin-bottom:8px;line-height:1.4;">${escapeHtml(String(p.name || 'Unclassified incident'))}</div>
+        <a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener" style="${linkStyle}flex:1;text-align:center;color:${color};border:1px solid ${color}66;background:${color}26;display:inline-block;width:100%;box-sizing:border-box;margin-top:4px;">[ OPEN ARTICLE ↗ ]</a>
       </div>`);
     });
 
@@ -1450,7 +1463,12 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
   useEffect(() => {
     if (!mapReady) return;
     renderRegistryLayer(setGeo, 'maritime', data, activeLayers);
-  }, [mapReady, data.maritime_ports, data.maritime_chokepoints, data.maritime_ships, activeLayers.maritime, setGeo]);
+  }, [mapReady, data.maritime_ports, data.maritime_chokepoints, activeLayers.maritime, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    renderRegistryLayer(setGeo, 'maritime_ships', data, activeLayers);
+  }, [mapReady, data.maritime_ships, activeLayers.maritime_ships, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;
@@ -1496,7 +1514,7 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     if (!mapReady) return;
     setVis(['eq-circles','eq-label'], activeLayers.earthquakes);
     setVis(['sat-dots'], activeLayers.satellites);
-    setVis(['gdelt-dots'], activeLayers.global_incidents);
+    setVis(['gdelt-dots', 'gdelt-glow'], activeLayers.global_incidents);
 
     setVis(['malware-glow','malware-dots','malware-label'], activeLayers.malware);
     setVis(['network-mesh-atmo', 'network-mesh-glow', 'network-mesh-core'], activeLayers.malware);
@@ -1517,7 +1535,7 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     setVis(['infra-glow','infra-dots','infra-label'], activeLayers.infrastructure);
     setVis(['maritime-glow','maritime-dots','maritime-label'], activeLayers.maritime);
     setVis(['choke-glow','choke-dots','choke-label'], activeLayers.maritime);
-    setVis(['ship-dots','ship-label'], activeLayers.maritime);
+    setVis(['ship-dots','ship-label'], activeLayers.maritime_ships);
     setVis(['news-glow','news-dots','news-label'], activeLayers.live_news);
     setVis(['sigint-news-glow','sigint-news-dots','sigint-news-label'], activeLayers.news_intel);
     setVis(['conflict-icons'], activeLayers.conflict_zones !== false);

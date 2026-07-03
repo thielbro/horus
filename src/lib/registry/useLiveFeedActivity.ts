@@ -47,7 +47,8 @@ export function useLiveFeedActivity(
   }, [mapView.bounds]);
 
   useEffect(() => {
-    const isActive = !!activeLayers.maritime;
+    const wantsContext = !!activeLayers.maritime || !!activeLayers.maritime_ships;
+    const wantsLiveShips = !!activeLayers.maritime_ships;
     let heartbeat: ReturnType<typeof setInterval> | null = null;
     let snapshotPoll: ReturnType<typeof setInterval> | null = null;
     let firstSampleRead: ReturnType<typeof setTimeout> | null = null;
@@ -67,22 +68,24 @@ export function useLiveFeedActivity(
 
     const activate = () => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      void postActivity(true, viewportRef.current);
       fetchSnapshot();
-      heartbeat = setInterval(() => {
-        if (typeof document === 'undefined' || !document.hidden) void postActivity(true, viewportRef.current);
-      }, HEARTBEAT_MS);
-      firstSampleRead = setTimeout(fetchSnapshot, FIRST_SAMPLE_READ_MS);
-      snapshotPoll = setInterval(fetchSnapshot, SNAPSHOT_INTERVAL_MS);
+      if (wantsLiveShips) {
+        void postActivity(true, viewportRef.current);
+        heartbeat = setInterval(() => {
+          if (typeof document === 'undefined' || !document.hidden) void postActivity(true, viewportRef.current);
+        }, HEARTBEAT_MS);
+        firstSampleRead = setTimeout(fetchSnapshot, FIRST_SAMPLE_READ_MS);
+        snapshotPoll = setInterval(fetchSnapshot, SNAPSHOT_INTERVAL_MS);
+      }
     };
 
     const deactivate = () => {
       clearTimers();
-      void postActivity(false, viewportRef.current);
+      if (wantsLiveShips) void postActivity(false, viewportRef.current);
     };
 
     const onVisibilityChange = () => {
-      if (!isActive) return;
+      if (!wantsContext) return;
       if (document.hidden) {
         deactivate();
       } else {
@@ -91,13 +94,13 @@ export function useLiveFeedActivity(
       }
     };
 
-    if (isActive) activate();
+    if (wantsContext) activate();
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibilityChange);
-      if (isActive) deactivate();
+      if (wantsContext) deactivate();
       else clearTimers();
     };
-  }, [activeLayers.maritime, fetchEndpoint]);
+  }, [activeLayers.maritime, activeLayers.maritime_ships, fetchEndpoint]);
 }

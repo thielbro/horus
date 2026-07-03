@@ -11,8 +11,29 @@ test('maritime live data is activation-driven instead of a normal lazy feed', ()
   const feeds = file('src/lib/registry/feeds.ts');
 
   assert.match(page, /maritime:\s*false/);
+  assert.match(page, /maritime_ships:\s*false/);
   assert.match(page, /useLiveFeedActivity\(activeLayers,\s*mapView,\s*fetchEndpoint\)/);
   assert.doesNotMatch(feeds, /id:\s*'maritime'/);
+});
+
+test('live ships have a dedicated layer toggle separate from static maritime context', () => {
+  const page = file('src/app/page.tsx');
+  const hook = file('src/lib/registry/useLiveFeedActivity.ts');
+  const registry = file('src/lib/registry/builtins.ts');
+  const map = file('src/components/HorusMap.tsx');
+
+  assert.match(page, /maritime_ships:\s*false/);
+  assert.match(registry, /id:\s*'maritime'[\s\S]*label:\s*'Ports \/ Chokepoints'/);
+  assert.match(registry, /id:\s*'maritime_ships'[\s\S]*label:\s*'Live Ships'/);
+  assert.match(registry, /active\.maritime_ships\s*&&\s*data\.maritime_ships/);
+  assert.doesNotMatch(registry, /id:\s*'maritime'[\s\S]*active\.maritime\s*&&\s*data\.maritime_ships/);
+
+  assert.match(hook, /activeLayers\.maritime_ships/);
+  assert.doesNotMatch(hook, /const isActive = !!activeLayers\.maritime/);
+
+  assert.match(map, /addRegistryLayer\(map,\s*'maritime_ships'\)/);
+  assert.match(map, /renderRegistryLayer\(setGeo,\s*'maritime_ships'/);
+  assert.match(map, /setVis\(\['ship-dots','ship-label'\],\s*activeLayers\.maritime_ships\)/);
 });
 
 test('Next maritime routes proxy to the live-feed sidecar without owning AIS sockets', () => {

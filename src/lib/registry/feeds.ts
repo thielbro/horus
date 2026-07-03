@@ -33,7 +33,7 @@ export const BUILTIN_FEEDS: FeedDef[] = [
   { id: 'live_news', url: '/api/live-news', transform: (d) => ({ live_feeds: d.feeds }), priority: 'lazy', activatedBy: ['live_news'] },
   { id: 'weather', url: '/api/weather', transform: (d) => ({ weather_events: d.events }), priority: 'lazy', activatedBy: ['weather'] },
   { id: 'infrastructure', url: '/api/infrastructure', transform: (d) => ({ infrastructure: d.infrastructure }), priority: 'lazy', activatedBy: ['infrastructure'] },
-  { id: 'gdelt', url: '/api/gdelt', transform: (d) => ({ gdelt: d.events }), priority: 'lazy', activatedBy: ['global_incidents'] },
+  { id: 'gdelt', url: '/api/gdelt', transform: (d) => ({ gdelt: d.events }), priority: 'lazy', activatedBy: ['global_incidents'], intervalMs: 900_000 },
   { id: 'malware', url: '/api/malware', transform: (d) => ({ malware_threats: d.threats }), priority: 'lazy', activatedBy: ['malware'] },
 ];
 

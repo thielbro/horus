@@ -542,8 +542,9 @@ test('extension delta review frontend lifecycle fixes stay wired', () => {
   assert.match(page, /if \(!res\.ok\) throw new Error\('Stats request failed'\)/);
   assert.match(page, /let cancelled = false[\s\S]*bootstrapExtensions\(\)[\s\S]*cancelled/);
   assert.match(page, /active\.forEach\(k => \{[\s\S]*if \(k in next\) \(next as any\)\[k\] = true/);
-  assert.match(page, /function getYouTubeWatchUrl\(url: string\): string \{[\s\S]*new URL\(url\)/);
-  assert.match(page, /sandbox="allow-scripts allow-same-origin allow-presentation"/);
+  // getYouTubeWatchUrl + the sandboxed player iframe moved to the Stream Wall (src/lib/streams.ts, StreamTile.tsx).
+  assert.match(file('src/lib/streams.ts'), /function getYouTubeWatchUrl\(url: string\): string \{[\s\S]*new URL\(url\)/);
+  assert.match(file('src/components/StreamTile.tsx'), /sandbox="allow-scripts allow-same-origin allow-presentation"/);
   assert.match(page, /const handleSweepVisualize = useCallback/);
   assert.match(page, /setMapProjection\('globe'\)[\s\S]*setSweepData/);
 

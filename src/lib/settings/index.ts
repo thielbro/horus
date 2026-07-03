@@ -64,6 +64,23 @@ export interface InstalledPlugin {
   enabled: boolean;
 }
 
+/** A Stream Wall tile — durable facts only (audio focus/mute is never persisted;
+ *  tiles always remount muted per browser autoplay policy). */
+export interface StreamTileState {
+  id: string;
+  /** Original pasted/source URL — re-classified on load. */
+  url: string;
+  name: string;
+  kind: 'youtube' | 'twitch' | 'hls' | 'file' | 'iframe';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  z: number;
+  /** Broadcaster blocks third-party embedding — tile renders an external-only card. */
+  embedBlocked?: boolean;
+}
+
 export interface HorusSettings {
   version: number;
   appearance: {
@@ -80,6 +97,8 @@ export interface HorusSettings {
   plugins: InstalledPlugin[];
   /** No-code custom sources — persisted as serializable CustomSourceSpec objects. */
   customSources: unknown[];
+  /** Stream Wall — multi-livestream tiles floating over the map. */
+  streamWall: { tiles: StreamTileState[] };
 }
 
 export const DEFAULT_SETTINGS: HorusSettings = {
@@ -102,6 +121,7 @@ export const DEFAULT_SETTINGS: HorusSettings = {
   workspaces: [],
   plugins: [],
   customSources: [],
+  streamWall: { tiles: [] },
 };
 
 export type DeepPartial<T> = {

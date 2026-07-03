@@ -204,9 +204,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   },
   // ── MARITIME ──
   {
-    id: 'maritime', label: 'Maritime / Naval', group: 'MARITIME', icon: 'Ship', color: '#26C6DA', countBuckets: ['maritime_ships', 'maritime_ports', 'maritime_chokepoints'],
-    // ship-dots / ship-label style layers stay raw in HorusMap init — they sit after the
-    // SDK mesh lines in z-order, so they can't be added at the maritime/choke init position.
+    id: 'maritime', label: 'Ports / Chokepoints', group: 'MARITIME', icon: 'Anchor', color: '#26C6DA', countBuckets: ['maritime_ports', 'maritime_chokepoints'],
     styleLayers: [
       { id: 'maritime-glow', source: 'maritime', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,6, 5,12, 10,20], 'circle-color': ['match', ['get','type'], 'naval','#D32F2F', 'energy','#E65100', '#26C6DA'], 'circle-opacity': 0.08, 'circle-blur': 1 } },
       { id: 'maritime-dots', source: 'maritime', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,5, 10,9], 'circle-color': ['match', ['get','type'], 'naval','#D32F2F', 'energy','#E65100', '#26C6DA'], 'circle-opacity': 0.8, 'circle-stroke-width': 1.5, 'circle-stroke-color': ['match', ['get','type'], 'naval','#D32F2F', 'energy','#E65100', '#26C6DA'], 'circle-stroke-opacity': 0.35 } },
@@ -218,7 +216,13 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
     render: [
       { source: 'maritime', toFeatures: (data, active) => (active.maritime && data.maritime_ports) ? data.maritime_ports.map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { name: p.name, country: p.country, type: p.type, volume: p.volume, fleet: p.fleet, rank: p.rank } })) : [] },
       { source: 'maritime-choke', toFeatures: (data, active) => (active.maritime && data.maritime_chokepoints) ? data.maritime_chokepoints.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, traffic: c.traffic, risk: c.risk } })) : [] },
-      { source: 'maritime-ships', toFeatures: (data, active) => (active.maritime && data.maritime_ships) ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name || s.mmsi?.toString() || 'Unknown', type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag, mmsi: s.mmsi, imo: s.imo } })) : [] },
+    ],
+  },
+  {
+    id: 'maritime_ships', label: 'Live Ships', group: 'MARITIME', icon: 'Ship', color: '#26C6DA', countBuckets: ['maritime_ships'],
+    // Style layers stay raw in HorusMap init so live vessel markers sit above the SDK mesh.
+    render: [
+      { source: 'maritime-ships', toFeatures: (data, active) => (active.maritime_ships && data.maritime_ships) ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name || s.mmsi?.toString() || 'Unknown', type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag, mmsi: s.mmsi, imo: s.imo } })) : [] },
     ],
   },
   {
@@ -378,10 +382,12 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
   {
     id: 'global_incidents', label: 'Global Incidents', group: 'THREAT', icon: 'AlertTriangle', color: '#D32F2F', countBuckets: ['gdelt'],
     styleLayers: [
-      { id: 'gdelt-dots', source: 'gdelt', type: 'circle', paint: { 'circle-radius': 4, 'circle-color': '#D32F2F', 'circle-opacity': 0.5, 'circle-stroke-width': 1, 'circle-stroke-color': '#D32F2F', 'circle-stroke-opacity': 0.25 } },
+      // Per-type color (mirrored by GDELT_TYPE_COLORS in HorusMap's popup); radius scales with report count.
+      { id: 'gdelt-glow', source: 'gdelt', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['coalesce',['get','count'],1], 1,7, 20,12, 100,16], 'circle-color': ['match', ['get','type'], 'conflict','#FF1744', 'unrest','#FF9500', 'political','#D32F2F', 'disaster','#FFD500', 'cyber','#7E57C2', 'diplomacy','#00E5FF', 'health','#00E676', '#D32F2F'], 'circle-opacity': 0.12, 'circle-blur': 1 } },
+      { id: 'gdelt-dots', source: 'gdelt', type: 'circle', paint: { 'circle-radius': ['interpolate',['linear'],['coalesce',['get','count'],1], 1,3, 20,6, 100,9], 'circle-color': ['match', ['get','type'], 'conflict','#FF1744', 'unrest','#FF9500', 'political','#D32F2F', 'disaster','#FFD500', 'cyber','#7E57C2', 'diplomacy','#00E5FF', 'health','#00E676', '#D32F2F'], 'circle-opacity': 0.6, 'circle-stroke-width': 1, 'circle-stroke-color': ['match', ['get','type'], 'conflict','#FF1744', 'unrest','#FF9500', 'political','#D32F2F', 'disaster','#FFD500', 'cyber','#7E57C2', 'diplomacy','#00E5FF', 'health','#00E676', '#D32F2F'], 'circle-stroke-opacity': 0.3 } },
     ],
     render: [
-      { source: 'gdelt', toFeatures: (data, active) => (active.global_incidents && data.gdelt) ? data.gdelt.map((e: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [e.lng, e.lat] }, properties: { name: e.name } })) : [] },
+      { source: 'gdelt', toFeatures: (data, active) => (active.global_incidents && data.gdelt) ? data.gdelt.map((e: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [e.lng, e.lat] }, properties: { name: e.name, url: e.url, type: e.type, count: e.count } })) : [] },
     ],
   },
   {
