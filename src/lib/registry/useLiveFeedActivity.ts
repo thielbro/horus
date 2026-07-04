@@ -8,7 +8,8 @@ type Bounds = [number, number, number, number]; // [south, west, north, east]
 
 const HEARTBEAT_MS = 60_000;
 const SNAPSHOT_INTERVAL_MS = 600_000;
-const FIRST_SAMPLE_READ_MS = 50_000;
+const FIRST_SAMPLE_READ_POLL_MS = 10_000;
+const FIRST_SAMPLE_READ_STOP_MS = 50_000;
 
 function viewportPayload(bounds?: Bounds) {
   if (!bounds) return null;
@@ -51,15 +52,18 @@ export function useLiveFeedActivity(
     const wantsLiveShips = !!activeLayers.maritime_ships;
     let heartbeat: ReturnType<typeof setInterval> | null = null;
     let snapshotPoll: ReturnType<typeof setInterval> | null = null;
-    let firstSampleRead: ReturnType<typeof setTimeout> | null = null;
+    let sampleReadPoll: ReturnType<typeof setInterval> | null = null;
+    let sampleReadStop: ReturnType<typeof setTimeout> | null = null;
 
     const clearTimers = () => {
       if (heartbeat) clearInterval(heartbeat);
       if (snapshotPoll) clearInterval(snapshotPoll);
-      if (firstSampleRead) clearTimeout(firstSampleRead);
+      if (sampleReadPoll) clearInterval(sampleReadPoll);
+      if (sampleReadStop) clearTimeout(sampleReadStop);
       heartbeat = null;
       snapshotPoll = null;
-      firstSampleRead = null;
+      sampleReadPoll = null;
+      sampleReadStop = null;
     };
 
     const fetchSnapshot = () => {
@@ -74,7 +78,12 @@ export function useLiveFeedActivity(
         heartbeat = setInterval(() => {
           if (typeof document === 'undefined' || !document.hidden) void postActivity(true, viewportRef.current);
         }, HEARTBEAT_MS);
-        firstSampleRead = setTimeout(fetchSnapshot, FIRST_SAMPLE_READ_MS);
+        sampleReadPoll = setInterval(fetchSnapshot, FIRST_SAMPLE_READ_POLL_MS);
+        sampleReadStop = setTimeout(() => {
+          if (sampleReadPoll) clearInterval(sampleReadPoll);
+          sampleReadPoll = null;
+          fetchSnapshot();
+        }, FIRST_SAMPLE_READ_STOP_MS);
         snapshotPoll = setInterval(fetchSnapshot, SNAPSHOT_INTERVAL_MS);
       }
     };

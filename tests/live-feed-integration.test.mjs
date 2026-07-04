@@ -30,6 +30,8 @@ test('live ships have a dedicated layer toggle separate from static maritime con
 
   assert.match(hook, /activeLayers\.maritime_ships/);
   assert.doesNotMatch(hook, /const isActive = !!activeLayers\.maritime/);
+  assert.match(hook, /FIRST_SAMPLE_READ_POLL_MS\s*=\s*10_000/);
+  assert.match(hook, /sampleReadPoll\s*=\s*setInterval\(fetchSnapshot,\s*FIRST_SAMPLE_READ_POLL_MS\)/);
 
   assert.match(map, /addRegistryLayer\(map,\s*'maritime_ships'\)/);
   assert.match(map, /renderRegistryLayer\(setGeo,\s*'maritime_ships'/);

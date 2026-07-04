@@ -21,6 +21,13 @@ const MAX_SHIPS_CACHE = Number(process.env.LIVE_FEED_MARITIME_MAX_CACHE || 20_00
 const MAX_SHIPS_RESPONSE = Number(process.env.LIVE_FEED_MARITIME_MAX_RESPONSE || 1000);
 const MAX_SHIPS_FOR_AGGREGATES = 5000;
 const MAX_VIEWPORT_AREA_DEG2 = Number(process.env.LIVE_FEED_MARITIME_MAX_VIEW_AREA || 400);
+const AIS_MESSAGE_TYPES = [
+  'PositionReport',
+  'StandardClassBPositionReport',
+  'ExtendedClassBPositionReport',
+  'ShipStaticData',
+  'StaticDataReport',
+];
 
 const PORTS = [
   { name: 'Shanghai', country: 'CN', lat: 31.23, lng: 121.47, type: 'container', volume: '47.3M TEU', rank: 1 },
@@ -281,16 +288,20 @@ function createService(options = {}) {
   }
 
   function parseShipMessage(parsed) {
-    const mmsi = parsed?.MetaData?.MMSI ?? parsed?.Message?.PositionReport?.UserID;
+    const metadata = parsed?.MetaData || parsed?.Metadata || {};
+    const position = parsed?.Message?.PositionReport
+      || parsed?.Message?.StandardClassBPositionReport
+      || parsed?.Message?.ExtendedClassBPositionReport;
+    const staticData = parsed?.Message?.ShipStaticData || parsed?.Message?.StaticDataReport;
+    const mmsi = metadata.MMSI ?? metadata.MMSI_String ?? position?.UserID ?? staticData?.UserID;
     if (!mmsi) return;
     const key = Number(mmsi);
     if (!Number.isFinite(key)) return;
 
     const ship = ships.get(key) || { id: key, mmsi: key, timestamp: now(), type: 'cargo' };
-    const metadataName = cleanString(parsed?.MetaData?.ShipName);
+    const metadataName = cleanString(metadata.ShipName);
     if (metadataName) ship.name = metadataName;
 
-    const position = parsed?.Message?.PositionReport || parsed?.Message?.StandardClassBPositionReport;
     if (position) {
       const lat = finiteNumber(position.Latitude);
       const lng = finiteNumber(position.Longitude);
@@ -301,15 +312,25 @@ function createService(options = {}) {
         ship.heading = finiteNumber(position.TrueHeading) ?? finiteNumber(position.Cog) ?? ship.heading;
         ship.timestamp = now();
       }
+      const positionName = cleanString(position.Name);
+      if (positionName) ship.name = positionName;
+      if (position.Type != null) ship.type = getHorusShipType(position.Type);
+    } else {
+      const lat = finiteNumber(metadata.latitude ?? metadata.Latitude);
+      const lng = finiteNumber(metadata.longitude ?? metadata.Longitude);
+      if (lat != null && lng != null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+        ship.lat = Math.round(lat * 100000) / 100000;
+        ship.lng = Math.round(lng * 100000) / 100000;
+        ship.timestamp = now();
+      }
     }
 
-    const staticData = parsed?.Message?.ShipStaticData;
     if (staticData) {
-      const name = cleanString(staticData.Name);
-      const destination = cleanString(staticData.Destination);
+      const name = cleanString(staticData.Name ?? staticData.ReportA?.Name ?? staticData.ReportB?.Name);
+      const destination = cleanString(staticData.Destination ?? staticData.ReportB?.Destination);
       if (name) ship.name = name;
       if (destination) ship.destination = destination;
-      ship.type = getHorusShipType(staticData.Type);
+      ship.type = getHorusShipType(staticData.Type ?? staticData.ReportB?.Type);
     }
 
     if (Number.isFinite(ship.lat) && Number.isFinite(ship.lng)) ships.set(key, ship);
@@ -349,7 +370,7 @@ function createService(options = {}) {
       const subscription = {
         APIKey: key,
         BoundingBoxes: subscriptionBoxes(state.maritime.viewport),
-        FilterMessageTypes: ['PositionReport', 'ShipStaticData'],
+        FilterMessageTypes: AIS_MESSAGE_TYPES,
       };
       try {
         socket.send(JSON.stringify(subscription));
@@ -362,7 +383,14 @@ function createService(options = {}) {
     socket.on('message', (data) => {
       try {
         const text = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
-        parseShipMessage(JSON.parse(text));
+        const parsed = JSON.parse(text);
+        const upstreamError = cleanString(parsed?.error);
+        if (upstreamError) {
+          state.maritime.lastError = upstreamError;
+          finishSample('error');
+          return;
+        }
+        parseShipMessage(parsed);
       } catch {
         /* Ignore malformed upstream messages. */
       }

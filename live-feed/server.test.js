@@ -154,6 +154,22 @@ function position(mmsi, lat, lng, name = `SHIP ${mmsi}`) {
   };
 }
 
+function extendedClassBPosition(mmsi, lat, lng, name = `CLASS B ${mmsi}`) {
+  return {
+    MessageType: 'ExtendedClassBPositionReport',
+    MetaData: { MMSI: mmsi, ShipName: name },
+    Message: { ExtendedClassBPositionReport: { UserID: mmsi, Latitude: lat, Longitude: lng, Sog: 4.5, TrueHeading: 180, Cog: 181, Name: name, Type: 70 } },
+  };
+}
+
+function metadataStaticPosition(mmsi, lat, lng, name = `STATIC ${mmsi}`) {
+  return {
+    MessageType: 'ShipStaticData',
+    MetaData: { MMSI: mmsi, ShipName: name, latitude: lat, longitude: lng },
+    Message: { ShipStaticData: { Name: name, Destination: 'PORT', Type: 80 } },
+  };
+}
+
 test('missing AIS key never opens the AIS stream and returns static maritime context', async (t) => {
   const svc = await withService(t, { env: { AIS_API_KEY: '' } });
 
@@ -188,6 +204,13 @@ test('active maritime leases sample AIS immediately, then every 10 minutes, and 
   assert.equal(firstSocket.sent[0].APIKey, 'test-key');
   assert.deepEqual(firstSocket.sent[0].BoundingBoxes[0], [[1, 2], [3, 4]]);
   assert.ok(firstSocket.sent[0].BoundingBoxes.length > 1);
+  assert.deepEqual(firstSocket.sent[0].FilterMessageTypes, [
+    'PositionReport',
+    'StandardClassBPositionReport',
+    'ExtendedClassBPositionReport',
+    'ShipStaticData',
+    'StaticDataReport',
+  ]);
 
   firstSocket.message(position(123456789, 1.5, 2.5, 'LEASED VESSEL'));
   let snapshot = await svc.json('/v1/feeds/maritime/snapshot');
@@ -206,6 +229,40 @@ test('active maritime leases sample AIS immediately, then every 10 minutes, and 
 
   snapshot = await svc.json('/v1/feeds/maritime/snapshot');
   assert.equal(snapshot.body.ships.length, 1);
+});
+
+test('maritime sampling accepts Class B and metadata-only vessel positions', async (t) => {
+  const svc = await withService(t);
+  await svc.json('/v1/activity', {
+    method: 'POST',
+    body: JSON.stringify({ feed: 'maritime', active: true, viewport: { south: 33, west: -119, north: 34, east: -118 } }),
+  });
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+
+  socket.message(extendedClassBPosition(411111111, 33.72, -118.24, 'CLASS B VESSEL'));
+  socket.message(metadataStaticPosition(422222222, 33.73, -118.25, 'METADATA VESSEL'));
+
+  const snapshot = await svc.json('/v1/feeds/maritime/snapshot');
+  assert.equal(snapshot.body.ships.length, 2);
+  assert.deepEqual(snapshot.body.ships.map((s) => s.name).sort(), ['CLASS B VESSEL', 'METADATA VESSEL']);
+  assert.equal(snapshot.body.ships.find((s) => s.name === 'METADATA VESSEL').type, 'tanker');
+});
+
+test('AIS upstream error messages are surfaced in snapshot status', async (t) => {
+  const svc = await withService(t);
+  await svc.json('/v1/activity', {
+    method: 'POST',
+    body: JSON.stringify({ feed: 'maritime', active: true, viewport: { south: 33, west: -119, north: 34, east: -118 } }),
+  });
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  socket.message({ error: 'Api Key Is Not Valid' });
+
+  const snapshot = await svc.json('/v1/feeds/maritime/snapshot');
+  assert.equal(snapshot.body.status, 'error');
+  assert.equal(snapshot.body.error, 'Api Key Is Not Valid');
+  assert.equal(socket.closed, true);
 });
 
 test('maritime snapshots cap returned ships and evict stale in-memory vessel positions', async (t) => {
