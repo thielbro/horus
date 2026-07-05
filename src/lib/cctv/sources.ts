@@ -21,6 +21,7 @@ import { fetchNewZealandCameras } from '@/app/api/cctv/newzealand';
 import { fetchQueenslandCameras } from '@/app/api/cctv/queensland';
 import { fetchVictoriaCameras } from '@/app/api/cctv/victoria';
 import { fetchSurveillanceMapFoundationCameras } from '@/app/api/cctv/surveillance-map-foundation';
+import { fetchWorldcamCameras } from '@/app/api/cctv/worldcam';
 import {
   fetchNewYorkCameras,
   fetchGeorgiaCameras,
@@ -489,6 +490,8 @@ async function fetchMiddleEastCameras(): Promise<any[]> {
 // ═══ REGION MAPPING ═══
 const REGION_FETCHERS: Record<string, () => Promise<any[]>> = {
   'middle-east': fetchMiddleEastCameras,
+  // Pan-European curated worldcam.eu webcams (page-link cameras spanning ~38 countries).
+  'worldcam': async () => fetchWorldcamCameras(),
   'uk': async () => [...await fetchTfLCameras(), ...fetchSurveillanceMapFoundationCameras('uk')],
   'us-west': async () => [...await fetchWSDOTCameras(), ...await fetchCaltransCameras(), ...fetchSurveillanceMapFoundationCameras('us-west')],
   'us-east': fetchUSEastCameras,
@@ -530,7 +533,7 @@ const REGION_FETCHERS: Record<string, () => Promise<any[]>> = {
 // is what prevents the old "region=all" cap from starving late regions like Oceania.
 // Continents without sources yet (Africa, South America, Antarctica) are intentionally absent.
 const CONTINENTS: Record<string, string[]> = {
-  europe: ['uk', 'europe', 'bulgaria', 'greece', 'serbia', 'macedonia', 'turkey', 'romania', 'italy', 'czechia', 'slovakia', 'germany', 'france', 'spain', 'poland', 'switzerland'],
+  europe: ['uk', 'europe', 'worldcam', 'bulgaria', 'greece', 'serbia', 'macedonia', 'turkey', 'romania', 'italy', 'czechia', 'slovakia', 'germany', 'france', 'spain', 'poland', 'switzerland'],
   'north-america': ['us-west', 'us-east', 'us-central', 'canada'],
   // Dedicated United States bucket — all US regions incl. the state-DOT ATMS sources.
   'united-states': ['us-west', 'us-east', 'us-central', 'us-ny', 'us-ga', 'us-nc', 'us-pa', 'us-ct', 'us-newengland'],
@@ -609,6 +612,9 @@ export function getRegionsForBounds(lat: number, lng: number): string[] {
     regions.push('europe');
   }
   if (inIceland) regions.push('europe');
+  // Worldcam.eu webcams span the whole continent, so include them anywhere in the
+  // broad European box regardless of which country sub-region also matched.
+  if (lat > 34 && lat < 72 && lng > -26 && lng < 45) regions.push('worldcam');
   if (inBulgaria) regions.push('bulgaria');
   if (inGreece) regions.push('greece');
   if (inSerbia) regions.push('serbia');

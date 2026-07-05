@@ -49,9 +49,9 @@ try {
 
     if (-not $served) {
       try {
-        if ((Invoke-WebRequest -UseBasicParsing http://localhost:3000 -TimeoutSec 2).StatusCode -eq 200) {
+        if ((Invoke-WebRequest -UseBasicParsing http://localhost:3005 -TimeoutSec 2).StatusCode -eq 200) {
           $served = $true
-          Write-Host "`nServing at http://localhost:3000 (peak node procs: $peak). Still guarding." -ForegroundColor Green
+          Write-Host "`nServing at http://localhost:3005 (peak node procs: $peak). Still guarding." -ForegroundColor Green
         }
       } catch {}
     }

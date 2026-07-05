@@ -2,7 +2,7 @@
 //
 // Three run modes, resolved from env:
 //   HORUS_URL=<url>   → load that URL (used by `desktop:dev` and embed smoke tests)
-//   HORUS_DEV=1       → load http://localhost:3000 (a running `next dev`)
+//   HORUS_DEV=1       → load http://localhost:3005 (a running `next dev`)
 //   (packaged)         → fork the embedded Next standalone server, then load it
 //   HORUS_SMOKE=1     → after first load, log HORUS_SMOKE_OK and quit (headless check)
 //
@@ -689,7 +689,7 @@ function scheduleRendererReload(reason) {
 
 async function resolveTarget() {
   if (process.env.HORUS_URL) return process.env.HORUS_URL;
-  if (process.env.HORUS_DEV) return 'http://localhost:3000';
+  if (process.env.HORUS_DEV) return 'http://localhost:3005';
   if (app.isPackaged) return startEmbeddedServer();
   return null; // unpackaged with no URL → splash (shell smoke)
 }

@@ -11,13 +11,29 @@ interface CameraViewerProps {
   onLocate?: (lat: number, lng: number) => void;
 }
 
+// Refresh cadences the motion-JPEG feed cycles through (ms per frame).
+// Kept at/above 500ms (2 FPS) so we never hammer public snapshot endpoints
+// hard enough to get rate-limited or IP-banned.
+const MJPEG_RATES = [2000, 1000, 500];
+
 export default function CameraViewer({ camera, onClose, onLocate }: CameraViewerProps) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [currentTime, setCurrentTime] = useState<string>('');
+  const [refreshMs, setRefreshMs] = useState(1000);
+
+  // Stable callbacks so <MotionJpeg>'s effect doesn't restart on every parent render.
+  const handleFrameReady = useCallback(() => setLoading(false), []);
+  const handleFrameError = useCallback(() => { setLoading(false); setError(true); }, []);
+  const cycleRate = useCallback(() => {
+    setRefreshMs((ms) => {
+      const idx = MJPEG_RATES.indexOf(ms);
+      return MJPEG_RATES[(idx + 1) % MJPEG_RATES.length];
+    });
+  }, []);
+  const fpsLabel = `${1000 / refreshMs >= 1 ? (1000 / refreshMs).toFixed(0) : (1000 / refreshMs).toFixed(1)} FPS`;
 
   useEffect(() => {
     const iv = setInterval(() => {
@@ -48,7 +64,6 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
     if (!camera) return;
     setLoading(true);
     setError(false);
-    setImageUrl(null);
 
     const video = videoRef.current;
     let onLoadedMetadata: (() => void) | null = null;
@@ -105,24 +120,16 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
       return cleanup;
     }
 
-    // JPG fallback
-    if (camera.feed_url) {
-      const url = camera.feed_url.includes('?') ? `${camera.feed_url}&_t=${Date.now()}` : `${camera.feed_url}?_t=${Date.now()}`;
-      setImageUrl(url);
-    } else {
+    // JPG / MJPEG motion feed — <MotionJpeg> drives its own frame loop and
+    // reports readiness/failure via the stable callbacks, so nothing to set here
+    // beyond validating that a snapshot URL exists.
+    if (!camera.feed_url) {
       setError(true);
       setLoading(false);
     }
 
     return cleanup;
   }, [camera, refreshKey, streamType, externalOnly, destroyHls]);
-
-  // Auto-refresh for JPGs
-  useEffect(() => {
-    if (streamType !== 'jpg' || !camera?.feed_url) return;
-    const iv = setInterval(() => setRefreshKey(k => k + 1), 5000); // 5s refresh for JPG
-    return () => clearInterval(iv);
-  }, [camera?.feed_url, streamType]);
 
   if (!camera) return null;
 
@@ -178,8 +185,9 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                 {/* Controls */}
                 <div className="flex items-center gap-1 flex-shrink-0 ml-3">
                   {streamType === 'jpg' && (
-                    <button onClick={() => setRefreshKey(k => k + 1)} className="p-1.5 rounded-sm bg-white/5 border border-white/10 hover:bg-[var(--gold-primary)]/20 hover:border-[var(--gold-primary)] transition-all" title="Refresh feed">
+                    <button onClick={cycleRate} className="flex items-center gap-1 px-1.5 py-1.5 rounded-sm bg-white/5 border border-white/10 hover:bg-[var(--gold-primary)]/20 hover:border-[var(--gold-primary)] transition-all" title={`Feed rate: ${fpsLabel} — click to change`}>
                       <RefreshCw className="w-3 h-3 text-[var(--text-secondary)] hover:text-[var(--gold-primary)]" />
+                      <span className="text-[7px] font-mono tracking-wider text-[var(--text-secondary)] tabular-nums">{fpsLabel}</span>
                     </button>
                   )}
                   {camera.lat && camera.lng && (
@@ -265,14 +273,14 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                 allow="autoplay; fullscreen"
                 allowFullScreen
               />
-            ) : imageUrl ? (
-              <img
+            ) : camera.feed_url ? (
+              <MotionJpeg
                 key={refreshKey}
-                src={imageUrl}
-                alt={camera.name}
-                className={`w-full ${fullscreen ? 'h-full object-contain' : 'h-full object-cover'}`}
-                onLoad={() => setLoading(false)}
-                onError={() => { setLoading(false); setError(true); }}
+                baseUrl={camera.feed_url}
+                fullscreen={fullscreen}
+                intervalMs={refreshMs}
+                onReady={handleFrameReady}
+                onError={handleFrameError}
               />
             ) : null}
 
@@ -281,7 +289,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
               <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/80 border border-[var(--gold-primary)]/50 px-2 py-1 shadow-[0_0_10px_rgba(0,0,0,0.8)]">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]" />
                 <span className="text-[8px] font-mono text-white tracking-[0.2em]">
-                  {streamType === 'jpg' ? 'LIVE SAT-LINK' : 'LIVE FEED'}
+                  {streamType === 'jpg' ? `MJPEG LIVE · ${fpsLabel}` : 'LIVE FEED'}
                 </span>
               </div>
             )}
@@ -301,7 +309,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
               <div className="flex gap-4">
                 <div className="flex flex-col">
                   <span className="text-[6px] text-[var(--text-muted)] font-mono tracking-widest">FEED TYPE</span>
-                  <span className="text-[8px] text-white font-mono tracking-widest uppercase">{streamType}</span>
+                  <span className="text-[8px] text-white font-mono tracking-widest uppercase">{streamType === 'jpg' ? 'MJPEG' : streamType}</span>
                 </div>
                 <div className="flex flex-col border-l border-white/10 pl-4">
                   <span className="text-[6px] text-[var(--text-muted)] font-mono tracking-widest">STATUS</span>
@@ -329,5 +337,86 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
         </div>
       </motion.div>
     </AnimatePresence>
+  );
+}
+
+function withCacheBuster(url: string): string {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}_t=${Date.now()}`;
+}
+
+interface MotionJpegProps {
+  baseUrl: string;
+  fullscreen: boolean;
+  intervalMs: number;
+  onReady: () => void;
+  onError: () => void;
+}
+
+/**
+ * Turns a single-snapshot JPG endpoint into a continuous live motion feed — the
+ * same idea as MJPEG: pull a fresh frame on a fixed cadence and crossfade it in.
+ *
+ * Uses two stacked <img> layers (double-buffering): the next frame is decoded
+ * off-screen via `new Image()` and only promoted to the visible layer once it
+ * has fully loaded, so the feed never shows a half-drawn frame or flashes white
+ * between refreshes the way a naive `src` swap does. A transient mid-stream
+ * frame error is retried silently; only a failure on the very first frame
+ * surfaces the parent's error state.
+ */
+function MotionJpeg({ baseUrl, fullscreen, intervalMs, onReady, onError }: MotionJpegProps) {
+  const [layers, setLayers] = useState<{ a?: string; b?: string }>({});
+  const [visible, setVisible] = useState<'a' | 'b'>('a');
+  const visibleRef = useRef<'a' | 'b'>('a');
+  const firstLoadedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    firstLoadedRef.current = false;
+    visibleRef.current = 'a';
+
+    const loadNext = () => {
+      if (cancelled) return;
+      const url = withCacheBuster(baseUrl);
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        const next = visibleRef.current === 'a' ? 'b' : 'a';
+        visibleRef.current = next;
+        setLayers((l) => ({ ...l, [next]: url }));
+        setVisible(next);
+        if (!firstLoadedRef.current) {
+          firstLoadedRef.current = true;
+          onReady();
+        }
+        timer = setTimeout(loadNext, intervalMs);
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        if (!firstLoadedRef.current) {
+          onError();
+          return; // parent renders error + retry; stop the loop
+        }
+        // Transient hiccup on an already-running feed: back off and keep going.
+        timer = setTimeout(loadNext, Math.max(intervalMs, 2000));
+      };
+      img.src = url;
+    };
+
+    loadNext();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [baseUrl, intervalMs, onReady, onError]);
+
+  const imgCls = `absolute inset-0 w-full h-full ${fullscreen ? 'object-contain' : 'object-cover'} transition-opacity duration-300 ease-linear`;
+
+  return (
+    <div className="absolute inset-0">
+      {layers.a && <img src={layers.a} alt="" className={`${imgCls} ${visible === 'a' ? 'opacity-100' : 'opacity-0'}`} />}
+      {layers.b && <img src={layers.b} alt="" className={`${imgCls} ${visible === 'b' ? 'opacity-100' : 'opacity-0'}`} />}
+    </div>
   );
 }
