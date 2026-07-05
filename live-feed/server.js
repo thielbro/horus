@@ -3,8 +3,8 @@
  *
  * Activation-gated live data broker. Maritime AIS is the first feed:
  * - no durable vessel-position storage
- * - AISStream socket opens only during bounded sample windows
- * - sampling runs only while a renderer lease is active
+ * - AISStream socket streams continuously, but only while a renderer lease is active
+ * - the subscription follows the renderer viewport (plus strategic chokepoints/ports)
  */
 
 const express = require('express');
@@ -13,14 +13,14 @@ const DefaultWebSocket = require('ws');
 const PORT = Number(process.env.PORT || process.env.LIVE_FEED_PORT || 7900);
 const HOST = process.env.LIVE_FEED_BIND || process.env.HOST || '0.0.0.0';
 
-const POLL_INTERVAL_MS = Number(process.env.LIVE_FEED_MARITIME_POLL_MS || 10 * 60 * 1000);
-const SAMPLE_DURATION_MS = Number(process.env.LIVE_FEED_MARITIME_SAMPLE_MS || 45 * 1000);
+const RECONNECT_MS = Number(process.env.LIVE_FEED_MARITIME_RECONNECT_MS || 5 * 1000);
+const ERROR_RECONNECT_MS = Number(process.env.LIVE_FEED_MARITIME_ERROR_RECONNECT_MS || 60 * 1000);
 const LEASE_TTL_MS = Number(process.env.LIVE_FEED_LEASE_TTL_MS || 150 * 1000);
-const SHIP_TTL_MS = Number(process.env.LIVE_FEED_MARITIME_SHIP_TTL_MS || 30 * 60 * 1000);
-const MAX_SHIPS_CACHE = Number(process.env.LIVE_FEED_MARITIME_MAX_CACHE || 20_000);
-const MAX_SHIPS_RESPONSE = Number(process.env.LIVE_FEED_MARITIME_MAX_RESPONSE || 1000);
+const SHIP_TTL_MS = Number(process.env.LIVE_FEED_MARITIME_SHIP_TTL_MS || 15 * 60 * 1000);
+const MAX_SHIPS_CACHE = Number(process.env.LIVE_FEED_MARITIME_MAX_CACHE || 50_000);
+const MAX_SHIPS_RESPONSE = Number(process.env.LIVE_FEED_MARITIME_MAX_RESPONSE || 5000);
 const MAX_SHIPS_FOR_AGGREGATES = 5000;
-const MAX_VIEWPORT_AREA_DEG2 = Number(process.env.LIVE_FEED_MARITIME_MAX_VIEW_AREA || 400);
+const MAX_VIEWPORT_AREA_DEG2 = Number(process.env.LIVE_FEED_MARITIME_MAX_VIEW_AREA || 20_000);
 const AIS_MESSAGE_TYPES = [
   'PositionReport',
   'StandardClassBPositionReport',
@@ -187,6 +187,57 @@ function getHorusShipType(typeCode) {
   return 'cargo';
 }
 
+const NAV_STATUS = {
+  0: 'Underway Using Engine',
+  1: 'At Anchor',
+  2: 'Not Under Command',
+  3: 'Restricted Manoeuvrability',
+  4: 'Constrained By Draught',
+  5: 'Moored',
+  6: 'Aground',
+  7: 'Engaged In Fishing',
+  8: 'Under Way Sailing',
+};
+
+// AIS sentinel handling: Sog 102.3 = "not available", heading 511 = "not available",
+// Cog 360 = "not available". Render layers must never see the sentinels as data.
+function sanitizeSpeed(value) {
+  const n = finiteNumber(value);
+  if (n == null || n < 0 || n >= 102.2) return null;
+  return n;
+}
+
+function sanitizeHeading(trueHeading, cog) {
+  const hdg = finiteNumber(trueHeading);
+  if (hdg != null && hdg >= 0 && hdg < 360) return hdg;
+  const course = finiteNumber(cog);
+  if (course != null && course >= 0 && course < 360) return course;
+  return null;
+}
+
+// (0,0) is the AIS "null island" default for misconfigured transponders.
+function isPlausiblePosition(lat, lng) {
+  if (lat == null || lng == null) return false;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false;
+  if (Math.abs(lat) < 0.01 && Math.abs(lng) < 0.01) return false;
+  return true;
+}
+
+function formatEta(eta) {
+  if (!eta || typeof eta !== 'object') return null;
+  const month = finiteNumber(eta.Month);
+  const day = finiteNumber(eta.Day);
+  const hour = finiteNumber(eta.Hour);
+  const minute = finiteNumber(eta.Minute);
+  // AIS ETA sentinels: month 0, day 0, hour 24, minute 60 mean "not available".
+  if (!month || !day || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const pad = (n) => String(n).padStart(2, '0');
+  const time = hour != null && hour >= 0 && hour < 24 && minute != null && minute >= 0 && minute < 60
+    ? ` ${pad(hour)}:${pad(minute)} UTC`
+    : '';
+  return `${pad(month)}-${pad(day)}${time}`;
+}
+
 function createService(options = {}) {
   const env = options.env || process.env;
   const timers = options.timers || {
@@ -197,8 +248,8 @@ function createService(options = {}) {
   };
   const now = typeof options.now === 'function' ? options.now : () => Date.now();
   const WebSocket = options.WebSocket || DefaultWebSocket;
-  const pollIntervalMs = Number(options.pollIntervalMs || POLL_INTERVAL_MS);
-  const sampleDurationMs = Number(options.sampleDurationMs || SAMPLE_DURATION_MS);
+  const reconnectMs = Number(options.reconnectMs || RECONNECT_MS);
+  const errorReconnectMs = Number(options.errorReconnectMs || ERROR_RECONNECT_MS);
   const leaseTtlMs = Number(options.leaseTtlMs || LEASE_TTL_MS);
   const shipTtlMs = Number(options.shipTtlMs || SHIP_TTL_MS);
   const ships = new Map();
@@ -206,16 +257,15 @@ function createService(options = {}) {
     active: { maritime: false },
     maritime: {
       socket: null,
-      pollTimer: null,
+      reconnectTimer: null,
       leaseTimer: null,
-      sampleTimer: null,
-      sampling: false,
+      streaming: false,
       expiresAt: null,
       viewport: null,
       status: 'idle',
       lastError: null,
-      lastSampleAt: null,
-      nextSampleAt: null,
+      connectedAt: null,
+      lastMessageAt: null,
     },
   };
 
@@ -260,30 +310,35 @@ function createService(options = {}) {
     }
   }
 
-  function finishSample(status = null) {
-    if (state.maritime.sampleTimer) {
-      timers.clearTimeout(state.maritime.sampleTimer);
-      state.maritime.sampleTimer = null;
-    }
+  function disconnect(status = null, reconnectDelayMs = null) {
     closeActiveSocket();
-    state.maritime.sampling = false;
+    state.maritime.streaming = false;
+    state.maritime.connectedAt = null;
     if (status) state.maritime.status = status;
-    else state.maritime.status = isMaritimeActive() ? 'active' : 'idle';
+    else state.maritime.status = isMaritimeActive() ? 'connecting' : 'idle';
     pruneStaleShips();
+    if (reconnectDelayMs != null && isMaritimeActive()) scheduleReconnect(reconnectDelayMs);
+  }
+
+  function scheduleReconnect(delayMs) {
+    if (state.maritime.reconnectTimer) timers.clearTimeout(state.maritime.reconnectTimer);
+    state.maritime.reconnectTimer = timers.setTimeout(() => {
+      state.maritime.reconnectTimer = null;
+      ensureStreaming();
+    }, delayMs);
   }
 
   function stopMaritime() {
-    if (state.maritime.pollTimer) {
-      timers.clearInterval(state.maritime.pollTimer);
-      state.maritime.pollTimer = null;
+    if (state.maritime.reconnectTimer) {
+      timers.clearTimeout(state.maritime.reconnectTimer);
+      state.maritime.reconnectTimer = null;
     }
     if (state.maritime.leaseTimer) {
       timers.clearTimeout(state.maritime.leaseTimer);
       state.maritime.leaseTimer = null;
     }
-    finishSample('idle');
     state.maritime.expiresAt = null;
-    state.maritime.nextSampleAt = null;
+    disconnect('idle');
     state.active.maritime = false;
   }
 
@@ -305,20 +360,22 @@ function createService(options = {}) {
     if (position) {
       const lat = finiteNumber(position.Latitude);
       const lng = finiteNumber(position.Longitude);
-      if (lat != null && lng != null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      if (isPlausiblePosition(lat, lng)) {
         ship.lat = Math.round(lat * 100000) / 100000;
         ship.lng = Math.round(lng * 100000) / 100000;
-        ship.speed = finiteNumber(position.Sog);
-        ship.heading = finiteNumber(position.TrueHeading) ?? finiteNumber(position.Cog) ?? ship.heading;
+        ship.speed = sanitizeSpeed(position.Sog);
+        ship.heading = sanitizeHeading(position.TrueHeading, position.Cog);
         ship.timestamp = now();
       }
+      const navStatus = NAV_STATUS[finiteNumber(position.NavigationalStatus)];
+      if (navStatus) ship.nav_status = navStatus;
       const positionName = cleanString(position.Name);
       if (positionName) ship.name = positionName;
       if (position.Type != null) ship.type = getHorusShipType(position.Type);
     } else {
       const lat = finiteNumber(metadata.latitude ?? metadata.Latitude);
       const lng = finiteNumber(metadata.longitude ?? metadata.Longitude);
-      if (lat != null && lng != null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      if (isPlausiblePosition(lat, lng)) {
         ship.lat = Math.round(lat * 100000) / 100000;
         ship.lng = Math.round(lng * 100000) / 100000;
         ship.timestamp = now();
@@ -328,16 +385,46 @@ function createService(options = {}) {
     if (staticData) {
       const name = cleanString(staticData.Name ?? staticData.ReportA?.Name ?? staticData.ReportB?.Name);
       const destination = cleanString(staticData.Destination ?? staticData.ReportB?.Destination);
+      const callsign = cleanString(staticData.CallSign ?? staticData.ReportB?.CallSign);
       if (name) ship.name = name;
       if (destination) ship.destination = destination;
-      ship.type = getHorusShipType(staticData.Type ?? staticData.ReportB?.Type);
+      if (callsign) ship.callsign = callsign;
+      const imo = finiteNumber(staticData.ImoNumber);
+      if (imo) ship.imo = imo;
+      const draught = finiteNumber(staticData.MaximumStaticDraught);
+      if (draught != null && draught > 0) ship.draught = draught;
+      const eta = formatEta(staticData.Eta);
+      if (eta) ship.eta = eta;
+      const dim = staticData.Dimension ?? staticData.ReportB?.Dimension;
+      if (dim && typeof dim === 'object') {
+        const length = (finiteNumber(dim.A) || 0) + (finiteNumber(dim.B) || 0);
+        const width = (finiteNumber(dim.C) || 0) + (finiteNumber(dim.D) || 0);
+        if (length > 0) ship.length = length;
+        if (width > 0) ship.width = width;
+      }
+      ship.type = getHorusShipType(staticData.Type ?? staticData.ReportB?.ShipType ?? staticData.ReportB?.Type);
     }
 
     if (Number.isFinite(ship.lat) && Number.isFinite(ship.lng)) ships.set(key, ship);
-    pruneStaleShips();
+    // Hot path under continuous streaming — only evict on size here; TTL pruning
+    // runs in snapshots and on lease/disconnect transitions.
+    while (ships.size > MAX_SHIPS_CACHE) {
+      const first = ships.keys().next().value;
+      if (first == null) break;
+      ships.delete(first);
+    }
   }
 
-  function sampleMaritime() {
+  function sendSubscription(socket) {
+    const subscription = {
+      APIKey: apiKey(),
+      BoundingBoxes: subscriptionBoxes(state.maritime.viewport),
+      FilterMessageTypes: AIS_MESSAGE_TYPES,
+    };
+    socket.send(JSON.stringify(subscription));
+  }
+
+  function ensureStreaming() {
     if (!isMaritimeActive()) {
       stopMaritime();
       return;
@@ -347,36 +434,32 @@ function createService(options = {}) {
       state.maritime.status = 'missing_key';
       return;
     }
-    if (state.maritime.sampling) return;
+    if (state.maritime.socket) return;
 
-    state.maritime.sampling = true;
-    state.maritime.status = 'sampling';
+    state.maritime.status = 'connecting';
     state.maritime.lastError = null;
-    state.maritime.lastSampleAt = now();
 
     let socket;
     try {
       socket = new WebSocket('wss://stream.aisstream.io/v0/stream');
     } catch (error) {
       state.maritime.lastError = error instanceof Error ? error.message : String(error);
-      finishSample('error');
+      disconnect('error', errorReconnectMs);
       return;
     }
 
     state.maritime.socket = socket;
-    state.maritime.sampleTimer = timers.setTimeout(() => finishSample(), sampleDurationMs);
 
     socket.on('open', () => {
-      const subscription = {
-        APIKey: key,
-        BoundingBoxes: subscriptionBoxes(state.maritime.viewport),
-        FilterMessageTypes: AIS_MESSAGE_TYPES,
-      };
+      if (state.maritime.socket !== socket) return;
       try {
-        socket.send(JSON.stringify(subscription));
+        sendSubscription(socket);
+        state.maritime.streaming = true;
+        state.maritime.status = 'streaming';
+        state.maritime.connectedAt = now();
       } catch (error) {
         state.maritime.lastError = error instanceof Error ? error.message : String(error);
-        finishSample('error');
+        disconnect('error', errorReconnectMs);
       }
     });
 
@@ -386,10 +469,13 @@ function createService(options = {}) {
         const parsed = JSON.parse(text);
         const upstreamError = cleanString(parsed?.error);
         if (upstreamError) {
+          // Upstream rejections (bad key, bad subscription) back off hard so we
+          // don't hammer AISStream with a broken subscription every few seconds.
           state.maritime.lastError = upstreamError;
-          finishSample('error');
+          disconnect('error', errorReconnectMs);
           return;
         }
+        state.maritime.lastMessageAt = now();
         parseShipMessage(parsed);
       } catch {
         /* Ignore malformed upstream messages. */
@@ -397,12 +483,19 @@ function createService(options = {}) {
     });
 
     socket.on('close', () => {
-      if (state.maritime.socket === socket) state.maritime.socket = null;
+      if (state.maritime.socket !== socket) return;
+      state.maritime.socket = null;
+      state.maritime.streaming = false;
+      state.maritime.connectedAt = null;
+      if (isMaritimeActive()) {
+        state.maritime.status = 'connecting';
+        scheduleReconnect(reconnectMs);
+      }
     });
 
     socket.on('error', (error) => {
       state.maritime.lastError = error instanceof Error ? error.message : String(error);
-      finishSample('error');
+      disconnect('error', reconnectMs);
     });
   }
 
@@ -422,31 +515,23 @@ function createService(options = {}) {
     }, delay);
   }
 
-  function ensureMaritimePolling() {
-    state.active.maritime = true;
-    if (!apiKey()) {
-      state.maritime.status = 'missing_key';
-      return;
-    }
-    if (!state.maritime.pollTimer) {
-      sampleMaritime();
-      state.maritime.nextSampleAt = now() + pollIntervalMs;
-      state.maritime.pollTimer = timers.setInterval(() => {
-        if (!isMaritimeActive()) {
-          stopMaritime();
-          return;
-        }
-        sampleMaritime();
-        state.maritime.nextSampleAt = now() + pollIntervalMs;
-      }, pollIntervalMs);
-    }
-  }
-
   function activateMaritime(viewport) {
     state.maritime.expiresAt = now() + leaseTtlMs;
+    state.active.maritime = true;
+    const viewportChanged = viewport && JSON.stringify(viewport) !== JSON.stringify(state.maritime.viewport);
     if (viewport) state.maritime.viewport = viewport;
     scheduleLeaseExpiry();
-    ensureMaritimePolling();
+    ensureStreaming();
+    // AISStream accepts a replacement subscription on the open socket, so a viewport
+    // change re-targets the live stream without a reconnect.
+    if (viewportChanged && state.maritime.streaming && state.maritime.socket) {
+      try {
+        sendSubscription(state.maritime.socket);
+      } catch (error) {
+        state.maritime.lastError = error instanceof Error ? error.message : String(error);
+        disconnect('error', reconnectMs);
+      }
+    }
   }
 
   function dynamicPorts(shipsForAggregates) {
@@ -498,13 +583,19 @@ function createService(options = {}) {
     });
   }
 
-  function maritimeSnapshot() {
+  function maritimeSnapshot(viewport) {
     pruneStaleShips();
     const sortedShips = [...ships.values()].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     const missingKey = !apiKey();
     const usableShips = missingKey ? [] : sortedShips;
+    // Aggregates (port congestion / chokepoint traffic) always use the full cache;
+    // only the returned vessel list narrows to the requested viewport.
     const shipsForAggregates = usableShips.slice(0, MAX_SHIPS_FOR_AGGREGATES);
-    const returnedShips = usableShips.slice(0, MAX_SHIPS_RESPONSE);
+    const viewportShips = viewport
+      ? usableShips.filter((s) => s.lat >= viewport.south && s.lat <= viewport.north
+        && s.lng >= viewport.west && s.lng <= viewport.east)
+      : usableShips;
+    const returnedShips = viewportShips.slice(0, MAX_SHIPS_RESPONSE);
     const status = missingKey ? 'missing_key' : state.maritime.status;
     return {
       ports: dynamicPorts(shipsForAggregates),
@@ -516,12 +607,11 @@ function createService(options = {}) {
       returned_ships: returnedShips.length,
       status,
       active: isMaritimeActive(),
+      streaming: state.maritime.streaming,
       source: 'aisstream',
-      poll_interval_ms: pollIntervalMs,
-      sample_duration_ms: sampleDurationMs,
       ship_ttl_ms: shipTtlMs,
-      last_sample_at: nowIso(state.maritime.lastSampleAt),
-      next_sample_at: nowIso(state.maritime.nextSampleAt),
+      connected_at: nowIso(state.maritime.connectedAt),
+      last_message_at: nowIso(state.maritime.lastMessageAt),
       error: state.maritime.lastError,
       timestamp: nowIso(now()),
     };
@@ -537,9 +627,9 @@ function createService(options = {}) {
       maritime: {
         status: !apiKey() ? 'missing_key' : state.maritime.status,
         ships: ships.size,
-        sampling: state.maritime.sampling,
-        last_sample_at: nowIso(state.maritime.lastSampleAt),
-        next_sample_at: nowIso(state.maritime.nextSampleAt),
+        streaming: state.maritime.streaming,
+        connected_at: nowIso(state.maritime.connectedAt),
+        last_message_at: nowIso(state.maritime.lastMessageAt),
       },
       uptime_s: Math.round(process.uptime()),
       timestamp: nowIso(now()),
@@ -561,9 +651,11 @@ function createService(options = {}) {
     });
   });
 
-  app.get('/v1/feeds/maritime/snapshot', (_req, res) => {
+  app.get('/v1/feeds/maritime/snapshot', (req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.json(maritimeSnapshot());
+    // Optional ?south&west&north&east narrows the returned vessel list to the
+    // renderer viewport. Out-of-range/oversized boxes fall back to unfiltered.
+    res.json(maritimeSnapshot(normalizeViewport(req.query)));
   });
 
   app.get('/', (_req, res) => {
@@ -583,7 +675,7 @@ function createService(options = {}) {
       maritime: {
         status: state.maritime.status,
         ships: ships.size,
-        sampling: state.maritime.sampling,
+        streaming: state.maritime.streaming,
         expiresAt: state.maritime.expiresAt,
       },
     }),

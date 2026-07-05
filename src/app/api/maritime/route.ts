@@ -14,5 +14,5 @@ export const dynamic = 'force-dynamic';
 export function GET(request: Request) {
   const limited = rateLimitOr429(request, 30);
   if (limited) return limited;
-  return proxyMaritimeSnapshot();
+  return proxyMaritimeSnapshot(request);
 }

@@ -981,19 +981,31 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
         });
       }
 
+      const num = (v: any) => (v == null || v === 'null' || Number.isNaN(Number(v)) ? null : Number(v));
+      const speed = num(p.speed);
+      const heading = num(p.heading);
+      const draught = num(p.draught);
+      const length = num(p.length);
+      const width = num(p.width);
+      const ts = num(p.timestamp);
+      const ageMin = ts ? Math.max(0, Math.round((Date.now() - ts) / 60000)) : null;
       popup(coords, `<div style="${pStyle}border:1px solid ${color}60;box-shadow:inset 0 0 12px ${color}15;">
         <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${color}40;padding-bottom:6px;margin-bottom:8px;">
           <div style="color:${color};font-size:12px;font-weight:700;letter-spacing:0.1em;">${icon} [ ${(p.type||'VESSEL').toUpperCase()} ]</div>
-          <div style="color:#5C5A54;font-size:9px;">FLAG: ${p.flag||'UNK'}</div>
+          <div style="color:#5C5A54;font-size:9px;">${p.callsign ? `CS: ${p.callsign}` : `FLAG: ${p.flag||'UNK'}`}</div>
         </div>
-        <div style="color:#E8E6E0;font-size:11px;font-weight:bold;margin-bottom:10px;">${p.name || 'UNIDENTIFIED VESSEL'}</div>
+        <div style="color:#E8E6E0;font-size:11px;font-weight:bold;margin-bottom:2px;">${p.name || 'UNIDENTIFIED VESSEL'}</div>
+        <div style="color:#5C5A54;font-size:9px;margin-bottom:8px;">MMSI ${p.mmsi || '—'}${p.imo && p.imo !== 'null' ? ` · IMO ${p.imo}` : ''}${p.nav_status && p.nav_status !== 'null' ? ` · ${p.nav_status}` : ''}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;margin-bottom:8px;background:rgba(0,0,0,0.3);padding:6px;border-radius:4px;">
-          <div><span style="color:#5C5A54;">SPEED</span><br/><span style="color:${color};font-family:monospace;">${Number(p.speed).toFixed(1)} kn</span></div>
-          <div><span style="color:#5C5A54;">HEADING</span><br/><span style="color:${color};font-family:monospace;">${Number(p.heading).toFixed(0)}°</span></div>
+          <div><span style="color:#5C5A54;">SPEED</span><br/><span style="color:${color};font-family:monospace;">${speed != null ? `${speed.toFixed(1)} kn` : 'N/A'}</span></div>
+          <div><span style="color:#5C5A54;">HEADING</span><br/><span style="color:${color};font-family:monospace;">${heading != null ? `${heading.toFixed(0)}°` : 'N/A'}</span></div>
           <div><span style="color:#5C5A54;">LATITUDE</span><br/><span style="color:#E8E6E0;font-family:monospace;">${coords[1].toFixed(4)}°</span></div>
           <div><span style="color:#5C5A54;">LONGITUDE</span><br/><span style="color:#E8E6E0;font-family:monospace;">${coords[0].toFixed(4)}°</span></div>
+          <div><span style="color:#5C5A54;">DRAUGHT</span><br/><span style="color:#E8E6E0;font-family:monospace;">${draught != null ? `${draught.toFixed(1)} m` : 'N/A'}</span></div>
+          <div><span style="color:#5C5A54;">SIZE</span><br/><span style="color:#E8E6E0;font-family:monospace;">${length != null ? `${length}m × ${width != null ? width : '?'}m` : 'N/A'}</span></div>
         </div>
-        <div><span style="color:#5C5A54;font-size:9px;">DESTINATION: </span><span style="color:#E8E6E0;font-size:9px;">${p.destination || 'UNKNOWN'}</span></div>
+        <div><span style="color:#5C5A54;font-size:9px;">DESTINATION: </span><span style="color:#E8E6E0;font-size:9px;">${p.destination && p.destination !== 'null' ? p.destination : 'UNKNOWN'}</span>${p.eta && p.eta !== 'null' ? `<span style="color:#5C5A54;font-size:9px;"> · ETA ${p.eta}</span>` : ''}</div>
+        ${ageMin != null ? `<div style="color:#5C5A54;font-size:8px;margin-top:2px;">POSITION RECEIVED ${ageMin === 0 ? 'JUST NOW' : `${ageMin} MIN AGO`} (AIS)</div>` : ''}
         <a href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${p.mmsi}" target="_blank" style="${linkStyle}flex:1;text-align:center;color:${color};border:1px solid ${color}40;background:${color}15;display:inline-block;width:100%;box-sizing:border-box;margin-top:4px;">[ OPEN SOURCE ↗ ]</a>
       </div>`);
     });

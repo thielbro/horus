@@ -130,7 +130,7 @@ const DATA_ARRAY_LIMITS: Record<string, number> = {
   private_jets: 1000,
   military_flights: 1000,
   satellites: 2000,
-  maritime_ships: 1000,
+  maritime_ships: 5000,
   earthquakes: 500,
   news: 500,
   gdelt: 1000,

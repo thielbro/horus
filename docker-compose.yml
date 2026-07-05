@@ -197,7 +197,7 @@ services:
     networks:
       - default
 
-  # Activation-gated live data backend. Maritime AIS sampling is memory-only and
+  # Activation-gated live data backend. Maritime AIS streaming is memory-only and
   # starts only after the renderer signals that the maritime layer is active.
   live-feed:
     build:
@@ -207,8 +207,8 @@ services:
     environment:
       - PORT=7900
       - AIS_API_KEY=${AIS_API_KEY:-}
-      - LIVE_FEED_MARITIME_POLL_MS=${LIVE_FEED_MARITIME_POLL_MS:-600000}
-      - LIVE_FEED_MARITIME_SAMPLE_MS=${LIVE_FEED_MARITIME_SAMPLE_MS:-45000}
+      - LIVE_FEED_MARITIME_RECONNECT_MS=${LIVE_FEED_MARITIME_RECONNECT_MS:-5000}
+      - LIVE_FEED_MARITIME_MAX_RESPONSE=${LIVE_FEED_MARITIME_MAX_RESPONSE:-5000}
       - LIVE_FEED_LEASE_TTL_MS=${LIVE_FEED_LEASE_TTL_MS:-150000}
     ports:
       - "${LIVE_FEED_BIND:-127.0.0.1}:${LIVE_FEED_PORT:-7900}:7900"

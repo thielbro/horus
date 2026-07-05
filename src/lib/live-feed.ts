@@ -38,11 +38,20 @@ async function readJsonOrNull(res: Response): Promise<any | null> {
   }
 }
 
-export async function proxyMaritimeSnapshot() {
+export async function proxyMaritimeSnapshot(request?: Request) {
   const base = liveFeedBaseUrl();
   if (!base) return unavailable('Live feed backend is not configured. Set LIVE_FEED_URL.');
 
   const url = new URL('/v1/feeds/maritime/snapshot', base.endsWith('/') ? base : `${base}/`);
+  if (request) {
+    // Forward the renderer viewport so the sidecar returns the vessels in view
+    // instead of an arbitrary newest-N slice of the whole cache.
+    const incoming = new URL(request.url).searchParams;
+    for (const key of ['south', 'west', 'north', 'east']) {
+      const value = incoming.get(key);
+      if (value != null && value !== '' && Number.isFinite(Number(value))) url.searchParams.set(key, value);
+    }
+  }
   try {
     const res = await fetch(url, {
       cache: 'no-store',
@@ -64,12 +73,11 @@ export async function proxyMaritimeSnapshot() {
         returned_ships: Number(json?.returned_ships) || 0,
         status: json?.status || 'unknown',
         active: !!json?.active,
+        streaming: !!json?.streaming,
         source: json?.source || 'live-feed',
-        poll_interval_ms: json?.poll_interval_ms,
-        sample_duration_ms: json?.sample_duration_ms,
         ship_ttl_ms: json?.ship_ttl_ms,
-        last_sample_at: json?.last_sample_at,
-        next_sample_at: json?.next_sample_at,
+        connected_at: json?.connected_at,
+        last_message_at: json?.last_message_at,
         error: json?.error || null,
         backend: 'live-feed',
         timestamp: json?.timestamp || new Date().toISOString(),

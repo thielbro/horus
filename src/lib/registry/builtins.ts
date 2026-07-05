@@ -222,7 +222,7 @@ export const BUILTIN_LAYERS: RegistryLayer[] = [
     id: 'maritime_ships', label: 'Live Ships', group: 'MARITIME', icon: 'Ship', color: '#26C6DA', countBuckets: ['maritime_ships'],
     // Style layers stay raw in HorusMap init so live vessel markers sit above the SDK mesh.
     render: [
-      { source: 'maritime-ships', toFeatures: (data, active) => (active.maritime_ships && data.maritime_ships) ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name || s.mmsi?.toString() || 'Unknown', type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag, mmsi: s.mmsi, imo: s.imo } })) : [] },
+      { source: 'maritime-ships', toFeatures: (data, active) => (active.maritime_ships && data.maritime_ships) ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name || s.mmsi?.toString() || 'Unknown', type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag, mmsi: s.mmsi, imo: s.imo, callsign: s.callsign, nav_status: s.nav_status, eta: s.eta, draught: s.draught, length: s.length, width: s.width, timestamp: s.timestamp } })) : [] },
     ],
   },
   {

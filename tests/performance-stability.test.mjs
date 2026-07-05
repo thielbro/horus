@@ -81,11 +81,12 @@ test('reviewed network helpers release pooled connections and reconnect with bac
   assert.doesNotMatch(maritime, /new WebSocket|aisSocket|shipsCache/);
 
   const liveFeed = file('live-feed/server.js');
-  assert.match(liveFeed, /POLL_INTERVAL_MS/);
-  assert.match(liveFeed, /SAMPLE_DURATION_MS/);
+  assert.match(liveFeed, /RECONNECT_MS/);
+  assert.match(liveFeed, /ERROR_RECONNECT_MS/);
   assert.match(liveFeed, /LEASE_TTL_MS/);
   assert.match(liveFeed, /closeActiveSocket/);
   assert.match(liveFeed, /pruneStaleShips/);
+  assert.match(liveFeed, /MAX_SHIPS_CACHE/);
 });
 
 test('reviewed frontend caches and viewers stay bounded while preserving map view', () => {

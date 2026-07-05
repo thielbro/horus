@@ -116,8 +116,8 @@ async function withService(t, options = {}) {
     now: () => timers.now(),
     timers,
     WebSocket: FakeWebSocket,
-    sampleDurationMs: 45_000,
-    pollIntervalMs: 600_000,
+    reconnectMs: 5_000,
+    errorReconnectMs: 60_000,
     leaseTtlMs: 150_000,
   });
   const server = await new Promise((resolve) => {
@@ -189,7 +189,7 @@ test('missing AIS key never opens the AIS stream and returns static maritime con
   assert.ok(snapshot.body.chokepoints.length > 5);
 });
 
-test('active maritime leases sample AIS immediately, then every 10 minutes, and expire cleanly', async (t) => {
+test('active maritime leases stream AIS continuously and expire cleanly without heartbeats', async (t) => {
   const svc = await withService(t);
 
   const active = await svc.json('/v1/activity', {
@@ -214,21 +214,84 @@ test('active maritime leases sample AIS immediately, then every 10 minutes, and 
 
   firstSocket.message(position(123456789, 1.5, 2.5, 'LEASED VESSEL'));
   let snapshot = await svc.json('/v1/feeds/maritime/snapshot');
-  assert.equal(snapshot.body.status, 'sampling');
+  assert.equal(snapshot.body.status, 'streaming');
+  assert.equal(snapshot.body.streaming, true);
   assert.equal(snapshot.body.ships.length, 1);
   assert.equal(snapshot.body.ships[0].name, 'LEASED VESSEL');
 
+  // Socket stays open well past the old 45s sample window while the lease is live.
   await svc.timers.tick(45_000);
-  assert.equal(firstSocket.closed, true);
+  assert.equal(firstSocket.closed, false);
 
+  // No heartbeat renewals: lease expires at 150s and the stream shuts down.
   await svc.timers.tick(105_001);
   assert.equal(svc.getState().active.maritime, false);
+  assert.equal(firstSocket.closed, true);
 
   await svc.timers.tick(450_000);
   assert.equal(FakeWebSocket.instances.length, 1);
 
   snapshot = await svc.json('/v1/feeds/maritime/snapshot');
   assert.equal(snapshot.body.ships.length, 1);
+  assert.equal(snapshot.body.streaming, false);
+});
+
+test('heartbeats renew the lease and viewport changes resubscribe on the open socket', async (t) => {
+  const svc = await withService(t);
+  await svc.json('/v1/activity', {
+    method: 'POST',
+    body: JSON.stringify({ feed: 'maritime', active: true, viewport: { south: 1, west: 2, north: 3, east: 4 } }),
+  });
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  assert.equal(socket.sent.length, 1);
+
+  // Heartbeat with the same viewport renews the lease without resubscribing.
+  await svc.timers.tick(60_000);
+  await svc.json('/v1/activity', {
+    method: 'POST',
+    body: JSON.stringify({ feed: 'maritime', active: true, viewport: { south: 1, west: 2, north: 3, east: 4 } }),
+  });
+  assert.equal(socket.sent.length, 1);
+
+  // Panning to a new viewport re-targets the live subscription in place.
+  await svc.json('/v1/activity', {
+    method: 'POST',
+    body: JSON.stringify({ feed: 'maritime', active: true, viewport: { south: 40, west: -10, north: 55, east: 15 } }),
+  });
+  assert.equal(socket.sent.length, 2);
+  assert.deepEqual(socket.sent[1].BoundingBoxes[0], [[40, -10], [55, 15]]);
+  assert.equal(socket.closed, false);
+
+  // Lease stays alive past the original 150s thanks to the renewals.
+  await svc.timers.tick(120_000);
+  assert.equal(svc.getState().active.maritime, true);
+  assert.equal(socket.closed, false);
+});
+
+test('unexpected socket close reconnects while the lease is active', async (t) => {
+  const svc = await withService(t);
+  await svc.json('/v1/activity', {
+    method: 'POST',
+    body: JSON.stringify({ feed: 'maritime', active: true, viewport: { south: 1, west: 2, north: 3, east: 4 } }),
+  });
+  const first = FakeWebSocket.instances[0];
+  first.open();
+  first.message(position(123456789, 1.5, 2.5, 'SURVIVOR'));
+
+  first.close();
+  assert.equal(FakeWebSocket.instances.length, 1);
+  await svc.timers.tick(5_000);
+  assert.equal(FakeWebSocket.instances.length, 2);
+
+  const second = FakeWebSocket.instances[1];
+  second.open();
+  assert.equal(second.sent.length, 1);
+
+  // Cached vessels survive the reconnect.
+  const snapshot = await svc.json('/v1/feeds/maritime/snapshot');
+  assert.equal(snapshot.body.ships.length, 1);
+  assert.equal(snapshot.body.status, 'streaming');
 });
 
 test('maritime sampling accepts Class B and metadata-only vessel positions', async (t) => {
@@ -263,9 +326,15 @@ test('AIS upstream error messages are surfaced in snapshot status', async (t) =>
   assert.equal(snapshot.body.status, 'error');
   assert.equal(snapshot.body.error, 'Api Key Is Not Valid');
   assert.equal(socket.closed, true);
+
+  // Upstream rejections back off on the long timer instead of hammering AISStream.
+  await svc.timers.tick(5_000);
+  assert.equal(FakeWebSocket.instances.length, 1);
+  await svc.timers.tick(55_000);
+  assert.equal(FakeWebSocket.instances.length, 2);
 });
 
-test('maritime snapshots cap returned ships and evict stale in-memory vessel positions', async (t) => {
+test('maritime snapshots filter to a requested viewport and evict stale vessel positions', async (t) => {
   const svc = await withService(t);
   await svc.json('/v1/activity', {
     method: 'POST',
@@ -274,19 +343,87 @@ test('maritime snapshots cap returned ships and evict stale in-memory vessel pos
   const socket = FakeWebSocket.instances[0];
   socket.open();
 
-  for (let i = 0; i < 1005; i += 1) {
-    socket.message(position(200000000 + i, -5 + i / 10000, 110 + i / 10000));
-  }
+  socket.message(position(200000001, -5, 110, 'IN VIEW'));
+  socket.message(position(200000002, 51.9, 4.2, 'ROTTERDAM'));
 
   let snapshot = await svc.json('/v1/feeds/maritime/snapshot');
-  assert.equal(snapshot.body.total_ships, 1005);
-  assert.equal(snapshot.body.returned_ships, 1000);
-  assert.equal(snapshot.body.ships.length, 1000);
+  assert.equal(snapshot.body.total_ships, 2);
+  assert.equal(snapshot.body.ships.length, 2);
 
-  await svc.timers.tick(30 * 60_000 + 1);
+  snapshot = await svc.json('/v1/feeds/maritime/snapshot?south=-10&west=100&north=10&east=120');
+  assert.equal(snapshot.body.total_ships, 2);
+  assert.equal(snapshot.body.returned_ships, 1);
+  assert.equal(snapshot.body.ships[0].name, 'IN VIEW');
+
+  await svc.timers.tick(15 * 60_000 + 1);
   snapshot = await svc.json('/v1/feeds/maritime/snapshot');
   assert.equal(snapshot.body.total_ships, 0);
   assert.equal(snapshot.body.ships.length, 0);
+});
+
+test('AIS sentinel values and null-island positions never reach the snapshot', async (t) => {
+  const svc = await withService(t);
+  await svc.json('/v1/activity', {
+    method: 'POST',
+    body: JSON.stringify({ feed: 'maritime', active: true, viewport: { south: 40, west: -10, north: 60, east: 10 } }),
+  });
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+
+  // Sentinels: Sog 102.3 (speed n/a), TrueHeading 511 (heading n/a), Cog 360 (course n/a).
+  socket.message({
+    MessageType: 'PositionReport',
+    MetaData: { MMSI: 500000001, ShipName: 'SENTINEL' },
+    Message: { PositionReport: { Latitude: 51.8, Longitude: 4.5, Sog: 102.3, TrueHeading: 511, Cog: 360 } },
+  });
+  // Null-island transponder default must be dropped entirely.
+  socket.message(position(500000002, 0, 0, 'NULL ISLAND'));
+
+  const snapshot = await svc.json('/v1/feeds/maritime/snapshot');
+  assert.equal(snapshot.body.ships.length, 1);
+  const ship = snapshot.body.ships[0];
+  assert.equal(ship.name, 'SENTINEL');
+  assert.equal(ship.speed, null);
+  assert.equal(ship.heading, null);
+});
+
+test('static data enriches vessels with callsign, IMO, ETA, draught and dimensions', async (t) => {
+  const svc = await withService(t);
+  await svc.json('/v1/activity', {
+    method: 'POST',
+    body: JSON.stringify({ feed: 'maritime', active: true, viewport: { south: 40, west: -10, north: 60, east: 10 } }),
+  });
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+
+  socket.message(position(600000001, 51.8, 4.5, 'ENRICHED'));
+  socket.message({
+    MessageType: 'ShipStaticData',
+    MetaData: { MMSI: 600000001, ShipName: 'ENRICHED' },
+    Message: {
+      ShipStaticData: {
+        Name: 'ENRICHED',
+        CallSign: 'ABCD1',
+        ImoNumber: 9321483,
+        Destination: 'ES ALG',
+        MaximumStaticDraught: 16.1,
+        Eta: { Month: 7, Day: 7, Hour: 13, Minute: 0 },
+        Dimension: { A: 200, B: 99, C: 20, D: 25 },
+        Type: 71,
+      },
+    },
+  });
+
+  const snapshot = await svc.json('/v1/feeds/maritime/snapshot');
+  const ship = snapshot.body.ships.find((s) => s.mmsi === 600000001);
+  assert.equal(ship.callsign, 'ABCD1');
+  assert.equal(ship.imo, 9321483);
+  assert.equal(ship.destination, 'ES ALG');
+  assert.equal(ship.draught, 16.1);
+  assert.equal(ship.eta, '07-07 13:00 UTC');
+  assert.equal(ship.length, 299);
+  assert.equal(ship.width, 45);
+  assert.equal(ship.type, 'cargo');
 });
 
 test('missing AIS key suppresses any cached vessel positions in snapshots', async (t) => {
