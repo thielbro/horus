@@ -14,6 +14,7 @@ import {
 } from '@/lib/registry';
 import { setHostServices, getHost } from '@/lib/plugins';
 import { circlePolygon } from '@/lib/geo';
+import { flagFromMmsi } from '@/lib/mmsi-flags';
 
 interface HorusMapProps {
   data: any;
@@ -978,6 +979,17 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
           flag: s.flag,
           speed: s.speed,
           destination: s.destination,
+          callsign: s.callsign,
+          nav_status: s.nav_status,
+          eta: s.eta,
+          draught: s.draught,
+          length: s.length,
+          width: s.width,
+          heading: s.heading,
+          ship_type: s.type,
+          timestamp: s.timestamp,
+          lat: coords[1],
+          lng: coords[0],
         });
       }
 
@@ -992,7 +1004,7 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
       popup(coords, `<div style="${pStyle}border:1px solid ${color}60;box-shadow:inset 0 0 12px ${color}15;">
         <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${color}40;padding-bottom:6px;margin-bottom:8px;">
           <div style="color:${color};font-size:12px;font-weight:700;letter-spacing:0.1em;">${icon} [ ${(p.type||'VESSEL').toUpperCase()} ]</div>
-          <div style="color:#5C5A54;font-size:9px;">${p.callsign ? `CS: ${p.callsign}` : `FLAG: ${p.flag||'UNK'}`}</div>
+          <div style="color:#5C5A54;font-size:9px;">${p.callsign && p.callsign !== 'null' ? `CS: ${p.callsign}` : `FLAG: ${flagFromMmsi(p.mmsi)?.code || p.flag || 'UNK'}`}</div>
         </div>
         <div style="color:#E8E6E0;font-size:11px;font-weight:bold;margin-bottom:2px;">${p.name || 'UNIDENTIFIED VESSEL'}</div>
         <div style="color:#5C5A54;font-size:9px;margin-bottom:8px;">MMSI ${p.mmsi || '—'}${p.imo && p.imo !== 'null' ? ` · IMO ${p.imo}` : ''}${p.nav_status && p.nav_status !== 'null' ? ` · ${p.nav_status}` : ''}</div>

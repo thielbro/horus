@@ -559,6 +559,17 @@ export default function Dashboard() {
           flag: entity.flag,
           speed: entity.speed,
           destination: entity.destination,
+          callsign: entity.callsign,
+          nav_status: entity.nav_status,
+          eta: entity.eta,
+          draught: entity.draught,
+          length: entity.length,
+          width: entity.width,
+          heading: entity.heading,
+          type: entity.ship_type,
+          timestamp: entity.timestamp,
+          lat: entity.lat,
+          lng: entity.lng,
         },
       });
       setShowEntityGraph(true);
@@ -632,11 +643,13 @@ export default function Dashboard() {
   // Global handler for map popups to manually open the Intel Graph
   useEffect(() => {
     (window as any).openHorusIntel = (entity: any) => {
-      if (entity?.callsign || entity?.icao24) {
+      // Vessels are checked before the callsign/icao24 heuristic — ships broadcast
+      // AIS callsigns too, so callsign alone must not imply aircraft.
+      if (entity?.type !== 'vessel' && !entity?.mmsi && (entity?.callsign || entity?.icao24)) {
         setEntityGraphTarget({ type: 'aircraft', id: entity.callsign?.trim() || entity.icao24, label: entity.callsign?.trim() || entity.icao24, properties: { model: entity.model, registration: entity.registration, icao24: entity.icao24 } });
         setShowEntityGraph(true);
       } else if (entity?.type === 'vessel' || entity?.mmsi || entity?.imo) {
-        setEntityGraphTarget({ type: 'vessel', id: entity.imo || entity.mmsi || entity.name, label: entity.name || entity.imo, properties: { flag: entity.flag, speed: entity.speed, destination: entity.destination } });
+        setEntityGraphTarget({ type: 'vessel', id: entity.imo || entity.mmsi || entity.name, label: entity.name || entity.imo, properties: { mmsi: entity.mmsi, imo: entity.imo, flag: entity.flag, speed: entity.speed, destination: entity.destination, callsign: entity.callsign, nav_status: entity.nav_status, eta: entity.eta, draught: entity.draught, length: entity.length, width: entity.width, heading: entity.heading, type: entity.ship_type || entity.shipType, timestamp: entity.timestamp, lat: entity.lat, lng: entity.lng } });
         setShowEntityGraph(true);
       } else if (entity?.type === 'ip' && entity?.ip) {
         setEntityGraphTarget({ type: 'ip', id: entity.ip, label: entity.ip, properties: { threat_type: entity.threat_type, status: entity.status } });

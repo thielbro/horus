@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { ssr: false });
+import VesselIntelCard from './VesselIntelCard';
 
 // ── TYPES ──
 
@@ -371,7 +372,10 @@ function EntityGraphPanel({ entity, onClose }: Props) {
                   [{selectedNode.type.toUpperCase()}]
                 </span>
               </div>
-              {selectedNode.properties && Object.keys(selectedNode.properties).length > 0 && (
+              {selectedNode.type === 'vessel' && (
+                <VesselIntelCard label={selectedNode.label} properties={selectedNode.properties} />
+              )}
+              {selectedNode.type !== 'vessel' && selectedNode.properties && Object.keys(selectedNode.properties).length > 0 && (
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 mt-2">
                   {Object.entries(selectedNode.properties).map(([k, v], i) => (
                     <div key={`${selectedNode.id}-${k}`}>
