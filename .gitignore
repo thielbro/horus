@@ -56,3 +56,14 @@ scanner_backend_backup.js
 
 # Security - Prevent accidental manual leaks
 *Manual*.md
+
+# MarineTraffic scraper sidecar — local session artifacts (never commit)
+.mt_profile/
+marinetraffic_cookies.json
+mt_cookies.json
+vessel_images/
+mt_images/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
