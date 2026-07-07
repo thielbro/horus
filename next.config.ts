@@ -6,6 +6,21 @@ const nextConfig: NextConfig = {
   // worktree to a parent lockfile and nests the standalone output under the full
   // path (breaking `node server.js`). cwd is the app root during `next build`.
   outputFileTracingRoot: process.cwd(),
+  // src/lib/mt-sidecar.ts uses process.cwd()/fs to locate mt_server.py, which
+  // makes @vercel/nft conservatively trace the whole project root — dragging the
+  // desktop/ tree (including desktop/release/*.exe prior installers) into the
+  // standalone server bundle and bloating the installer ~6x. None of these dirs
+  // are needed by the Next runtime, so exclude them from the trace.
+  outputFileTracingExcludes: {
+    '/*': [
+      'desktop/**/*',
+      '.git/**/*',
+      'dev-notes/**/*',
+      'tests/**/*',
+      '**/*.exe',
+      '**/*.blockmap',
+    ],
+  },
   serverExternalPackages: ['ws'],
   transpilePackages: ['react-map-gl', 'mapbox-gl', 'maplibre-gl'],
   typescript: {
