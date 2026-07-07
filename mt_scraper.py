@@ -172,18 +172,30 @@ class MTScraper:
 
         self._pw = await async_playwright().start()
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
+        args = [
+            "--disable-blink-features=AutomationControlled",
+            "--disable-dev-shm-usage",
+            "--disable-extensions",
+        ]
+        # Optional window placement for the headed one-time login, e.g.
+        #   MT_WINDOW_POSITION="1015,0" MT_WINDOW_SIZE="900,960"
+        win_pos = os.environ.get("MT_WINDOW_POSITION")
+        win_size = os.environ.get("MT_WINDOW_SIZE")
+        if not self.headless and win_pos:
+            args.append(f"--window-position={win_pos}")
+        if not self.headless and win_size:
+            args.append(f"--window-size={win_size}")
         launch_kwargs: Dict[str, Any] = dict(
             headless=self.headless,
             user_agent=self._user_agent,
-            viewport={"width": 1440, "height": 900},
+            # Headed login: let the real OS window drive the size so --window-size
+            # takes effect. Headless: pin a viewport for consistent extraction.
+            no_viewport=not self.headless,
+            viewport=None if not self.headless else {"width": 1440, "height": 900},
             locale="en-US",
             timezone_id="UTC",
             extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--disable-extensions",
-            ],
+            args=args,
         )
         # Persistent context = the browser IS the context (real Chrome profile).
         try:
@@ -365,37 +377,35 @@ class MTScraper:
         if not self._started:
             raise RuntimeError("Call start() before query()")
 
-        # Detail pages accept mmsi:/imo: keys directly and redirect to the
-        # canonical shipid: URL — far more reliable than the search page.
-        if shipid:
-            url = SHIP_URL.format(shipid=shipid)
-        elif mmsi:
-            url = SHIP_URL_MMSI.format(mmsi=mmsi)
-        elif imo:
-            url = SHIP_URL_IMO.format(imo=imo)
-        else:
+        if not any([shipid, mmsi, imo]):
             raise ValueError("Provide shipid, mmsi, or imo")
 
+        # Resolve to a shipid. Current MarineTraffic behaviour:
+        #   • shipid: detail URL works directly
+        #   • imo:    detail URL 302s to the canonical shipid: URL
+        #   • mmsi:   detail URL is DEAD (redirects to the map) → use global search
+        resolved = int(shipid) if shipid else None
+
+        if not resolved and imo:
+            await self._page.goto(SHIP_URL_IMO.format(imo=imo),
+                                  wait_until="domcontentloaded", timeout=self.timeout)
+            await asyncio.sleep(2)
+            await self._accept_consent()
+            resolved = await self._shipid_from_page()
+            if resolved:
+                print(f"[mt] resolved shipid={resolved} from imo: redirect")
+
+        if not resolved:
+            resolved = await self._resolve_shipid(mmsi=str(mmsi) if mmsi else None,
+                                                  imo=str(imo) if imo else None)
+        if not resolved:
+            raise ValueError(f"Could not resolve shipid from mmsi={mmsi} imo={imo}")
+
+        url = SHIP_URL.format(shipid=resolved)
         print(f"[mt] loading {url}")
         await self._page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
         await asyncio.sleep(3)  # allow Pro data to populate
         await self._accept_consent()
-
-        resolved = shipid
-        if not resolved:
-            m = re.search(r"shipid:(\d+)", self._page.url)
-            if m:
-                resolved = int(m.group(1))
-                print(f"[mt] resolved shipid={resolved} from redirect")
-        if not resolved:
-            # last resort: the old search-page resolution
-            resolved = await self._resolve_shipid(mmsi=str(mmsi) if mmsi else None,
-                                                  imo=str(imo) if imo else None)
-            if not resolved:
-                raise ValueError(f"Could not resolve shipid from mmsi={mmsi} imo={imo}")
-            await self._page.goto(SHIP_URL.format(shipid=resolved),
-                                  wait_until="domcontentloaded", timeout=self.timeout)
-            await asyncio.sleep(3)
 
         vessel = await self._extract()
         vessel.ship_id = str(resolved)
@@ -422,24 +432,30 @@ class MTScraper:
         await asyncio.sleep(2)
 
         # gallery lazy-loads on scroll — nudge it a few times
-        for _ in range(5):
+        for _ in range(6):
             await self._page.evaluate("window.scrollBy(0, window.innerHeight)")
             await asyncio.sleep(0.8)
 
-        urls: List[str] = await self._page.evaluate(
+        # Photos are served as /getPhoto/?photo_id=NNN&photo_size=SIZE (host
+        # www.marinetraffic.com). Collect the distinct photo_ids in DOM order.
+        ids: List[str] = await self._page.evaluate(
             """() => {
-                const seen = new Set();
-                document.querySelectorAll('img').forEach(img => {
-                    const src = img.currentSrc || img.src || '';
-                    if (src.includes('photos.marinetraffic.com')) seen.add(src);
-                });
-                return Array.from(seen);
+                const seen = [];
+                const push = (src) => {
+                    if (!src) return;
+                    const m = src.match(/getPhoto\\/?\\?[^"']*photo_id=(\\d+)/i);
+                    if (m && !seen.includes(m[1])) seen.push(m[1]);
+                };
+                document.querySelectorAll('img').forEach(i => push(i.currentSrc || i.src || ''));
+                return seen;
             }"""
         )
         photos: List[Dict[str, str]] = []
-        for u in urls:
-            full = re.sub(r"size=\w+", "size=full", u) if "size=" in u else u
-            photos.append({"thumb": u, "url": full})
+        for pid in ids:
+            photos.append({
+                "thumb": f"{MT_BASE}/getPhoto/?photo_id={pid}&photo_size=200",
+                "url": f"{MT_BASE}/getPhoto/?photo_id={pid}&photo_size=800",
+            })
         print(f"[mt] gallery photos found: {len(photos)}")
         return photos
 
@@ -460,212 +476,194 @@ class MTScraper:
         finally:
             await page.close()
 
-    async def _resolve_shipid(self, mmsi: Optional[str] = None, imo: Optional[str] = None) -> Optional[int]:
-        q = mmsi or imo or ""
-        url = f"{SEARCH_URL}?keyword={q}"
-        print(f"[mt] resolving shipid via search: {url}")
-        await self._page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
-        await asyncio.sleep(2)
-
-        # Look for the first ship link in the results table
-        href = await self._page.evaluate(
-            """() => {
-                const link = document.querySelector('a[href*="/ais/details/ships/shipid:"]');
-                return link ? link.href : null;
-            }"""
-        )
+    async def _shipid_from_page(self) -> Optional[int]:
+        """Read the shipid from the current detail page — the URL after an imo:
+        redirect, or the canonical link (`.../shipid:NNN/mmsi:.../vessel:...`)."""
+        m = re.search(r"shipid:(\d+)", self._page.url or "")
+        if m:
+            return int(m.group(1))
+        try:
+            href = await self._page.evaluate(
+                """() => {
+                    const c = document.querySelector('link[rel=canonical]')
+                          || document.querySelector('meta[property="og:url"]');
+                    return c ? (c.href || c.content) : null;
+                }"""
+            )
+        except Exception:
+            href = None
         if href:
             m = re.search(r"shipid:(\d+)", href)
             if m:
-                shipid = int(m.group(1))
-                print(f"[mt] resolved shipid={shipid}")
-                return shipid
-        print("[mt] resolution failed")
+                return int(m.group(1))
+        return None
+
+    async def _resolve_shipid(self, mmsi: Optional[str] = None, imo: Optional[str] = None) -> Optional[int]:
+        """Resolve an MMSI or IMO to a MarineTraffic shipid.
+
+        The site's global search only answers as an in-page XHR on the
+        marinetraffic.com origin: navigating to the endpoint directly renders the
+        SPA error shell, and the raw request context is Cloudflare-403'd. So we
+        make sure a MT page is loaded, then fetch() from inside it."""
+        term = str(mmsi or imo or "").strip()
+        if not term:
+            return None
+
+        if "marinetraffic.com" not in (self._page.url or ""):
+            await self._page.goto(f"{MT_BASE}/en/ais/home", wait_until="domcontentloaded", timeout=self.timeout)
+            await asyncio.sleep(2)
+            await self._accept_consent()
+
+        print(f"[mt] resolving shipid via global search: {term}")
+        try:
+            data = await self._page.evaluate(
+                """async (term) => {
+                    const r = await fetch('/en/global_search/search?term=' + encodeURIComponent(term), {
+                        headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'}
+                    });
+                    if (!r.ok) return {error: r.status};
+                    return await r.json();
+                }""",
+                term,
+            )
+        except Exception as e:
+            print(f"[mt] search error: {e}")
+            return None
+
+        results = (data or {}).get("results") or []
+        # Prefer an exact hit on the numeric value; fall back to the top result.
+        pick = next((r for r in results if str(r.get("value")) == term and r.get("id")), None)
+        if not pick:
+            pick = next((r for r in results if r.get("id")), None)
+        if pick:
+            shipid = int(pick["id"])
+            print(f"[mt] resolved shipid={shipid} ({pick.get('desc')})")
+            return shipid
+        print(f"[mt] resolution failed for {term} (no results)")
         return None
 
     # ── extraction ───────────────────────────────────────────────────────────
 
     async def _extract(self) -> VesselInfo:
-        """Comprehensive extraction using page-level JS."""
+        """Extract vessel data from the current (Kpler SPA) detail page.
+
+        The page renders the whole dossier as visible text — tab-separated
+        Label/Value rows in the General + Latest-AIS tables, voyage cards, and
+        summary sentences — so we parse innerText rather than walk the volatile
+        React DOM (which changes often and broke the old selector approach)."""
         vessel = VesselInfo()
 
-        # ── Title / meta ─────────────────────────────────────────────────────
-        try:
-            title = await self._page.title()
-            # "ZEFIRA - Sailing Vessel, IMO 1011094, MMSI 248663000"
-            if " - " in title:
-                parts = title.split(" - ")
-                vessel.name = parts[0].strip()
-            m = re.search(r"IMO\s+(\d+)", title)
-            if m:
-                vessel.imo = m.group(1)
-            m = re.search(r"MMSI\s+(\d+)", title)
-            if m:
-                vessel.mmsi = m.group(1)
-            m = re.search(r"-\s+([A-Za-z\s]+),\s+IMO", title)
-            if m:
-                vessel.ship_type = m.group(1).strip()
-        except Exception:
-            pass
-
-        # ── Main extraction script ───────────────────────────────────────────
-        # This runs in the page and extracts every label-value pair it can find.
-        data = await self._page.evaluate(
+        payload = await self._page.evaluate(
             """() => {
-                const out = {};
-                out._text = document.body.innerText;
-
-                // helper: normalize keys
-                const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\\s+/g, ' ').trim();
-
-                // 1. generic table rows
-                document.querySelectorAll('table tr, .table-row').forEach(tr => {
-                    const cells = tr.querySelectorAll('td, th');
-                    if (cells.length >= 2) {
-                        const k = cells[0].innerText.trim().replace(/:$/, '');
-                        const v = cells[1].innerText.trim();
-                        if (k && v) out[norm(k)] = v;
-                    }
-                });
-
-                // 2. definition lists
-                const dts = document.querySelectorAll('dt, .vessel-data-label, [class*="label"]');
-                const dds = document.querySelectorAll('dd, .vessel-data-value, [class*="value"]');
-                for (let i = 0; i < Math.min(dts.length, dds.length); i++) {
-                    const k = dts[i].innerText.trim().replace(/:$/, '');
-                    const v = dds[i].innerText.trim();
-                    if (k && v) out[norm(k)] = v;
-                    // Also grab image if this is the photo block
-                    const img = dds[i].querySelector('img');
-                    if (img && img.src) out._main_image = img.src;
-                }
-
-                // 3. two-column grids / flex lists (common on MT)
-                document.querySelectorAll('[class*="data"], [class*="info"], [class*="detail"], [class*="ais"]').forEach(el => {
-                    const children = Array.from(el.children);
-                    for (let i = 0; i < children.length - 1; i++) {
-                        const t1 = children[i].innerText.trim();
-                        const t2 = children[i+1].innerText.trim();
-                        if (t1.endsWith(':') && t2) {
-                            out[norm(t1)] = t2;
-                        }
-                    }
-                });
-
-                // 4. image
-                const imgSel = [
-                    'img.vessel-image',
-                    'img[src*="photos"]',
-                    '.vessel-photo img',
-                    '[class*="photo"] img',
-                    '[class*="image"] img'
-                ];
-                for (const s of imgSel) {
-                    const img = document.querySelector(s);
-                    if (img && img.src) { out._main_image = img.src; break; }
-                }
-
-                // 5. photo count
-                const viewAll = Array.from(document.querySelectorAll('a, button')).find(el => /view all\\s*\\(\\d+\\)/i.test(el.innerText));
-                if (viewAll) {
-                    const m = viewAll.innerText.match(/\\((\\d+)\\)/);
-                    if (m) out._photo_count = parseInt(m[1]);
-                }
-
-                // 6. coordinates from inline scripts
-                document.querySelectorAll('script').forEach(scr => {
-                    const text = scr.innerText || scr.textContent || '';
-                    const latM = text.match(/['\"]lat['\"]\\s*:\\s*([+-]?\\d+\\.?\\d*)/);
-                    const lngM = text.match(/['\"]lng['\"]\\s*:\\s*([+-]?\\d+\\.?\\d*)/);
-                    if (latM && lngM) {
-                        out._lat = parseFloat(latM[1]);
-                        out._lng = parseFloat(lngM[1]);
-                    }
-                });
-
+                const out = { text: document.body.innerText || '' };
+                const m = out.text.match(/View all\\s*\\((\\d+)\\)/i);
+                if (m) out.photoCount = parseInt(m[1]);
+                const img = document.querySelector(
+                    'img[src*="photos.marinetraffic.com"], [class*="gallery"] img, [class*="photo"] img');
+                if (img && img.src) out.image = img.src;
                 return out;
             }"""
         )
+        text: str = payload.get("text", "") or ""
+        vessel.all_images_count = payload.get("photoCount")
+        vessel.image_url = payload.get("image")
 
-        # Map the extracted keys
-        raw_text: str = data.pop("_text", "")
+        def norm(s: str) -> str:
+            return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]", " ", s.lower())).strip()
+
+        PLACEHOLDER = {"-", "—", "", "upgrade to unlock"}
+
+        # 1) Tab-separated Label<TAB>Value rows (General + Latest AIS tables).
+        kv: Dict[str, str] = {}
+        for line in text.split("\n"):
+            if "\t" in line:
+                k, _, v = line.partition("\t")
+                nk, v = norm(k), v.strip()
+                if nk and v and v.lower() not in PLACEHOLDER:
+                    kv.setdefault(nk, v)
+
+        MAPPED: set = set()
 
         def get(*keys: str) -> Optional[str]:
             for k in keys:
-                if k in data:
-                    return data.pop(k)
+                MAPPED.add(k)
+                if k in kv:
+                    return kv[k]
             return None
 
-        vessel.name = vessel.name or get("name", "vessel name")
-        vessel.imo = vessel.imo or re.sub(r"[^0-9]", "", get("imo", "imo number") or "") or None
-        vessel.mmsi = vessel.mmsi or re.sub(r"[^0-9]", "", get("mmsi", "mmsi number") or "") or None
+        vessel.name = get("name")
+        vessel.flag = get("flag")
+        vessel.imo = re.sub(r"\D", "", get("imo") or "") or None
+        vessel.mmsi = re.sub(r"\D", "", get("mmsi") or "") or None
         vessel.callsign = get("call sign", "callsign")
-        vessel.flag = get("flag", "flag state")
-        vessel.ship_type = vessel.ship_type or get("ship type", "vessel type", "type")
-        vessel.length_overall = get("length overall", "loa", "length")
-        vessel.width = get("width", "beam")
-        vessel.draught = get("draught", "draft")
-        vessel.gross_tonnage = get("gross tonnage", "gt")
-        vessel.deadweight = get("deadweight", "dwt")
-        vessel.year_built = get("year built", "built")
-        vessel.navigational_status = get("navigational status", "status", "ais status")
-        vessel.ais_class = get("ais class", "class")
-        vessel.position_received = get("position received", "position")
-        vessel.vessel_local_time = get("vessel s local time", "local time")
-
-        # lat/lng
-        lat_str = get("latitude longitude", "lat lon", "latitude")
-        if lat_str and "/" in lat_str:
-            parts = [p.strip() for p in lat_str.split("/")]
-            if len(parts) == 2:
-                try:
-                    vessel.latitude = float(parts[0])
-                except ValueError:
-                    pass
-                try:
-                    vessel.longitude = float(parts[1])
-                except ValueError:
-                    pass
-        vessel.latitude = vessel.latitude or data.pop("_lat", None)
-        vessel.longitude = vessel.longitude or data.pop("_lng", None)
-
-        vessel.speed = get("speed", "vessel speed")
-        vessel.course = get("course", "vessel course")
-        vessel.true_heading = get("true heading", "heading")
+        vessel.ais_class = get("ais transponder class", "ais class")
+        vessel.ship_type = get("general vessel type", "detailed vessel type", "ais vessel type")
+        vessel.navigational_status = get("navigational status")
+        vessel.position_received = get("position received")
+        vessel.vessel_local_time = get("vessel s local time")
+        vessel.speed = get("speed")
+        vessel.course = get("course")
+        vessel.true_heading = get("true heading")
         vessel.rate_of_turn = get("rate of turn")
-        vessel.destination = get("destination", "arrival location")
+        vessel.draught = get("draught")
+        vessel.year_built = get("year built")
+        vessel.gross_tonnage = get("gross tonnage")
+        vessel.deadweight = get("deadweight")
         vessel.reported_destination = get("reported destination")
         vessel.matched_destination = get("matched destination")
-        vessel.departure_port = get("departure", "departed from", "departure port")
-        vessel.arrival_port = get("arrival", "arrival port")
-        vessel.eta = get("eta", "estimated arrival")
+        vessel.destination = vessel.reported_destination or vessel.matched_destination
         vessel.reported_eta = get("reported eta")
-        vessel.calculated_eta = get("calculated eta")
-        vessel.distance_travelled = get("distance travelled", "distance traveled")
-        vessel.distance_to_go = get("distance to go")
-        vessel.time_to_destination = get("time to destination")
-        vessel.actual_departure_time = get("actual time of departure", "actual departure")
-        vessel.voyage_distance = get("voyage distance", "total voyage distance")
-        vessel.current_wind_speed = get("wind speed", "current wind speed")
-        vessel.current_wind_direction = get("wind direction", "current wind direction")
-        vessel.current_air_temperature = get("air temperature", "current air temperature")
-        vessel.current_sea_state = get("sea state")
+        vessel.eta = vessel.reported_eta
 
-        # current position from summary text
-        if raw_text:
-            m = re.search(r"currently located in the ([^\(]+)", raw_text, re.IGNORECASE)
-            if m:
-                vessel.current_position = m.group(1).strip()
+        # lat/lng row: "37.719021 / 17.546038"
+        ll = get("latitude longitude", "latitude", "position")
+        if ll and "/" in ll:
+            a, _, b = ll.partition("/")
+            try:
+                vessel.latitude = float(a.strip())
+            except ValueError:
+                pass
+            try:
+                vessel.longitude = float(b.strip())
+            except ValueError:
+                pass
 
-        # images
-        vessel.image_url = data.pop("_main_image", None)
-        vessel.all_images_count = data.pop("_photo_count", None)
+        # 2) Regexes over the full text for summary + voyage cards (which render
+        #    as "Label\n\nValue" rather than tab rows).
+        def card(label: str) -> Optional[str]:
+            m = re.search(re.escape(label) + r"\s*\n+\s*([^\n]+)", text, re.I)
+            if not m:
+                return None
+            v = m.group(1).strip()
+            return v if v.lower() not in PLACEHOLDER else None
 
-        # remaining keys go into extra
-        for k, v in data.items():
-            if not k.startswith("_"):
-                vessel.extra[k] = v
+        loa = re.search(r"length overall \(LOA\) is ([\d.]+)\s*met", text, re.I)
+        if loa:
+            vessel.length_overall = f"{loa.group(1)} m"
+        wid = re.search(r"width is ([\d.]+)\s*met", text, re.I)
+        if wid:
+            vessel.width = f"{wid.group(1)} m"
+        pos = re.search(r"currently located in (?:the )?([^(\n]+?)\s*\(reported", text, re.I)
+        if pos:
+            vessel.current_position = pos.group(1).strip()
+        dep = re.search(r"Departure from ([^\n]+)", text, re.I)
+        if dep:
+            vessel.departure_port = dep.group(1).strip()
+        arr = re.search(r"Arrival at ([^\n]+)", text, re.I)
+        if arr:
+            vessel.arrival_port = arr.group(1).strip()
 
+        vessel.actual_departure_time = card("Actual time of departure:")
+        vessel.distance_travelled = card("Distance travelled")
+        vessel.voyage_distance = card("Total voyage distance")
+        vessel.distance_to_go = card("Distance to go")
+        vessel.time_to_destination = card("Time to destination")
+        vessel.calculated_eta = card("Calculated ETA")
+        vessel.current_wind_speed = card("Current wind speed / direction")
+        vessel.current_air_temperature = card("Current air temperature")
+
+        # Unmapped table rows kept for debugging / future fields.
+        vessel.extra = {k: v for k, v in kv.items() if k not in MAPPED}
         return vessel
 
     # ── image download ───────────────────────────────────────────────────────
@@ -773,11 +771,11 @@ def _cli() -> int:
         async def _do_login():
             await scraper.start()
             try:
-                return await scraper.login_interactive()
+                return await scraper.login_interactive(wait_seconds=900)
             finally:
                 await scraper.stop()
 
-        ok = asyncio.get_event_loop().run_until_complete(_do_login())
+        ok = asyncio.run(_do_login())
         print("login:", "OK" if ok else "FAILED")
         return 0 if ok else 1
 
