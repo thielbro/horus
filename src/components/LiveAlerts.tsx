@@ -4,14 +4,16 @@ import { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ChevronDown, ChevronUp, MapPin, ExternalLink, AlertTriangle,
-  Newspaper, Clock, Radio, Maximize2, Minimize2
+  ChevronDown, ChevronUp, MapPin, AlertTriangle,
+  Newspaper, Clock, Radio, Maximize2, Minimize2, Crosshair
 } from 'lucide-react';
+import { TrackingPanel, type EntityTrackerController } from '@/components/EntityTracker';
 
 interface LiveAlertsProps {
   data: any;
   onLocate: (lat: number, lng: number) => void;
   onWatchFeed?: (url: string, name: string) => void;
+  tracker: EntityTrackerController;
 }
 
 const RISK_COLORS: Record<string, string> = {
@@ -53,10 +55,10 @@ const BUILTIN_FEEDS = [
   { name: 'teleSUR EN', city: 'Caracas', country: 'VE', lat: 10.491, lng: -66.902, url: 'https://www.youtube-nocookie.com/embed/live_stream?channel=UCmuTmpLY35O3csvhyA6vrkg&autoplay=1&mute=1', category: 'mainstream', region: 'americas' },
 ];
 
-export default function LiveAlerts({ data, onLocate, onWatchFeed }: LiveAlertsProps) {
+export default function LiveAlerts({ data, onLocate, onWatchFeed, tracker }: LiveAlertsProps) {
   const [expanded, setExpanded] = useState(true);
   const [maximized, setMaximized] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'news' | 'quakes' | 'feeds'>('all');
+  const [filter, setFilter] = useState<'all' | 'news' | 'quakes' | 'feeds' | 'tracking'>('all');
 
   // Build unified alert feed
   const alerts = useMemo(() => {
@@ -101,7 +103,7 @@ export default function LiveAlerts({ data, onLocate, onWatchFeed }: LiveAlertsPr
   const filtered = useMemo(() => filter === 'all' ? alerts.filter(a => a.type !== 'feed') :
     filter === 'news' ? alerts.filter(a => a.type === 'news') :
     filter === 'quakes' ? alerts.filter(a => a.type === 'quake') :
-    alerts.filter(a => a.type === 'feed'), [alerts, filter]);
+    filter === 'feeds' ? alerts.filter(a => a.type === 'feed') : [], [alerts, filter]);
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -156,19 +158,20 @@ export default function LiveAlerts({ data, onLocate, onWatchFeed }: LiveAlertsPr
           >
             {/* Filters - Fixed Height, Never Shrinks */}
             <div className={`flex-shrink-0 flex gap-1 ${maximized ? 'px-6 py-4 border-b border-[#2A2A28] bg-[#111111]' : 'px-3 py-2 border-b border-[rgba(255,255,255,0.05)]'}`}>
-              {(['all', 'news', 'quakes', 'feeds'] as const).map(f => (
+              {(['all', 'news', 'quakes', 'feeds', 'tracking'] as const).map(f => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
                   className={`px-3 py-1.5 rounded text-[10px] font-mono tracking-wider transition-all ${filter === f ? 'bg-[var(--cyan-primary)]/20 text-[var(--cyan-primary)] border border-[var(--cyan-primary)]/50' : 'text-[#8A8880] border border-transparent hover:text-[#E8E6E0] hover:bg-[#2A2A28]'}`}
                 >
-                  {f.toUpperCase()}
+                  {f === 'tracking' ? <span className="flex items-center gap-1"><Crosshair className="h-3 w-3" />TRACK</span> : f.toUpperCase()}
                 </button>
               ))}
             </div>
 
             {/* Alert List - Internally Scrolling */}
             <div className={`flex-1 overflow-y-auto styled-scrollbar ${maximized ? 'p-6' : 'p-3'}`}>
+              {filter === 'tracking' ? <TrackingPanel tracker={tracker} onLocate={onLocate} /> : (
               <div className="space-y-2">
                 {filtered.map((alert) => {
                   const Icon = getIcon(alert.type);
@@ -231,11 +234,12 @@ export default function LiveAlerts({ data, onLocate, onWatchFeed }: LiveAlertsPr
                   </div>
                 );
               })}
-              </div>
-              {filtered.length === 0 && (
+                {filtered.length === 0 && (
                 <div className="text-center py-4 text-[10px] font-mono text-[var(--text-muted)]">
                   No alerts for this filter
                 </div>
+              )}
+              </div>
               )}
             </div>
           </motion.div>

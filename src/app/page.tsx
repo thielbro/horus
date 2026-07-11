@@ -16,6 +16,7 @@ import ViewPresets from '@/components/ViewPresets';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import GlobalStatusBar from '@/components/GlobalStatusBar';
 import LiveAlerts from '@/components/LiveAlerts';
+import { TrackingToasts, useEntityTracker } from '@/components/EntityTracker';
 import { useSettings, applyAppearance } from '@/lib/settings';
 import { useFeedEngine, useLiveFeedActivity, useViewportLayers, getLayers } from '@/lib/registry';
 import { setHostServices, bootstrapExtensions } from '@/lib/plugins';
@@ -275,6 +276,20 @@ export default function Dashboard() {
 
   // ── DEFAULT: Most layers OFF — fast initial load ──
   const [activeLayers, setActiveLayers] = useState({ ...DEFAULT_ACTIVE_LAYERS });
+  const entityTracker = useEntityTracker(data);
+
+  // Watches remain operational while the alerts panel is closed by keeping their
+  // existing live-feed pipelines active.
+  useEffect(() => {
+    const wantsAircraft = entityTracker.watches.some((watch) => watch.kind === 'aircraft');
+    const wantsVessel = entityTracker.watches.some((watch) => watch.kind === 'vessel');
+    if (!wantsAircraft && !wantsVessel) return;
+    setActiveLayers((current) => ({
+      ...current,
+      flights: wantsAircraft ? true : current.flights,
+      maritime_ships: wantsVessel ? true : current.maritime_ships,
+    }));
+  }, [entityTracker.watches]);
   const [showStreamWall, setShowStreamWall] = useState(false);
   const [streamAddRequest, setStreamAddRequest] = useState<StreamAddRequest | null>(null);
   // Route any "watch this feed" intent (map news dots, alerts, plugins) into the wall.
@@ -1332,14 +1347,14 @@ export default function Dashboard() {
         </div>
 
         <div className="relative group">
-          <button onClick={() => { setShowAlerts(!showAlerts); setShowIntel(false); setShowMarkets(false); setShowEntityGraph(false); setShowRansomware(false); }} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showAlerts ? 'bg-[#FF3D3D]/20' : 'hover:bg-white/10'}`}>
+          <button title="Live alerts and entity tracking" onClick={() => { setShowAlerts(!showAlerts); setShowIntel(false); setShowMarkets(false); setShowEntityGraph(false); setShowRansomware(false); }} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showAlerts ? 'bg-[#FF3D3D]/20' : 'hover:bg-white/10'}`}>
             <AlertTriangle className={`w-4 h-4 ${showAlerts ? 'text-[#FF3D3D]' : 'text-white/60'}`} />
           </button>
           {/* Alerts Panel Slideout */}
           <AnimatePresence>
             {showAlerts && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-12 top-1/2 -translate-y-1/2 w-80">
-                <LiveAlerts data={data} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} onWatchFeed={(url, name) => openStreamTile(url, name, true)} />
+                <LiveAlerts data={data} tracker={entityTracker} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} onWatchFeed={(url, name) => openStreamTile(url, name, true)} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -1535,6 +1550,7 @@ export default function Dashboard() {
 
       {/* ── Settings ── */}
       <SettingsPanel open={showSettings} onClose={closeSettings} getWorkspaceSnapshot={getWorkspaceSnapshot} onApplyWorkspace={applyWorkspace} />
+      <TrackingToasts tracker={entityTracker} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now(), zoom: 11 })} />
 
       <SurveillancePanel open={showSurveillance} onClose={() => setShowSurveillance(false)} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onScanWaze={scanWazeAlerts} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />
 
