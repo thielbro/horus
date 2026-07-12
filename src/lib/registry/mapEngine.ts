@@ -44,7 +44,12 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
   const layer = getLayer(layerId);
   if (!layer) return;
 
+  if (layer.mapSourceSpec && !map.getSource(layer.mapSourceSpec.id)) {
+    try { map.addSource(layer.mapSourceSpec.id, layer.mapSourceSpec.definition as any); }
+    catch (err) { console.error('[HORUS] Registry tile source add failed', { layerId, err }); }
+  }
   for (const source of safeRegistryLayerSources(layer, layerId)) {
+    if (layer.mapSourceSpec?.id === source) continue;
     if (!map.getSource(source)) {
       try {
         map.addSource(source, { type: 'geojson', data: EMPTY_FC } as any);
@@ -64,6 +69,7 @@ export function addRegistryLayer(map: MaplibreMap, layerId: string, theme: Theme
       continue;
     }
     const spec: Record<string, unknown> = { id: sl.id, type: sl.type, source };
+    if (sl.sourceLayer) spec['source-layer'] = sl.sourceLayer;
     const paint = typeof sl.paint === 'function' ? sl.paint(theme) : sl.paint;
     const layout = typeof sl.layout === 'function' ? sl.layout(theme) : sl.layout;
     if (paint) spec.paint = paint;

@@ -14,7 +14,7 @@ interface CameraViewerProps {
 // Refresh cadences the motion-JPEG feed cycles through (ms per frame).
 // Kept at/above 500ms (2 FPS) so we never hammer public snapshot endpoints
 // hard enough to get rate-limited or IP-banned.
-const MJPEG_RATES = [2000, 1000, 500];
+const SNAPSHOT_RATES = [60_000, 30_000, 10_000];
 
 export default function CameraViewer({ camera, onClose, onLocate }: CameraViewerProps) {
   const [loading, setLoading] = useState(true);
@@ -22,18 +22,19 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
   const [refreshKey, setRefreshKey] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [currentTime, setCurrentTime] = useState<string>('');
-  const [refreshMs, setRefreshMs] = useState(1000);
+  const [refreshMs, setRefreshMs] = useState(30_000);
+  const [lastFrameAt, setLastFrameAt] = useState<number | null>(null);
 
   // Stable callbacks so <MotionJpeg>'s effect doesn't restart on every parent render.
-  const handleFrameReady = useCallback(() => setLoading(false), []);
+  const handleFrameReady = useCallback(() => { setLoading(false); setLastFrameAt(Date.now()); }, []);
   const handleFrameError = useCallback(() => { setLoading(false); setError(true); }, []);
   const cycleRate = useCallback(() => {
     setRefreshMs((ms) => {
-      const idx = MJPEG_RATES.indexOf(ms);
-      return MJPEG_RATES[(idx + 1) % MJPEG_RATES.length];
+      const idx = SNAPSHOT_RATES.indexOf(ms);
+      return SNAPSHOT_RATES[(idx + 1) % SNAPSHOT_RATES.length];
     });
   }, []);
-  const fpsLabel = `${1000 / refreshMs >= 1 ? (1000 / refreshMs).toFixed(0) : (1000 / refreshMs).toFixed(1)} FPS`;
+  const cadenceLabel = `${Math.round(refreshMs / 1000)}s`;
 
   useEffect(() => {
     const iv = setInterval(() => {
@@ -56,7 +57,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
     }
   }, []);
 
-  const streamType = camera?.stream_type || 'jpg';
+  const streamType = camera?.stream_type === 'jpg' ? 'snapshot' : (camera?.stream_type || 'snapshot');
   const externalFeedUrl = camera?.external_url || camera?.feed_url;
   const externalOnly = Boolean(camera?.external_url && !camera?.feed_url && !camera?.stream_url);
 
@@ -64,6 +65,8 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
     if (!camera) return;
     setLoading(true);
     setError(false);
+    setRefreshMs(Math.max(5_000, Number(camera.refresh_interval_ms) || 30_000));
+    setLastFrameAt(null);
 
     const video = videoRef.current;
     let onLoadedMetadata: (() => void) | null = null;
@@ -120,7 +123,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
       return cleanup;
     }
 
-    // JPG / MJPEG motion feed — <MotionJpeg> drives its own frame loop and
+    // Snapshot feeds drive their own adaptive frame loop.
     // reports readiness/failure via the stable callbacks, so nothing to set here
     // beyond validating that a snapshot URL exists.
     if (!camera.feed_url) {
@@ -184,10 +187,10 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                 
                 {/* Controls */}
                 <div className="flex items-center gap-1 flex-shrink-0 ml-3">
-                  {streamType === 'jpg' && (
-                    <button onClick={cycleRate} className="flex items-center gap-1 px-1.5 py-1.5 rounded-sm bg-white/5 border border-white/10 hover:bg-[var(--gold-primary)]/20 hover:border-[var(--gold-primary)] transition-all" title={`Feed rate: ${fpsLabel} — click to change`}>
+                  {streamType === 'snapshot' && (
+                    <button onClick={cycleRate} className="flex items-center gap-1 px-1.5 py-1.5 rounded-sm bg-white/5 border border-white/10 hover:bg-[var(--gold-primary)]/20 hover:border-[var(--gold-primary)] transition-all" title={`Snapshot cadence: ${cadenceLabel} — click to change`}>
                       <RefreshCw className="w-3 h-3 text-[var(--text-secondary)] hover:text-[var(--gold-primary)]" />
-                      <span className="text-[7px] font-mono tracking-wider text-[var(--text-secondary)] tabular-nums">{fpsLabel}</span>
+                      <span className="text-[7px] font-mono tracking-wider text-[var(--text-secondary)] tabular-nums">{cadenceLabel}</span>
                     </button>
                   )}
                   {camera.lat && camera.lng && (
@@ -273,8 +276,10 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                 allow="autoplay; fullscreen"
                 allowFullScreen
               />
+            ) : streamType === 'mjpeg' && camera.feed_url ? (
+              <img src={camera.feed_url} alt={camera.name || 'Live MJPEG camera'} className={`w-full h-full ${fullscreen ? 'object-contain' : 'object-cover'}`} onLoad={handleFrameReady} onError={handleFrameError} />
             ) : camera.feed_url ? (
-              <MotionJpeg
+              <AdaptiveSnapshot
                 key={refreshKey}
                 baseUrl={camera.feed_url}
                 fullscreen={fullscreen}
@@ -289,7 +294,9 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
               <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/80 border border-[var(--gold-primary)]/50 px-2 py-1 shadow-[0_0_10px_rgba(0,0,0,0.8)]">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]" />
                 <span className="text-[8px] font-mono text-white tracking-[0.2em]">
-                  {streamType === 'jpg' ? `MJPEG LIVE · ${fpsLabel}` : 'LIVE FEED'}
+                  {streamType === 'snapshot'
+                    ? `LIVE SNAPSHOTS · ${lastFrameAt ? `UPDATED ${Math.max(0, Math.round((Date.now() - lastFrameAt) / 1000))}s AGO` : cadenceLabel}`
+                    : streamType === 'mjpeg' ? 'MJPEG LIVE' : 'LIVE VIDEO'}
                 </span>
               </div>
             )}
@@ -309,7 +316,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
               <div className="flex gap-4">
                 <div className="flex flex-col">
                   <span className="text-[6px] text-[var(--text-muted)] font-mono tracking-widest">FEED TYPE</span>
-                  <span className="text-[8px] text-white font-mono tracking-widest uppercase">{streamType === 'jpg' ? 'MJPEG' : streamType}</span>
+                  <span className="text-[8px] text-white font-mono tracking-widest uppercase">{streamType}</span>
                 </div>
                 <div className="flex flex-col border-l border-white/10 pl-4">
                   <span className="text-[6px] text-[var(--text-muted)] font-mono tracking-widest">STATUS</span>
@@ -345,7 +352,7 @@ function withCacheBuster(url: string): string {
   return `${url}${sep}_t=${Date.now()}`;
 }
 
-interface MotionJpegProps {
+interface AdaptiveSnapshotProps {
   baseUrl: string;
   fullscreen: boolean;
   intervalMs: number;
@@ -364,16 +371,18 @@ interface MotionJpegProps {
  * frame error is retried silently; only a failure on the very first frame
  * surfaces the parent's error state.
  */
-function MotionJpeg({ baseUrl, fullscreen, intervalMs, onReady, onError }: MotionJpegProps) {
+function AdaptiveSnapshot({ baseUrl, fullscreen, intervalMs, onReady, onError }: AdaptiveSnapshotProps) {
   const [layers, setLayers] = useState<{ a?: string; b?: string }>({});
   const [visible, setVisible] = useState<'a' | 'b'>('a');
   const visibleRef = useRef<'a' | 'b'>('a');
   const firstLoadedRef = useRef(false);
+  const failuresRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     firstLoadedRef.current = false;
+    failuresRef.current = 0;
     visibleRef.current = 'a';
 
     const loadNext = () => {
@@ -390,6 +399,7 @@ function MotionJpeg({ baseUrl, fullscreen, intervalMs, onReady, onError }: Motio
           firstLoadedRef.current = true;
           onReady();
         }
+        failuresRef.current = 0;
         timer = setTimeout(loadNext, intervalMs);
       };
       img.onerror = () => {
@@ -399,7 +409,8 @@ function MotionJpeg({ baseUrl, fullscreen, intervalMs, onReady, onError }: Motio
           return; // parent renders error + retry; stop the loop
         }
         // Transient hiccup on an already-running feed: back off and keep going.
-        timer = setTimeout(loadNext, Math.max(intervalMs, 2000));
+        failuresRef.current += 1;
+        timer = setTimeout(loadNext, Math.min(5 * 60_000, Math.max(intervalMs, 5_000) * (2 ** Math.min(failuresRef.current, 4))));
       };
       img.src = url;
     };

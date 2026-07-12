@@ -15,6 +15,7 @@ import {
 import { setHostServices, getHost } from '@/lib/plugins';
 import { circlePolygon } from '@/lib/geo';
 import { flagFromMmsi } from '@/lib/mmsi-flags';
+import { detectionLabel, type TrackedDetection } from '@/lib/entity-tracking';
 
 interface HorusMapProps {
   data: any;
@@ -24,6 +25,7 @@ interface HorusMapProps {
   onRightClick?: (coords: { lat: number; lng: number }) => void;
   onViewStateChange?: (vs: { zoom: number; latitude: number; longitude: number; bounds: [number, number, number, number] }) => void;
   flyToLocation?: { lat: number; lng: number; ts: number; zoom?: number } | null;
+  trackedDetections?: TrackedDetection[];
   projection?: 'mercator' | 'globe';
   mapStyle?: string;
   sweepData?: any;
@@ -118,7 +120,7 @@ function drawPlaneIcon(color: string, size: number): { px: number; data: Uint8Ar
   return { px, data: new Uint8Array(ctx.getImageData(0, 0, px, px).data) };
 }
 
-function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], dossierOverlay = null, userPosition = null, routeOverlay = null, fitRouteBounds = null, demoMode = false, theme = 'core' }: HorusMapProps) {
+function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, trackedDetections = [], projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], dossierOverlay = null, userPosition = null, routeOverlay = null, fitRouteBounds = null, demoMode = false, theme = 'core' }: HorusMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -432,6 +434,40 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
         'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
         'text-offset': [0, 1.2], 'text-allow-overlap': false,
       }, paint: { 'text-color': ['match', ['get','type'], 'military','#D32F2F', 'tanker','#E65100', 'cargo','#26C6DA', '#B0BEC5'], 'text-halo-color': '#000', 'text-halo-width': 1 }});
+
+      // Tracked entities bypass the regular layer sampling/visibility rules. This makes a
+      // positive tracker detection unmissable even when the ordinary flight/ship layer
+      // has been decimated or is still refreshing after the map has moved.
+      map.addSource('tracked-entities', { type: 'geojson', data: EMPTY_FC as any });
+      map.addLayer({ id: 'tracked-entity-glow', type: 'circle', source: 'tracked-entities', paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 11, 6, 18, 11, 28],
+        'circle-color': ['match', ['get', 'kind'], 'aircraft', '#00E5FF', '#26C6DA'],
+        'circle-opacity': 0.2,
+        'circle-blur': 0.8,
+      }});
+      map.addLayer({ id: 'tracked-vessel-marker', type: 'circle', source: 'tracked-entities', filter: ['==', ['get', 'kind'], 'vessel'], paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 4, 6, 7, 11, 10],
+        'circle-color': '#26C6DA',
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#E8FFFF',
+      }});
+      map.addLayer({ id: 'tracked-aircraft-marker', type: 'symbol', source: 'tracked-entities', filter: ['==', ['get', 'kind'], 'aircraft'], layout: {
+        'icon-image': 'plane-cyan',
+        'icon-size': 1.5,
+        'icon-rotate': ['coalesce', ['get', 'heading'], 0],
+        'icon-allow-overlap': true,
+      }});
+      map.addLayer({ id: 'tracked-entity-label', type: 'symbol', source: 'tracked-entities', minzoom: 1, layout: {
+        'text-field': ['concat', '◉ ', ['get', 'name']],
+        'text-size': 11,
+        'text-font': ['JetBrains Mono Bold', 'Open Sans Bold'],
+        'text-offset': [0, 1.6],
+        'text-allow-overlap': true,
+      }, paint: {
+        'text-color': ['match', ['get', 'kind'], 'aircraft', '#00E5FF', '#26C6DA'],
+        'text-halo-color': '#000',
+        'text-halo-width': 1.5,
+      }});
 
       setMapReady(true);
       } catch (error) {
@@ -1151,6 +1187,30 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     geoBatchUpdatesRef.current = {};
   }, []);
 
+  // This source deliberately does not consult `activeLayers`: a tracker match is an
+  // explicit user request to draw the entity, rather than a normal sampled feed item.
+  useEffect(() => {
+    if (!mapReady) return;
+    const features = trackedDetections.flatMap((detection) => {
+      const entity = detection.entity;
+      const lat = Number(entity?.lat);
+      const lng = Number(entity?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+      return [{
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [lng, lat] },
+        properties: {
+          id: detection.watch.id,
+          kind: detection.watch.kind,
+          name: detectionLabel(detection),
+          identifier: detection.watch.identifier,
+          heading: Number(entity?.heading) || 0,
+        },
+      }];
+    });
+    setGeo('tracked-entities', features);
+  }, [mapReady, setGeo, trackedDetections]);
+
   // Day/Night — registry-driven; the binding recomputes the terminator polygon, re-run here
   // on a 5-min interval (shadow barely moves) so the registry needs no timed-source concept.
   useEffect(() => {
@@ -1198,6 +1258,7 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
       addRegistryLayer(map, l.id, themeMode);
       const styleIds = (l.styleLayers ?? []).map(s => s.id);
       const sources = [...new Set([
+        ...(l.mapSourceSpec ? [l.mapSourceSpec.id] : []),
         ...(l.styleLayers ?? []).map(getStyleLayerSource),
         ...(l.render ?? []).map(getRenderBindingSource),
       ])];
@@ -1265,7 +1326,14 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
   useEffect(() => {
     if (!mapReady) return;
     for (const l of getLayers()) {
-      if (l.origin === 'custom' || l.origin === 'plugin') renderRegistryLayer(setGeo, l.id, data, activeLayers);
+      if (l.origin === 'custom' || l.origin === 'plugin') {
+        renderRegistryLayer(setGeo, l.id, data, activeLayers);
+        if (l.mapSourceSpec && mapRef.current) {
+          for (const style of l.styleLayers ?? []) {
+            if (mapRef.current.getLayer(style.id)) mapRef.current.setLayoutProperty(style.id, 'visibility', activeLayers[l.id] ? 'visible' : 'none');
+          }
+        }
+      }
     }
   }, [mapReady, registryVersion, data, activeLayers, setGeo]);
 
@@ -1441,8 +1509,8 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
   useEffect(() => {
     if (!mapReady) return;
     renderRegistryLayer(setGeo, 'cctv', data, activeLayers);
-  }, [mapReady, data.cameras_europe, data.cameras_north_america, data.cameras_asia, data.cameras_oceania,
-      activeLayers.cctv_europe, activeLayers.cctv_north_america, activeLayers.cctv_asia, activeLayers.cctv_oceania, setGeo]);
+  }, [mapReady, data.cameras_europe, data.cameras_north_america, data.cameras_united_states, data.cameras_asia, data.cameras_oceania,
+      activeLayers.cctv_europe, activeLayers.cctv_north_america, activeLayers.cctv_united_states, activeLayers.cctv_asia, activeLayers.cctv_oceania, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;
@@ -1548,7 +1616,7 @@ function HorusMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCli
     setVis(['fl-private'], activeLayers.private);
     setVis(['fl-jets'], activeLayers.jets);
     setVis(['fl-military'], activeLayers.military);
-    setVis(['cctv-glow','cctv-dots','cctv-label'], activeLayers.cctv_europe || activeLayers.cctv_north_america || activeLayers.cctv_asia || activeLayers.cctv_oceania);
+    setVis(['cctv-glow','cctv-dots','cctv-label'], activeLayers.cctv_europe || activeLayers.cctv_north_america || activeLayers.cctv_united_states || activeLayers.cctv_asia || activeLayers.cctv_oceania);
     setVis(['surv-glow','surv-dots','surv-label'], activeLayers.surveillance);
     setVis(['police-glow','police-dots','police-label'], activeLayers.police);
     setVis(['flock-glow','flock-dots','flock-label'], activeLayers.flock);

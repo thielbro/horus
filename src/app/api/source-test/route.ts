@@ -79,6 +79,17 @@ export async function GET(request: Request) {
   const contentType = res.headers.get('content-type') || '';
   const base = { ok: res.ok, status: res.status, statusText: res.statusText, contentType };
 
+  const lowerType = contentType.toLowerCase();
+  const detectedType = lowerType.includes('mpegurl') ? 'hls'
+    : lowerType.startsWith('video/') ? (lowerType.includes('mp4') ? 'mp4' : 'video')
+    : lowerType.includes('multipart/x-mixed-replace') ? 'mjpeg'
+    : lowerType.startsWith('image/') ? 'snapshot'
+    : null;
+  if (detectedType) {
+    await res.body?.cancel();
+    return NextResponse.json({ ...base, detectedType, contentLength: res.headers.get('content-length'), message: res.ok ? 'Media source is reachable.' : 'Media source returned an error.' });
+  }
+
   // Only attempt structured parsing for JSON-ish responses.
   let body: any = null;
   let parseError: string | null = null;

@@ -5,7 +5,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { getSettings, updateSettings } from '@/lib/settings';
-import { registerCustomSource, unregisterCustomSource, getGroups, type CustomSourceSpec } from '@/lib/registry';
+import { registerCustomSource, unregisterCustomSource, getGroups, migrateCustomSource, type CustomSourceSpec } from '@/lib/registry';
 import { formatValidationErrors, validateCustomSourceSpec } from './validation';
 
 export interface CustomSourceRecord extends CustomSourceSpec {
@@ -124,7 +124,8 @@ export function bootstrapCustomSources(): void {
   specs = [];
   const seen = new Set<string>();
   for (const s of persisted) {
-    const validation = validateCustomSourceSpec(s, {
+    const migrated = migrateCustomSource(s);
+    const validation = validateCustomSourceSpec(migrated, {
       groupIds: groupIds(),
       existingIds: [...seen],
     });

@@ -33,6 +33,7 @@ const SurveillancePanel = dynamic(() => import('@/components/SurveillancePanel')
 const DossierPanel = dynamic(() => import('@/components/DossierPanel'));
 const LocationTracker = dynamic(() => import('@/components/LocationTracker'));
 const StreamWall = dynamic(() => import('@/components/StreamWall'), { ssr: false });
+const CustomSourcesPanel = dynamic(() => import('@/components/CustomSourcesPanel'), { ssr: false });
 
 const MAX_DOSSIER_NEARBY = 30;
 
@@ -277,6 +278,8 @@ export default function Dashboard() {
   // ── DEFAULT: Most layers OFF — fast initial load ──
   const [activeLayers, setActiveLayers] = useState({ ...DEFAULT_ACTIVE_LAYERS });
   const entityTracker = useEntityTracker(data);
+  const trackedDetections = useMemo(() => Object.values(entityTracker.detections), [entityTracker.detections]);
+  const autoFocusedTrackedEntities = useRef(new Set<string>());
 
   // Watches remain operational while the alerts panel is closed by keeping their
   // existing live-feed pipelines active.
@@ -290,7 +293,26 @@ export default function Dashboard() {
       maritime_ships: wantsVessel ? true : current.maritime_ships,
     }));
   }, [entityTracker.watches]);
+
+  // Tracker matches are a stronger intent than the ambient map position: ensure the
+  // detected subject is immediately visible and keep subsequent polling non-disruptive.
+  useEffect(() => {
+    const currentlyDetected = new Set(trackedDetections.map((detection) => detection.watch.id));
+    autoFocusedTrackedEntities.current = new Set(
+      [...autoFocusedTrackedEntities.current].filter((id) => currentlyDetected.has(id)),
+    );
+    for (const detection of trackedDetections) {
+      if (autoFocusedTrackedEntities.current.has(detection.watch.id)) continue;
+      const lat = Number(detection.entity?.lat);
+      const lng = Number(detection.entity?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      autoFocusedTrackedEntities.current.add(detection.watch.id);
+      setFlyToLocation({ lat, lng, ts: Date.now(), zoom: 11 });
+      break;
+    }
+  }, [trackedDetections]);
   const [showStreamWall, setShowStreamWall] = useState(false);
+  const [showCustomSources, setShowCustomSources] = useState(false);
   const [streamAddRequest, setStreamAddRequest] = useState<StreamAddRequest | null>(null);
   // Route any "watch this feed" intent (map news dots, alerts, plugins) into the wall.
   const openStreamTile = useCallback((url: string, name?: string, embedAllowed?: boolean) => {
@@ -1209,6 +1231,7 @@ export default function Dashboard() {
           onRightClick={handleRightClick} 
           onViewStateChange={setMapView} 
           flyToLocation={flyToLocation}
+          trackedDetections={trackedDetections}
           sweepData={sweepData}
           scanTargets={scanTargets}
           dossierOverlay={dossierOverlay}
@@ -1393,6 +1416,12 @@ export default function Dashboard() {
         </div>
 
         <div className="relative group">
+          <button onClick={() => setShowCustomSources(true)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showCustomSources ? 'bg-[var(--cyan-primary)]/20' : 'hover:bg-white/10'}`} title="Custom Sources">
+            <Database className={`w-4 h-4 ${showCustomSources ? 'text-[var(--cyan-primary)]' : 'text-white/60'}`} />
+          </button>
+        </div>
+
+        <div className="relative group">
           <button onClick={() => setShowSettings(true)} className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-white/10" title="Settings">
             <Settings className="w-4 h-4 text-white/60" />
           </button>
@@ -1403,6 +1432,7 @@ export default function Dashboard() {
       {showStreamWall && (
         <StreamWall open={showStreamWall} onClose={() => setShowStreamWall(false)} addRequest={streamAddRequest} />
       )}
+      <CustomSourcesPanel open={showCustomSources} onClose={() => setShowCustomSources(false)} activeLayers={activeLayers} setActiveLayers={setActiveLayers} />
 
       {/* ═══ MOBILE UI ═══ */}
       {isMobile && (
@@ -1552,7 +1582,7 @@ export default function Dashboard() {
       <SettingsPanel open={showSettings} onClose={closeSettings} getWorkspaceSnapshot={getWorkspaceSnapshot} onApplyWorkspace={applyWorkspace} />
       <TrackingToasts tracker={entityTracker} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now(), zoom: 11 })} />
 
-      <SurveillancePanel open={showSurveillance} onClose={() => setShowSurveillance(false)} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onScanWaze={scanWazeAlerts} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />
+      <SurveillancePanel open={showSurveillance} onClose={() => setShowSurveillance(false)} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} onScanWaze={scanWazeAlerts} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} onManageSources={() => { setShowSurveillance(false); setShowCustomSources(true); }} />
 
       <DossierPanel open={showDossier} target={dossierTarget} requestId={currentDossierRequestId} onClose={closeDossier} onLoaded={onDossierLoaded} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now(), zoom: 17 })} />
 

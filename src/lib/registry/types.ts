@@ -70,6 +70,8 @@ export interface RegistryLayer {
   styleLayers?: StyleLayerSpec[];
   /** Data → map-source render bindings (the former setGeo specs). */
   render?: RenderBinding[];
+  /** Non-GeoJSON MapLibre source used by typed custom tile layers. */
+  mapSourceSpec?: { id: string; definition: Record<string, unknown> };
 }
 
 /** A value that may be a constant or computed from the active theme (e.g. ghost recolors). */
@@ -83,7 +85,8 @@ export type RegistrySourceRef =
 /** A single MapLibre style layer bound to a geojson source. */
 export type StyleLayerSpec = RegistrySourceRef & {
   id: string;
-  type: 'circle' | 'symbol' | 'line' | 'fill' | 'heatmap';
+  type: 'circle' | 'symbol' | 'line' | 'fill' | 'heatmap' | 'raster';
+  sourceLayer?: string;
   /** Paint object, or a theme→paint function for ghost-recolored layers (cctv, surveillance). */
   paint?: Themed<Record<string, unknown>>;
   /** Layout object, or a theme→layout function. */

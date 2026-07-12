@@ -47,7 +47,8 @@ async function fetchAtmsCameras(site: AtmsSite): Promise<CctvCamera[]> {
         city: site.region,
         country: 'US',
         feed_url: `https://${site.host}/map/Cctv/${id}`,
-        stream_type: 'jpg',
+        stream_type: 'snapshot',
+        refresh_interval_ms: 30_000,
         source: site.source,
       });
     }
@@ -63,3 +64,8 @@ export const fetchNorthCarolinaCameras = () => fetchAtmsCameras({ host: 'drivenc
 export const fetchPennsylvaniaCameras = () => fetchAtmsCameras({ host: 'www.511pa.com', region: 'Pennsylvania', source: '511PA' });
 export const fetchConnecticutCameras = () => fetchAtmsCameras({ host: 'cttravelsmart.org', region: 'Connecticut', source: 'CT Travel Smart' });
 export const fetchNewEnglandCameras = () => fetchAtmsCameras({ host: 'newengland511.org', region: 'New England', source: 'New England 511' });
+export const fetchArizonaCameras = () => fetchAtmsCameras({ host: 'www.az511.gov', region: 'Arizona', source: 'AZ 511' });
+export const fetchIdahoCameras = () => fetchAtmsCameras({ host: '511.idaho.gov', region: 'Idaho', source: 'Idaho 511' });
+export const fetchNevadaCameras = () => fetchAtmsCameras({ host: 'www.nvroads.com', region: 'Nevada', source: 'NV Roads' });
+export const fetchLouisianaCameras = () => fetchAtmsCameras({ host: 'www.511la.org', region: 'Louisiana', source: 'Louisiana 511' });
+export const fetchAlaskaCameras = () => fetchAtmsCameras({ host: '511.alaska.gov', region: 'Alaska', source: 'Alaska 511' });

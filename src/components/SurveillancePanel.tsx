@@ -31,6 +31,7 @@ interface SurveillancePanelProps {
   /** Scans the current map viewport for live Waze police/camera alerts (one headed-browser fetch). */
   onScanWaze?: () => Promise<WazeScanResult>;
   onLocate?: (lat: number, lng: number) => void;
+  onManageSources?: () => void;
 }
 
 // CCTV continents with sources today: [toggle key, label, data bucket].
@@ -124,11 +125,11 @@ function TestResultLine({ r }: { r: TestState }) {
 
 type Draft = Omit<CustomSourceSpec, 'id'> & { id?: string };
 const EMPTY_DRAFT: Draft = {
-  label: '', group: 'SURVEIL', color: '#00E676', url: '', jsonPath: '', latProp: 'lat', lngProp: 'lng',
+  version: 2, sourceType: 'json-points', label: '', group: 'SURVEIL', color: '#00E676', url: '', jsonPath: '', latProp: 'lat', lngProp: 'lng',
   labelProp: 'name', markerType: 'circle', radius: 5, intervalMs: undefined,
 };
 
-function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers, onScanWaze, onLocate }: SurveillancePanelProps) {
+function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers, onScanWaze, onLocate, onManageSources }: SurveillancePanelProps) {
   const customSources = useCustomSources();
   const formRef = useRef<HTMLDivElement>(null);
   const testAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -378,72 +379,10 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
                 );
               })()}
 
-              {/* ── Custom sources (toggle / edit / remove) ── */}
-              {customSources.length > 0 && (
-                <section>
-                  <SectionTitle icon={Boxes}>YOUR SOURCES</SectionTitle>
-                  <div className="space-y-1.5">
-                    {customSources.map((s) => {
-                      const active = !!activeLayers[s.id];
-                      return (
-                        <div key={s.id} className="bg-black/30 border border-white/5 rounded px-2.5 py-1.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <button onClick={() => toggle(s.id)} className="flex items-center gap-2 min-w-0 flex-1 text-left">
-                              <span className="w-2.5 h-2.5 rounded-full shrink-0 border" style={{ background: active ? s.color : 'transparent', borderColor: s.color, boxShadow: active ? `0 0 8px ${s.color}` : 'none' }} />
-                              <span className="text-[11px] font-mono text-white/85 truncate">{s.label}</span>
-                              <span className="text-[9px] font-mono text-white/30 truncate">{s.url}</span>
-                              {s.error && <span className="text-[9px] font-mono text-[var(--alert-red)]">ERROR</span>}
-                            </button>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button onClick={() => runTest(s.url, s.jsonPath)} className="p-1 text-white/40 hover:text-[var(--gold-primary)]" title="Test"><FlaskConical className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => edit(s)} className="p-1 text-white/40 hover:text-[var(--cyan-primary)]" title="Edit"><Pencil className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => handleRemoveSource(s.id)} className="p-1 text-white/40 hover:text-[var(--alert-red)]" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
-                            </div>
-                          </div>
-                          {tests[s.url] && <TestResultLine r={tests[s.url]} />}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
-
-              {/* ── Add / test source ── */}
-              <section ref={formRef}>
-                <SectionTitle icon={FlaskConical}>{draft.id ? 'EDIT SOURCE' : 'ADD / TEST A SOURCE'}</SectionTitle>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="col-span-2"><label className={labelCls}>Name</label><input className={inputCls} value={draft.label} onChange={(e) => set('label', e.target.value)} placeholder="My camera feed" /></div>
-                  <div className="col-span-2">
-                    <label className={labelCls}>Feed URL <span className="text-white/25 normal-case">(the editable source field)</span></label>
-                    <div className="flex gap-1.5">
-                      <input className={inputCls} value={draft.url} onChange={(e) => set('url', e.target.value)} placeholder="/api/... or https://..." />
-                      <button onClick={() => runTest(draft.url, draft.jsonPath)} className={`${btnCls} shrink-0`}><FlaskConical className="w-3.5 h-3.5" /> TEST</button>
-                    </div>
-                    {draft.url && tests[draft.url] && <TestResultLine r={tests[draft.url]} />}
-                  </div>
-                  <div><label className={labelCls}>Color</label>
-                    <div className="flex gap-1.5 items-center">
-                      <input className={inputCls} value={draft.color} onChange={(e) => set('color', e.target.value)} />
-                      <input type="color" value={draft.color} onChange={(e) => set('color', e.target.value)} className="w-7 h-7 rounded cursor-pointer bg-transparent border border-white/10 shrink-0" />
-                    </div>
-                  </div>
-                  <div><label className={labelCls}>JSON path → array</label><input className={inputCls} value={draft.jsonPath ?? ''} onChange={(e) => set('jsonPath', e.target.value)} placeholder="cameras (blank = auto)" /></div>
-                  <div><label className={labelCls}>Lat property</label><input className={inputCls} value={draft.latProp} onChange={(e) => set('latProp', e.target.value)} /></div>
-                  <div><label className={labelCls}>Lng property</label><input className={inputCls} value={draft.lngProp} onChange={(e) => set('lngProp', e.target.value)} /></div>
-                  <div><label className={labelCls}>Label property</label><input className={inputCls} value={draft.labelProp ?? ''} onChange={(e) => set('labelProp', e.target.value)} placeholder="name (optional)" /></div>
-                  <div><label className={labelCls}>Poll (ms)</label><input className={inputCls} type="number" value={draft.intervalMs ?? ''} onChange={(e) => set('intervalMs', e.target.value ? Number(e.target.value) : undefined)} placeholder="once" /></div>
-                </div>
-
-                {formError && <div className="mt-2 text-[10px] font-mono text-[var(--alert-red)] flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" />{formError}</div>}
-
-                <div className="flex items-center gap-2 mt-3">
-                  <button onClick={save} className={btnCls}><Plus className="w-3.5 h-3.5" /> {draft.id ? 'UPDATE SOURCE' : 'ADD SOURCE'}</button>
-                  {draft.id && <button onClick={() => { setDraft(EMPTY_DRAFT); setFormError(null); }} className="text-[9px] font-mono text-white/40 hover:text-white/80">CANCEL EDIT</button>}
-                </div>
-                <p className="text-[9px] font-mono text-white/30 leading-relaxed mt-2">
-                  Test a URL to see its HTTP status, record count, and field names — then map the right Lat/Lng/Label
-                  properties. Saved sources persist locally and become toggleable layers (also under SURVEIL in the rail).
-                </p>
+              <section>
+                <SectionTitle icon={Boxes}>CUSTOM SOURCES</SectionTitle>
+                <button onClick={onManageSources} className={`${btnCls} w-full justify-center`}><Boxes className="w-3.5 h-3.5" /> MANAGE CUSTOM SOURCES</button>
+                <p className="text-[9px] font-mono text-white/30 leading-relaxed mt-2">Create cameras, data feeds, GeoJSON, and tile layers in the dedicated source workspace.</p>
               </section>
 
               {/* ── Builtin sources — test for dead feeds ── */}

@@ -91,7 +91,7 @@ function ExtensionBundleSection() {
 
 type Draft = Omit<CustomSourceSpec, 'id'> & { id?: string };
 const EMPTY_DRAFT = (group: string): Draft => ({
-  label: '', group, color: '#4FC3F7', url: '', jsonPath: '', latProp: 'lat', lngProp: 'lng',
+  version: 2, sourceType: 'json-points', label: '', group, color: '#4FC3F7', url: '', jsonPath: '', latProp: 'lat', lngProp: 'lng',
   labelProp: '', markerType: 'circle', radius: 5, intervalMs: undefined,
 });
 
@@ -370,7 +370,6 @@ export default function ExtensionsSettings() {
   return (
     <>
       <ExtensionBundleSection />
-      <CustomSourcesSection />
       <PluginsSection />
     </>
   );

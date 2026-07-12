@@ -7,6 +7,8 @@ export type ValidationResult<T> =
   | { ok: false; errors: string[] };
 
 export type CustomSourceSpecValue = {
+  version: 2;
+  sourceType: 'live-camera' | 'snapshot-camera' | 'json-points' | 'geojson' | 'tile-layer';
   id: string;
   label: string;
   group: string;
@@ -14,13 +16,21 @@ export type CustomSourceSpecValue = {
   icon?: string;
   url: string;
   jsonPath?: string;
-  latProp: string;
-  lngProp: string;
+  latProp?: string;
+  lngProp?: string;
   labelProp?: string;
-  markerType: 'circle' | 'symbol';
+  markerType?: 'circle' | 'symbol';
   radius?: number;
   intervalMs?: number;
   defaultActive?: boolean;
+  lat?: number;
+  lng?: number;
+  streamFormat?: 'auto' | 'hls' | 'mp4' | 'mjpeg' | 'iframe';
+  tileKind?: 'raster' | 'vector';
+  sourceLayer?: string;
+  minZoom?: number;
+  maxZoom?: number;
+  attribution?: string;
 };
 
 export type PluginDefinitionValue = {
@@ -102,7 +112,8 @@ function validatePositiveNumber(value: unknown, errors: string[], field: string,
 }
 
 export function validateCustomSourceSpec(input: unknown, opts: CustomSourceValidationOptions = {}): ValidationResult<CustomSourceSpecValue> {
-  const source = asObj(input);
+  const original = asObj(input);
+  const source = original && original.version === 2 && original.sourceType ? original : original ? { ...original, version: 2, sourceType: 'json-points' } : null;
   if (!source) return fail(['Custom source must be a JSON object.']);
 
   const errors: string[] = [];
@@ -117,6 +128,8 @@ export function validateCustomSourceSpec(input: unknown, opts: CustomSourceValid
   const labelProp = str(source.labelProp);
   const icon = str(source.icon);
   const markerType = str(source.markerType) || 'circle';
+  const sourceType = str(source.sourceType) as CustomSourceSpecValue['sourceType'];
+  const sourceTypes = new Set(['live-camera', 'snapshot-camera', 'json-points', 'geojson', 'tile-layer']);
 
   if (!id) pushStringError(errors, 'id');
   else if (!CUSTOM_SOURCE_ID_RE.test(id)) errors.push('id must start with a letter and contain only lowercase letters, numbers, underscores, or hyphens.');
@@ -125,6 +138,7 @@ export function validateCustomSourceSpec(input: unknown, opts: CustomSourceValid
   if (id && duplicateIds.has(id)) errors.push(`id "${id}" already exists.`);
 
   if (!label) pushStringError(errors, 'label');
+  if (!sourceTypes.has(sourceType)) errors.push('sourceType must be live-camera, snapshot-camera, json-points, geojson, or tile-layer.');
   if (!group) pushStringError(errors, 'group');
   else if (opts.groupIds?.length && !opts.groupIds.includes(group)) errors.push(`group "${group}" is not registered.`);
 
@@ -135,10 +149,15 @@ export function validateCustomSourceSpec(input: unknown, opts: CustomSourceValid
   else if (!isAllowedUrl(url)) errors.push('Feed URL must be same-origin (/path), http, or https.');
 
   if (jsonPath && !PATH_RE.test(jsonPath)) errors.push('jsonPath must be a dot path such as data.items.');
-  if (!latProp) pushStringError(errors, 'latProp', 'lat property');
-  else if (!PROP_RE.test(latProp)) errors.push('lat property must be a single JSON property name.');
-  if (!lngProp) pushStringError(errors, 'lngProp', 'lng property');
-  else if (!PROP_RE.test(lngProp)) errors.push('lng property must be a single JSON property name.');
+  if (sourceType === 'json-points') {
+    if (!latProp) pushStringError(errors, 'latProp', 'lat property');
+    else if (!PROP_RE.test(latProp)) errors.push('lat property must be a single JSON property name.');
+    if (!lngProp) pushStringError(errors, 'lngProp', 'lng property');
+    else if (!PROP_RE.test(lngProp)) errors.push('lng property must be a single JSON property name.');
+  }
+  const lat = source.lat == null || source.lat === '' ? undefined : Number(source.lat);
+  const lng = source.lng == null || source.lng === '' ? undefined : Number(source.lng);
+  if ((sourceType === 'live-camera' || sourceType === 'snapshot-camera') && (!Number.isFinite(lat) || lat! < -90 || lat! > 90 || !Number.isFinite(lng) || lng! < -180 || lng! > 180)) errors.push('Camera latitude/longitude must be valid coordinates.');
   if (labelProp && !PROP_RE.test(labelProp)) errors.push('label property must be a single JSON property name.');
 
   if (markerType !== 'circle' && markerType !== 'symbol') errors.push('markerType must be circle or symbol.');
@@ -148,15 +167,23 @@ export function validateCustomSourceSpec(input: unknown, opts: CustomSourceValid
   if (errors.length) return fail(errors);
 
   const value: CustomSourceSpecValue = {
+    version: 2,
+    sourceType,
     id,
     label,
     group,
     color,
     url,
-    latProp,
-    lngProp,
-    markerType: markerType as 'circle' | 'symbol',
   };
+  if (sourceType === 'json-points') { value.latProp = latProp; value.lngProp = lngProp; value.markerType = markerType as 'circle' | 'symbol'; }
+  if (sourceType === 'live-camera' || sourceType === 'snapshot-camera') { value.lat = lat; value.lng = lng; value.streamFormat = (str(source.streamFormat) || 'auto') as CustomSourceSpecValue['streamFormat']; }
+  if (sourceType === 'tile-layer') {
+    value.tileKind = source.tileKind === 'vector' ? 'vector' : 'raster';
+    if (str(source.sourceLayer)) value.sourceLayer = str(source.sourceLayer);
+    if (source.minZoom != null) value.minZoom = Number(source.minZoom);
+    if (source.maxZoom != null) value.maxZoom = Number(source.maxZoom);
+    if (str(source.attribution)) value.attribution = str(source.attribution);
+  }
   if (icon) value.icon = icon;
   if (jsonPath) value.jsonPath = jsonPath;
   if (labelProp) value.labelProp = labelProp;

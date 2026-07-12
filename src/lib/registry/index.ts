@@ -12,4 +12,4 @@ export { useViewportLayers } from './useViewportLayers';
 export { addRegistryLayer, renderRegistryLayer, removeRegistryLayer, updateRegistryLayerTheme } from './mapEngine';
 export { getRegistryVersion, subscribeRegistry } from './events';
 export { useRegistryVersion } from './reactive';
-export { buildCustomSource, registerCustomSource, unregisterCustomSource, type CustomSourceSpec } from './customSource';
+export { buildCustomSource, registerCustomSource, unregisterCustomSource, migrateCustomSource, type CustomSourceSpec, type CustomSourceType, type CustomStreamFormat } from './customSource';

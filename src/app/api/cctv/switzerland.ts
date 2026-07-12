@@ -10,7 +10,7 @@ export async function fetchSwitzerlandCameras(): Promise<CctvCamera[]> {
       name: 'CHUV Heliport Webcam',
       city: 'Lausanne',
       country: 'Switzerland',
-      stream_type: 'jpg',
+      stream_type: 'snapshot',
       feed_url: 'https://wc-heli.chuv.ch/axis-cgi/jpg/image.cgi?resolution=640x480',
       external_url: 'https://wc-heli.chuv.ch/view/view.shtml',
       source: 'chuv.ch'

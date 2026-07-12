@@ -27,3 +27,14 @@ test('tracked entities keep their corresponding live layers active', () => {
   assert.match(page, /wantsVessel[\s\S]*maritime_ships: wantsVessel \? true/);
   assert.match(page, /<LiveAlerts[^>]*tracker=\{entityTracker\}/);
 });
+
+test('a detection is forced onto the map and focused without normal feed sampling', () => {
+  const page = file('src/app/page.tsx');
+  const map = file('src/components/HorusMap.tsx');
+  assert.match(page, /trackedDetections=\{trackedDetections\}/);
+  assert.match(page, /setFlyToLocation\(\{ lat, lng, ts: Date\.now\(\), zoom: 11 \}\)/);
+  assert.match(map, /map\.addSource\('tracked-entities'/);
+  assert.match(map, /tracked-aircraft-marker/);
+  assert.match(map, /tracked-vessel-marker/);
+  assert.match(map, /does not consult `activeLayers`/);
+});

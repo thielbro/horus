@@ -29,8 +29,15 @@ import {
   fetchPennsylvaniaCameras,
   fetchConnecticutCameras,
   fetchNewEnglandCameras,
+  fetchArizonaCameras,
+  fetchIdahoCameras,
+  fetchNevadaCameras,
+  fetchLouisianaCameras,
+  fetchAlaskaCameras,
 } from '@/app/api/cctv/us-atms';
 import { settleCameraFetchers } from '@/app/api/cctv/fanout';
+import { inferStreamType, type CctvCamera } from '@/app/api/cctv/types';
+import { refreshCameraHealth, shouldServeCamera } from './health';
 
 /**
  * HORUS — reusable worldwide CCTV camera sources.
@@ -503,6 +510,11 @@ const REGION_FETCHERS: Record<string, () => Promise<any[]>> = {
   'us-pa': fetchPennsylvaniaCameras,
   'us-ct': fetchConnecticutCameras,
   'us-newengland': fetchNewEnglandCameras,
+  'us-az': fetchArizonaCameras,
+  'us-id': fetchIdahoCameras,
+  'us-nv': fetchNevadaCameras,
+  'us-la': fetchLouisianaCameras,
+  'us-ak': fetchAlaskaCameras,
   'canada': fetchCanadaCameras,
   'europe': fetchEuropeCameras,
   'asia': fetchAsiaCameras,
@@ -536,7 +548,7 @@ const CONTINENTS: Record<string, string[]> = {
   europe: ['uk', 'europe', 'worldcam', 'bulgaria', 'greece', 'serbia', 'macedonia', 'turkey', 'romania', 'italy', 'czechia', 'slovakia', 'germany', 'france', 'spain', 'poland', 'switzerland'],
   'north-america': ['us-west', 'us-east', 'us-central', 'canada'],
   // Dedicated United States bucket — all US regions incl. the state-DOT ATMS sources.
-  'united-states': ['us-west', 'us-east', 'us-central', 'us-ny', 'us-ga', 'us-nc', 'us-pa', 'us-ct', 'us-newengland'],
+  'united-states': ['us-west', 'us-east', 'us-central', 'us-ny', 'us-ga', 'us-nc', 'us-pa', 'us-ct', 'us-newengland', 'us-az', 'us-id', 'us-nv', 'us-la', 'us-ak'],
   asia: ['asia', 'japan', 'middle-east'],
   oceania: ['australia', 'queensland', 'victoria', 'newzealand'],
 };
@@ -684,7 +696,20 @@ export function resolveCctvRegions(req: CctvSourceRequest): string[] {
 export async function fetchCctvCamerasForRequest(req: CctvSourceRequest): Promise<CctvSourceResult> {
   const regionsToFetch = resolveCctvRegions(req);
   const results = await runRegionFetchers(regionsToFetch);
-  const { cameras, sources } = mergeCamerasFairly(results, req.maxCameras ?? MAX_CAMERAS);
+  const merged = mergeCamerasFairly(results, req.maxCameras ?? MAX_CAMERAS);
+  const normalized = merged.cameras.map((camera: CctvCamera) => ({
+    ...camera,
+    stream_type: camera.stream_type === ('jpg' as any)
+      ? 'snapshot'
+      : camera.stream_type || inferStreamType(camera.stream_url || camera.feed_url || ''),
+    refresh_interval_ms: camera.refresh_interval_ms || (camera.feed_url ? 30_000 : undefined),
+  }));
+  await refreshCameraHealth(normalized);
+  const cameras = normalized.filter(shouldServeCamera);
+  const sources = cameras.reduce<Record<string, number>>((counts, camera) => {
+    counts[camera.source] = (counts[camera.source] || 0) + 1;
+    return counts;
+  }, {});
 
   return {
     cameras,

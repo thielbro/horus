@@ -55,6 +55,8 @@ export async function fetchNewZealandCameras(): Promise<CctvCamera[]> {
         city: region || 'New Zealand',
         country: 'New Zealand',
         feed_url: imageUrl.startsWith('http') ? imageUrl : `${NZTA_HOST}${imageUrl}`,
+        stream_type: 'snapshot',
+        refresh_interval_ms: 60_000,
         source: 'NZTA Waka Kotahi',
       });
     }
