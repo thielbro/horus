@@ -18,6 +18,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { fork } = require('child_process');
 const { buildEngineEnv } = require('./runtime-config');
+const { buildWazeFetchScript, WAZE_TOKEN_ACTIONS } = require('./waze-in-page');
 
 let win = null;
 let serverChild = null;
@@ -450,26 +451,8 @@ async function ensureWazePage() {
 // Execute the GeoRSS fetch from inside the live-map page (real cookies + a fresh reCAPTCHA
 // token per call). The URL is serialised, not eval'd, so request data is never executed.
 async function wazeFetchInPage(url) {
-  const safeUrl = JSON.stringify(url);
   return withTimeout(
-    wazeWindow.webContents.executeJavaScript(`
-      (async () => {
-        const gon = JSON.parse(document.querySelector('#gon')?.textContent || '{}');
-        const recaptcha = globalThis.grecaptcha;
-        let token = null;
-        if (gon.recaptchaActionSiteKey && recaptcha && recaptcha.enterprise) {
-          token = await new Promise((resolve, reject) => {
-            recaptcha.enterprise.ready(() => {
-              recaptcha.enterprise.execute(gon.recaptchaActionSiteKey, { action: 'livemap' }).then(resolve, reject);
-            });
-          });
-        }
-        const headers = { 'Accept': 'application/json, text/plain, */*' };
-        if (token) headers['x-recaptcha-token'] = token;
-        const r = await fetch(${safeUrl}, { headers, credentials: 'include' });
-        return { ok: r.ok, status: r.status, text: await r.text() };
-      })()
-    `),
+    wazeWindow.webContents.executeJavaScript(buildWazeFetchScript(url, WAZE_TOKEN_ACTIONS)),
     WAZE_EXEC_TIMEOUT_MS,
     'Waze fetch',
   );
