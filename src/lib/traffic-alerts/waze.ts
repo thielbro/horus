@@ -1,4 +1,5 @@
 import type { Browser, Page } from 'playwright';
+import { buildWazeFetchScript, WAZE_TOKEN_ACTIONS } from '../../../desktop/waze-in-page.js';
 import { envForBbox, parseBbox, tileBbox, validateBbox } from './bbox.ts';
 import type {
   BBox,
@@ -20,7 +21,6 @@ const DEFAULT_RECAPTCHA_SETTLE_MS = 5_000;
 // accumulate, so a pathological response can't OOM the parser or balloon memory.
 const MAX_GEORSS_RESPONSE_CHARS = 5_000_000;
 const MAX_NORMALIZED_ALERTS = 10_000;
-const PLAYWRIGHT_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.55 Safari/537.36';
 
 // Endpoint and raw-field handling informed by public Waze Live Map/GeoRSS projects:
 // https://github.com/guberm/waze-alerts-monitor and https://github.com/begundal-ug/waze-traffic
@@ -243,10 +243,18 @@ function createBrowserWazeTransport(options: { browserHeadless: boolean }): Waze
   async function ensurePage(bbox: BBox) {
     if (page) return page;
     const { chromium } = await import('playwright');
-    browser = await chromium.launch({ headless: options.browserHeadless });
-    const context = await browser.newContext({
-      locale: 'en-US',
-      userAgent: PLAYWRIGHT_CHROME_UA,
+    const launchArgs = ['--disable-blink-features=AutomationControlled'];
+    try {
+      // Real Chrome passes reCAPTCHA scoring far more often than bundled Chromium.
+      browser = await chromium.launch({ headless: options.browserHeadless, channel: 'chrome', args: launchArgs });
+    } catch {
+      browser = await chromium.launch({ headless: options.browserHeadless, args: launchArgs });
+    }
+    // No userAgent override: forcing a Chrome UA onto a different engine is a
+    // mismatch reCAPTCHA scores down. The init script kills the webdriver tell instead.
+    const context = await browser.newContext({ locale: 'en-US' });
+    await context.addInitScript(() => {
+      Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => undefined });
     });
     page = await context.newPage();
     await page.goto(buildLiveMapCenterUrl(bbox), { waitUntil: 'domcontentloaded', timeout: 30_000 });
@@ -258,31 +266,18 @@ function createBrowserWazeTransport(options: { browserHeadless: boolean }): Waze
   return {
     async fetchGeoRss(url, context) {
       const liveMapPage = await ensurePage(context.bbox);
-      const browserFetch = new Function(
-        'apiUrl',
-        `
-          return (async () => {
-            const gon = JSON.parse(document.querySelector('#gon')?.textContent || '{}');
-            const recaptcha = globalThis.grecaptcha;
-            let token = null;
-            if (gon.recaptchaActionSiteKey && recaptcha?.enterprise) {
-              token = await new Promise((resolve, reject) => {
-                recaptcha.enterprise.ready(() => {
-                  recaptcha.enterprise.execute(gon.recaptchaActionSiteKey, { action: 'livemap' }).then(resolve, reject);
-                });
-              });
-            }
-            const headers = { Accept: 'application/json, text/plain, */*' };
-            if (token) headers['x-recaptcha-token'] = token;
-            const response = await fetch(apiUrl, { headers, credentials: 'include' });
-            return { ok: response.ok, status: response.status, text: await response.text() };
-          })();
-        `,
-      ) as (apiUrl: string) => Promise<{ ok: boolean; status: number; text: string }>;
-      const result = await liveMapPage.evaluate(browserFetch, url);
+      // Shared in-page routine (desktop/waze-in-page.js): mints a fresh single-use
+      // reCAPTCHA token per token action ('livemap', then 'api' on 401/403) and
+      // reports every HTTP attempt so a 403 says *which* action Waze rejected.
+      const result = await liveMapPage.evaluate(
+        buildWazeFetchScript(url, WAZE_TOKEN_ACTIONS),
+      ) as { ok: boolean; status: number; text: string; attempts?: { action: string | null; status: number }[] };
 
       if (!result.ok) {
-        throw new WazeTransportError(`Waze browser HTTP ${result.status}`, result.status, 'browser');
+        const trail = result.attempts?.length
+          ? ` [${result.attempts.map((a) => `${a.action ?? 'notoken'}->${a.status}`).join(', ')}]`
+          : '';
+        throw new WazeTransportError(`Waze browser HTTP ${result.status}${trail}`, result.status, 'browser');
       }
 
       if (result.text.length > MAX_GEORSS_RESPONSE_CHARS) {
