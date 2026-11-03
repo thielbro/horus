@@ -10,6 +10,7 @@ type CliOptions = {
   browserHeadless?: boolean;
   maxTileSpanDegrees?: number;
   concurrency?: number;
+  debug?: boolean;
 };
 
 async function main() {
@@ -24,6 +25,7 @@ async function main() {
     browserHeadless: options.browserHeadless,
     maxTileSpanDegrees: options.maxTileSpanDegrees,
     concurrency: options.concurrency,
+    debugLog: options.debug ? (message: string) => process.stderr.write(`[waze-debug] ${message}\n`) : undefined,
   });
   const json = `${JSON.stringify(result, null, 2)}\n`;
 
@@ -48,6 +50,12 @@ function parseArgs(args: string[]): CliOptions {
     const arg = args[i];
     const [key, inlineValue] = arg.startsWith('--') ? arg.slice(2).split(/=(.*)/s, 2) : ['', ''];
     if (!key) throw new Error(`Unexpected argument: ${arg}`);
+
+    // Valueless flag: --debug takes no argument, so it must not consume the next one.
+    if (key === 'debug') {
+      options.debug = true;
+      continue;
+    }
 
     const value = inlineValue !== undefined && inlineValue !== '' ? inlineValue : args[++i];
     if (!value) throw new Error(`Missing value for --${key}`);

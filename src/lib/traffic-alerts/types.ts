@@ -45,4 +45,5 @@ export interface ScrapeWazePoliceCameraAlertsOptions {
   maxTileSpanDegrees?: number;
   concurrency?: number;
   signal?: AbortSignal;
+  debugLog?: (message: string) => void;
 }

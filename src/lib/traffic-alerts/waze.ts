@@ -42,7 +42,18 @@ export async function scrapeWazePoliceCameraAlerts(options: ScrapeWazePoliceCame
 
       try {
         const response = await transport.fetchGeoRss(url, { bbox: tile, env, signal: options.signal });
-        for (const rawAlert of extractRawAlerts(response)) {
+        const rawAlerts = extractRawAlerts(response);
+        if (options.debugLog) {
+          const types = new Map<string, number>();
+          for (const rawAlert of rawAlerts) {
+            const t = String(asRecord(rawAlert)?.type ?? '?');
+            types.set(t, (types.get(t) ?? 0) + 1);
+          }
+          const summary = [...types.entries()].sort((a, b) => b[1] - a[1])
+            .map(([t, n]) => `${t}=${n}`).join(' ');
+          options.debugLog(`tile [${tile.join(',')}]: raw=${rawAlerts.length}${summary ? ' ' + summary : ''}`);
+        }
+        for (const rawAlert of rawAlerts) {
           if (alerts.length >= MAX_NORMALIZED_ALERTS) break;
           const normalized = normalizeWazeAlert(rawAlert);
           if (normalized) alerts.push(normalized);

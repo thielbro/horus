@@ -444,3 +444,27 @@ test('empty actions with recaptcha present makes a single tokenless attempt', as
   }
   assert.deepEqual(result.attempts, [{ action: null, status: 200 }]);
 });
+
+// ── Task 5: --debug raw type histogram ──────────────────────────────────────
+test('debugLog receives a raw type histogram per tile', async () => {
+  const lines = [];
+  await scrapeWazePoliceCameraAlerts({
+    bbox: [10, 20, 10.1, 20.1],
+    debugLog: (m) => lines.push(m),
+    transport: {
+      fetchGeoRss: async () => ({
+        alerts: [
+          { uuid: 'p1', type: 'POLICE', location: { x: 20.05, y: 10.05 } },
+          { uuid: 'h1', type: 'HAZARD', location: { x: 20.05, y: 10.05 } },
+          { uuid: 'h2', type: 'HAZARD', location: { x: 20.06, y: 10.06 } },
+          { uuid: 'j1', type: 'JAM', location: { x: 20.07, y: 10.07 } },
+        ],
+      }),
+    },
+  });
+  const histogram = lines.find((line) => line.includes('raw=4'));
+  assert.ok(histogram, `expected a histogram line, got: ${JSON.stringify(lines)}`);
+  assert.match(histogram, /HAZARD=2/);
+  assert.match(histogram, /POLICE=1/);
+  assert.match(histogram, /JAM=1/);
+});
