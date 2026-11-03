@@ -20,7 +20,7 @@ import {
   type CustomSourceSpec,
 } from '@/lib/plugins';
 
-interface WazeScanResult { ok: boolean; police: number; camera: number; timestamp?: string; error?: string; errors?: unknown[] }
+interface WazeScanResult { ok: boolean; police: number; camera: number; timestamp?: string; error?: string; errors?: { message?: string; status?: number; transport?: string }[] }
 
 interface SurveillancePanelProps {
   open: boolean;
@@ -362,10 +362,16 @@ function SurveillancePanel({ open, onClose, data, activeLayers, setActiveLayers,
                           <div className="mt-2 text-[9px] font-mono break-words" style={{ color: total > 0 ? 'var(--alert-green)' : '#E0A030' }}>
                             <span className="inline-flex items-center gap-1">
                               {total > 0 ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
-                              {total > 0 ? `${r.police} police · ${r.camera} cameras` : 'No Waze alerts in this view'}
+                              {total > 0
+                                ? `${r.police} police · ${r.camera} cameras`
+                                : (r.errors?.length ?? 0) > 0
+                                  ? 'Scan failed — Waze rejected every tile request'
+                                  : 'No Waze alerts in this view'}
                               {r.timestamp ? ` · ${new Date(r.timestamp).toLocaleTimeString()}` : ''}
                             </span>
-                            {(r.errors?.length ?? 0) > 0 && <div className="text-white/40 mt-0.5">{r.errors!.length} tile(s) failed — results may be partial.</div>}
+                            {total === 0 && (r.errors?.length ?? 0) > 0 && (
+                              <div className="text-white/40 mt-0.5">{r.errors![0]?.message || 'unknown transport error'}</div>
+                            )}
                           </div>
                         )
                       )}

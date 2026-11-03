@@ -827,7 +827,7 @@ export default function Dashboard() {
   // deliberate user action (the Surveillance panel's "Scan this area" button) rather than an
   // auto-refetch-on-pan layer — one browser popup per click. Writes the `waze_alerts` bucket
   // and flips the (headless) layer on so the markers render.
-  const scanWazeAlerts = useCallback(async (): Promise<{ ok: boolean; police: number; camera: number; timestamp?: string; error?: string; errors?: unknown[] }> => {
+  const scanWazeAlerts = useCallback(async (): Promise<{ ok: boolean; police: number; camera: number; timestamp?: string; error?: string; errors?: { message?: string; status?: number; transport?: string }[] }> => {
     const b = mapView.bounds;
     if (!b) return { ok: false, police: 0, camera: 0, error: 'Map is still loading — try again in a moment.' };
     const s = Math.max(-90, b[0]); const w = Math.max(-180, b[1]); const n = Math.min(90, b[2]); const e = Math.min(180, b[3]);
