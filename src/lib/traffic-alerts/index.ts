@@ -20,4 +20,5 @@ export {
   dedupeAlerts,
   normalizeWazeAlert,
   scrapeWazePoliceCameraAlerts,
+  summarizeWazeErrors,
 } from './waze.ts';

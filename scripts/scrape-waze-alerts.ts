@@ -1,6 +1,11 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { parseBbox, scrapeWazePoliceCameraAlerts, type WazeTransportMode } from '../src/lib/traffic-alerts/index.ts';
+import {
+  parseBbox,
+  scrapeWazePoliceCameraAlerts,
+  summarizeWazeErrors,
+  type WazeTransportMode,
+} from '../src/lib/traffic-alerts/index.ts';
 
 type CliOptions = {
   bbox?: string;
@@ -28,6 +33,10 @@ async function main() {
     debugLog: options.debug ? (message: string) => process.stderr.write(`[waze-debug] ${message}\n`) : undefined,
   });
   const json = `${JSON.stringify(result, null, 2)}\n`;
+
+  for (const line of summarizeWazeErrors(result.errors)) {
+    process.stderr.write(`${line}\n`);
+  }
 
   if (options.out) {
     const outPath = resolve(options.out);

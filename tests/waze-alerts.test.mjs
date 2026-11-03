@@ -468,3 +468,18 @@ test('debugLog receives a raw type histogram per tile', async () => {
   assert.match(histogram, /POLICE=1/);
   assert.match(histogram, /JAM=1/);
 });
+
+// ── Task 6: loud error summaries ────────────────────────────────────────────
+import { summarizeWazeErrors } from '../src/lib/traffic-alerts/index.ts';
+
+test('summarizeWazeErrors groups by message and hints at the playwright install', () => {
+  const lines = summarizeWazeErrors([
+    { message: 'Waze browser HTTP 403', status: 403, transport: 'browser', tile: [1, 2, 1.5, 2.5] },
+    { message: 'Waze browser HTTP 403', status: 403, transport: 'browser', tile: [1, 2.5, 1.5, 3] },
+  ]);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /2 tile\(s\)/);
+  assert.match(lines[0], /Waze browser HTTP 403/);
+  const install = summarizeWazeErrors([{ message: "Executable doesn't exist at C:\\x\\chrome.exe", tile: [0, 0, 1, 1] }]);
+  assert.match(install[0], /npx playwright install chromium/);
+});

@@ -74,6 +74,23 @@ export async function scrapeWazePoliceCameraAlerts(options: ScrapeWazePoliceCame
   };
 }
 
+// One error per failed tile; group duplicates so a whole-area 403 prints one loud
+// line instead of N identical ones. Hints attach to the matching line so they can
+// never be orphaned from the error they explain.
+export function summarizeWazeErrors(errors: WazeScrapeError[]): string[] {
+  const byMessage = new Map<string, number>();
+  for (const error of errors) {
+    byMessage.set(error.message, (byMessage.get(error.message) ?? 0) + 1);
+  }
+  return [...byMessage.entries()].map(([message, count]) => {
+    let line = `waze error x${count}: ${message} (${count} tile(s))`;
+    if (/Executable doesn't exist|playwright/i.test(message)) {
+      line += ' — hint: Playwright browsers are missing — run `npx playwright install chromium`';
+    }
+    return line;
+  });
+}
+
 export function buildWazeGeoRssUrl(bbox: BBox, env = envForBbox(bbox)): string {
   const [south, west, north, east] = validateBbox(bbox);
   const query = [
