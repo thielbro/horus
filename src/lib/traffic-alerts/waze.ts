@@ -1,5 +1,5 @@
 import type { Browser, Page } from 'playwright';
-import { buildWazeFetchScript, WAZE_TOKEN_ACTIONS } from '../../../desktop/waze-in-page.js';
+import { buildWazeFetchScript, WAZE_TOKEN_ACTIONS, type WazeInPageFetchResult } from '../../../desktop/waze-in-page.js';
 import { envForBbox, parseBbox, tileBbox, validateBbox } from './bbox.ts';
 import type {
   BBox,
@@ -17,6 +17,10 @@ const WAZE_LIVE_MAP_URL = 'https://www.waze.com/live-map';
 const WAZE_LIVE_MAP_TYPES = 'alerts,traffic,users';
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_RECAPTCHA_SETTLE_MS = 5_000;
+// Outer backstop for the in-page fetch: the serialized routine caps its own
+// reCAPTCHA mints, but a hung page.evaluate (dead page, recaptcha script that
+// never arrives) would otherwise pin a tile open forever.
+const WAZE_BROWSER_EVALUATE_TIMEOUT_MS = 35_000;
 // Guardrails: cap the raw GeoRSS payload we parse, and the total normalized alerts we
 // accumulate, so a pathological response can't OOM the parser or balloon memory.
 const MAX_GEORSS_RESPONSE_CHARS = 5_000_000;
@@ -269,9 +273,11 @@ function createBrowserWazeTransport(options: { browserHeadless: boolean }): Waze
       // Shared in-page routine (desktop/waze-in-page.js): mints a fresh single-use
       // reCAPTCHA token per token action ('livemap', then 'api' on 401/403) and
       // reports every HTTP attempt so a 403 says *which* action Waze rejected.
-      const result = await liveMapPage.evaluate(
+      const result = await evaluateInPage<WazeInPageFetchResult>(
+        liveMapPage,
         buildWazeFetchScript(url, WAZE_TOKEN_ACTIONS),
-      ) as { ok: boolean; status: number; text: string; attempts?: { action: string | null; status: number }[] };
+        WAZE_BROWSER_EVALUATE_TIMEOUT_MS,
+      );
 
       if (!result.ok) {
         const trail = result.attempts?.length
@@ -291,6 +297,26 @@ function createBrowserWazeTransport(options: { browserHeadless: boolean }): Waze
       page = null;
     },
   };
+}
+
+// Run a serialized in-page script, racing it against `timeoutMs`: a page whose
+// reCAPTCHA never settles never resolves its evaluate, which would otherwise
+// hang this tile (and the scrape) forever.
+async function evaluateInPage<T>(page: Page, script: string, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      page.evaluate(script) as Promise<T>,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new WazeTransportError(`Waze browser evaluate timeout (${timeoutMs}ms)`, 504, 'browser')),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function buildLiveMapCenterUrl(bbox: BBox): string {

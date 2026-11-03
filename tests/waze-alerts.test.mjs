@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
+import vm from 'node:vm';
 
 import {
   buildWazeGeoRssUrl,
@@ -154,7 +155,7 @@ test('scrape-waze-alerts CLI can run from a fixture without live Waze access', a
 
 // ── shared in-page fetch (desktop/waze-in-page.js) ──────────────────────────
 // The module is imported dynamically inside each test so a missing module fails
-// only these four tests (TDD RED) and leaves the nine existing ones green.
+// only the in-page tests (TDD RED) and leaves the nine existing ones green.
 // Run wazeInPageFetchGeoRss({ url, actions }) with stubbed document/grecaptcha/
 // fetch globals; save/restore around each call.
 
@@ -301,4 +302,145 @@ test('mints the next action when execute() rejects', async () => {
     { action: 'livemap', status: 403 },
     { action: 'api', status: 200 },
   ]);
+});
+
+// ── review hardening (2026-11): serialized-form execution, mint stall, guards ─
+
+// Finding 1: the script Playwright/Electron actually run must be self-contained.
+// Executing it inside a brand-new vm context (no module scope, no imports, no
+// WAZE_TOKEN_ACTIONS closure) turns any future closure reference into a suite
+// failure instead of a browser-only failure.
+test('serialized fetch script runs standalone in a bare vm context', async () => {
+  const calls = [];
+  const { buildWazeFetchScript } = await import('../desktop/waze-in-page.js');
+  const script = buildWazeFetchScript(WAZE_STUB_URL);
+
+  const raw = await vm.runInNewContext(script, {
+    document: docStub(JSON.stringify({ recaptchaActionSiteKey: 'site-key' })),
+    grecaptcha: {
+      enterprise: {
+        ready: (cb) => cb(),
+        execute: (key, opts) => {
+          calls.push(opts.action);
+          return Promise.resolve('tok-' + opts.action);
+        },
+      },
+    },
+    fetch: async (url, init) => {
+      const ok = init?.headers?.['x-recaptcha-token'] === 'tok-api';
+      return { ok, status: ok ? 200 : 403, text: async () => '{"alerts":[]}' };
+    },
+    setTimeout,
+    clearTimeout,
+    console,
+  });
+
+  // The vm realm hands back that realm's prototypes, which strict deepEqual
+  // rejects across realms; normalize through JSON before comparing values.
+  const result = JSON.parse(JSON.stringify(raw));
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.attempts, [
+    { action: 'livemap', status: 403 },
+    { action: 'api', status: 200 },
+  ]);
+  assert.deepEqual(calls, ['livemap', 'api']);
+});
+
+// Finding 2a: a recaptcha.enterprise.ready/execute that never settles must not
+// hang the page.evaluate forever — each mint is raced against arg.mintTimeoutMs
+// (default 10s) and a stalled mint takes the existing mint-failure path.
+// The explicit test timeout is the RED guard: before the race exists this hangs.
+test('stalled mint falls through to the next action', { timeout: 5_000 }, async () => {
+  const result = await withInPageStubs(
+    {
+      document: docStub(JSON.stringify({ recaptchaActionSiteKey: 'site-key' })),
+      grecaptcha: {
+        enterprise: {
+          ready: (cb) => cb(),
+          execute: (key, opts) =>
+            opts.action === 'livemap'
+              ? new Promise(() => {}) // never resolves: simulate a stalled recaptcha
+              : Promise.resolve('tok-api'),
+        },
+      },
+      fetch: async (url, init) => {
+        const ok = init?.headers?.['x-recaptcha-token'] === 'tok-api';
+        return { ok, status: ok ? 200 : 403, text: async () => '{"alerts":[]}' };
+      },
+    },
+    async () => {
+      const { wazeInPageFetchGeoRss } = await import('../desktop/waze-in-page.js');
+      return wazeInPageFetchGeoRss({ url: WAZE_STUB_URL, actions: ['livemap', 'api'], mintTimeoutMs: 50 });
+    },
+  );
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.attempts, [
+    { action: 'livemap', status: 403 },
+    { action: 'api', status: 200 },
+  ]);
+});
+
+// Finding 3: a #gon element that is not valid JSON (interstitial, partial DOM)
+// must degrade to the tokenless path instead of throwing out of the page.
+test('malformed #gon JSON falls back to a tokenless attempt', async () => {
+  const seenHeaders = [];
+  const result = await withInPageStubs(
+    {
+      document: docStub('not json'),
+      grecaptcha: {
+        enterprise: {
+          ready: (cb) => cb(),
+          execute: (key, opts) => Promise.resolve('tok-' + opts.action),
+        },
+      },
+      fetch: async (url, init) => {
+        seenHeaders.push(init?.headers ?? {});
+        return { ok: true, status: 200, text: async () => '{"alerts":[]}' };
+      },
+    },
+    async () => {
+      const { wazeInPageFetchGeoRss } = await import('../desktop/waze-in-page.js');
+      return wazeInPageFetchGeoRss({ url: WAZE_STUB_URL, actions: ['livemap', 'api'] });
+    },
+  );
+
+  assert.equal(result.status, 200);
+  assert.equal(seenHeaders.length, 1);
+  for (const headers of seenHeaders) {
+    assert.ok(!('x-recaptcha-token' in headers), 'expected no x-recaptcha-token header');
+  }
+  assert.deepEqual(result.attempts, [{ action: null, status: 200 }]);
+});
+
+// Finding 6: actions must never crash the routine when it is empty or missing.
+test('empty actions with recaptcha present makes a single tokenless attempt', async () => {
+  const seenHeaders = [];
+  const result = await withInPageStubs(
+    {
+      document: docStub(JSON.stringify({ recaptchaActionSiteKey: 'site-key' })),
+      grecaptcha: {
+        enterprise: {
+          ready: (cb) => cb(),
+          execute: (key, opts) => Promise.resolve('tok-' + opts.action),
+        },
+      },
+      fetch: async (url, init) => {
+        seenHeaders.push(init?.headers ?? {});
+        return { ok: true, status: 200, text: async () => '{"alerts":[]}' };
+      },
+    },
+    async () => {
+      const { wazeInPageFetchGeoRss } = await import('../desktop/waze-in-page.js');
+      return wazeInPageFetchGeoRss({ url: WAZE_STUB_URL, actions: [] });
+    },
+  );
+
+  assert.equal(result.status, 200);
+  assert.equal(seenHeaders.length, 1);
+  for (const headers of seenHeaders) {
+    assert.ok(!('x-recaptcha-token' in headers), 'expected no x-recaptcha-token header');
+  }
+  assert.deepEqual(result.attempts, [{ action: null, status: 200 }]);
 });
