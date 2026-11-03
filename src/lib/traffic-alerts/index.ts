@@ -17,6 +17,7 @@ export type {
 export {
   buildWazeGeoRssUrl,
   classifyWazeAlert,
+  createElectronProxyTransport,
   dedupeAlerts,
   normalizeWazeAlert,
   scrapeWazePoliceCameraAlerts,

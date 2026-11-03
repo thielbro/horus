@@ -240,7 +240,8 @@ Supersedes parts of the "Important Waze Findings" section above (kept intact as 
   Next bundle inlines the same module, so there is exactly one implementation.
 - Token minting tries `WAZE_TOKEN_ACTIONS = ['livemap', 'api']` in order and records an
   `attempts[]` trail (`{action, status}` per attempt) that surfaces inside Waze browser HTTP
-  403 messages, e.g. `Waze browser HTTP 403 [livemap->403, api->200]`.
+  403 messages, e.g. `Waze browser HTTP 403 [livemap->403, api->403]` when both actions
+  are rejected (a `->200` last entry only appears on successful runs, where no throw occurs).
 - Per-mint timeout `mintTimeoutMs` (default 10 s) around `grecaptcha.enterprise.execute`,
   plus a 35 s race around `page.evaluate` so a wedged page can't hang a tile forever.
 - Stealth launch is **chrome-channel-first** (`channel: 'chrome'` with a bundled-Chromium
@@ -255,7 +256,7 @@ Supersedes parts of the "Important Waze Findings" section above (kept intact as 
 
 ### Validation (measured 2026-11-03, all gates green)
 
-- `npx tsx --test tests/waze-alerts.test.mjs` → **19 pass / 0 fail**.
+- `npx tsx --test tests/waze-alerts.test.mjs` → **20 pass / 0 fail** (incl. the electron-transport attempts-trail regression test added at final review).
 - `npx tsc --noEmit` → silent, exit 0.
 - `npm run lint` → **0 errors / 92 warnings** (all pre-existing repo-wide style warnings).
 - `npm run build` → exit 0, standalone tree produced.

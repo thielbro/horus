@@ -191,7 +191,16 @@ function resolveTransport(transport: WazeTransportMode | WazeGeoRssTransport, op
 // Electron main process (WAZE_ELECTRON_PROXY=http://127.0.0.1:<port>). The main process
 // loads the Waze live map to establish real session cookies + reCAPTCHA, then executes
 // the GeoRSS fetch from within that page context via executeJavaScript.
-function createElectronProxyTransport(proxyUrl: string): WazeGeoRssTransport {
+// Shared attempts-trail formatting: an HTTP failure on any browser-backed
+// transport must name the reCAPTCHA actions that were tried, so a 403 says
+// *which* action Waze rejected (or that none could be minted).
+function formatAttemptsTrail(attempts: WazeInPageFetchResult['attempts']): string {
+  return attempts?.length
+    ? ` [${attempts.map((a) => `${a.action ?? 'notoken'}->${a.status}`).join(', ')}]`
+    : '';
+}
+
+export function createElectronProxyTransport(proxyUrl: string): WazeGeoRssTransport {
   return {
     async fetchGeoRss(url, context) {
       const res = await fetch(`${proxyUrl}/fetch`, {
@@ -208,9 +217,13 @@ function createElectronProxyTransport(proxyUrl: string): WazeGeoRssTransport {
           'electron',
         );
       }
-      const result = await res.json() as { ok: boolean; status: number; text: string };
+      const result = await res.json() as WazeInPageFetchResult;
       if (!result.ok) {
-        throw new WazeTransportError(`Waze browser HTTP ${result.status}`, result.status, 'electron');
+        throw new WazeTransportError(
+          `Waze browser HTTP ${result.status}${formatAttemptsTrail(result.attempts)}`,
+          result.status,
+          'electron',
+        );
       }
       if (result.text.length > MAX_GEORSS_RESPONSE_CHARS) {
         throw new WazeTransportError(`Waze response too large (${result.text.length} chars)`, 413, 'electron');
@@ -308,10 +321,11 @@ function createBrowserWazeTransport(options: { browserHeadless: boolean }): Waze
       );
 
       if (!result.ok) {
-        const trail = result.attempts?.length
-          ? ` [${result.attempts.map((a) => `${a.action ?? 'notoken'}->${a.status}`).join(', ')}]`
-          : '';
-        throw new WazeTransportError(`Waze browser HTTP ${result.status}${trail}`, result.status, 'browser');
+        throw new WazeTransportError(
+          `Waze browser HTTP ${result.status}${formatAttemptsTrail(result.attempts)}`,
+          result.status,
+          'browser',
+        );
       }
 
       if (result.text.length > MAX_GEORSS_RESPONSE_CHARS) {

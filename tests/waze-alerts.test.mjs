@@ -483,3 +483,40 @@ test('summarizeWazeErrors groups by message and hints at the playwright install'
   const install = summarizeWazeErrors([{ message: "Executable doesn't exist at C:\\x\\chrome.exe", tile: [0, 0, 1, 1] }]);
   assert.match(install[0], /npx playwright install chromium/);
 });
+
+// ── Final review: electron proxy transport must keep the attempts trail ─────
+test('electron proxy transport failure keeps the attempts trail in the message', async () => {
+  const { createElectronProxyTransport } = await import('../src/lib/traffic-alerts/index.ts');
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      ok: false,
+      status: 403,
+      text: '',
+      attempts: [
+        { action: 'livemap', status: 403 },
+        { action: 'api', status: 403 },
+      ],
+    }),
+  });
+  try {
+    const transport = createElectronProxyTransport('http://127.0.0.1:9');
+    let thrown = null;
+    try {
+      await transport.fetchGeoRss('https://www.waze.com/live-map/api/georss?x=1', {
+        bbox: [0, 0, 0.1, 0.1],
+        env: 'test',
+        signal: undefined,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    assert.ok(thrown, 'expected the transport to throw on ok:false');
+    assert.match(thrown.message, /^Waze browser HTTP 403 \[livemap->403, api->403\]$/);
+    assert.equal(thrown.status, 403);
+    assert.equal(thrown.transport, 'electron');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
