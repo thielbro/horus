@@ -216,3 +216,72 @@ Bad LLM uses:
 ## Existing Dirty Worktree Note
 
 Before this work, the repo already had unrelated dirty files in app/map/registry areas. Those were not part of the scraper implementation and should be reviewed separately before staging or committing.
+
+## 2026-11-03: GeoRSS action gate — breakage, fix, validation
+
+Supersedes parts of the "Important Waze Findings" section above (kept intact as history).
+
+### Symptom & root cause
+
+- Waze moved `/live-map/api/georss` behind a reCAPTCHA Enterprise **action gate**: the old
+  recipe's action name `livemap` now 403s at the georss call itself; the action `api` is
+  accepted. Minting succeeds either way — only the fetch verdict differs.
+- Separately, the `ms-playwright` browser binaries were simply **missing on this machine**,
+  so the dev HTTP→browser fallback was dead before Waze even got a vote. `npx playwright
+  install chromium` restores it.
+- Live evidence of the fix working: attempts trail `[livemap->403, api->200]`, returning
+  85 raw alerts (all `ROAD_CLOSED`, Los Angeles) on a good run.
+
+### Architecture change (branch `fix/waze-georss-2026-11`)
+
+- `desktop/waze-in-page.js` (+ `.d.ts`) is now the **single shared CJS in-page fetch
+  routine** used by BOTH the Playwright browser transport (`src/lib/traffic-alerts/waze.ts`)
+  and the Electron proxy (`desktop/main.js`). electron-builder ships `desktop/**/*`, and the
+  Next bundle inlines the same module, so there is exactly one implementation.
+- Token minting tries `WAZE_TOKEN_ACTIONS = ['livemap', 'api']` in order and records an
+  `attempts[]` trail (`{action, status}` per attempt) that surfaces inside Waze browser HTTP
+  403 messages, e.g. `Waze browser HTTP 403 [livemap->403, api->200]`.
+- Per-mint timeout `mintTimeoutMs` (default 10 s) around `grecaptcha.enterprise.execute`,
+  plus a 35 s race around `page.evaluate` so a wedged page can't hang a tile forever.
+- Stealth launch is **chrome-channel-first** (`channel: 'chrome'` with a bundled-Chromium
+  fallback): `--disable-blink-features=AutomationControlled`, `navigator.webdriver`
+  stripped via init script, and **no UA override** — the old override pinned a UA that
+  exactly matched bundled Chromium 149 anyway, i.e. it added mismatch risk for nothing.
+- Diagnostics: `--debug` / `debugLog` prints a per-tile raw alert-type histogram
+  (`[waze-debug] tile [...]: raw=85 ROAD_CLOSED=85`); `summarizeWazeErrors` groups CLI
+  errors and hints `npx playwright install chromium` when the launch itself failed;
+  SurveillancePanel now distinguishes "Scan failed — Waze rejected every tile request"
+  (with the first error) from a genuinely empty "No Waze alerts in this view".
+
+### Validation (measured 2026-11-03, all gates green)
+
+- `npx tsx --test tests/waze-alerts.test.mjs` → **19 pass / 0 fail**.
+- `npx tsc --noEmit` → silent, exit 0.
+- `npm run lint` → **0 errors / 92 warnings** (all pre-existing repo-wide style warnings).
+- `npm run build` → exit 0, standalone tree produced.
+- Bundle proof (new shared module inside the production server bundle):
+  `grep -r "mint timeout" .next/standalone/` hits
+  `.next/standalone/.next/server/chunks/[root-of-the-server]__0kn_jk2._.js` and
+  `[root-of-the-server]__0wke99q._.js` (module also shows `["livemap","api"]`,
+  `mintTimeoutMs`, `recaptchaActionSiteKey`, attempts trail);
+  `grep -rlo "recaptchaActionSiteKey" .next/standalone/ | wc -l` → **2**;
+  `.next/standalone/server.js` present (fresh build).
+- `npm run desktop:smoke` → **HORUS_SMOKE_OK**, exit 0 (running the fresh standalone build).
+- Live probes (`--transport=browser --concurrency=1 --debug`, one per bbox):
+  - LA `33.80,-118.55,34.20,-118.05`: exit 0, `[waze-debug] tile [...]: raw=85
+    ROAD_CLOSED=85`, **0 police/camera alerts, `errors: []`** — channel exercised
+    (only 200 responses yield raw alerts); no police/camera reports in view at that hour.
+  - Auckland `-36.95,174.65,-36.75,174.95`: exit 0, `[waze-debug] tile [...]: raw=94
+    ROAD_CLOSED=94`, **0 police/camera alerts, `errors: []`** — same shape: raw>0 with no
+    police/camera types is a legitimate outcome; the histogram proves it.
+
+### Known caveats now
+
+- Waze bot-scores this residential IP: intermittent **all-403** with a well-formed trail
+  `[livemap->403, api->403]` happens minutes after a good run. Wait and rescan; the
+  Electron proxy self-heals via page reload + retry.
+- Police reports near you can legitimately be zero at 3 a.m. — the `--debug` histogram
+  distinguishes "raw>0, none police/camera" from "every tile 403'd".
+- `--transport=browser` still opens a **visible** Chromium window during a scan.
+- Paid feeds (e.g. OpenWeb Ninja) and camoufox remain unimplemented options, not gaps in
+  the current fix.
