@@ -151,3 +151,154 @@ test('scrape-waze-alerts CLI can run from a fixture without live Waze access', a
   assert.equal(output.provider, 'waze');
   assert.deepEqual(output.alerts.map((alert) => alert.id), ['police-cli']);
 });
+
+// ── shared in-page fetch (desktop/waze-in-page.js) ──────────────────────────
+// The module is imported dynamically inside each test so a missing module fails
+// only these four tests (TDD RED) and leaves the nine existing ones green.
+// Run wazeInPageFetchGeoRss({ url, actions }) with stubbed document/grecaptcha/
+// fetch globals; save/restore around each call.
+
+const WAZE_STUB_URL = 'https://www.waze.com/live-map/api/georss?x=1';
+
+function docStub(textContent) {
+  return { querySelector: (selector) => (selector === '#gon' ? { textContent } : null) };
+}
+
+async function withInPageStubs(stubs, run) {
+  const prev = {
+    document: globalThis.document,
+    grecaptcha: globalThis.grecaptcha,
+    fetch: globalThis.fetch,
+  };
+  globalThis.document = stubs.document;
+  globalThis.grecaptcha = stubs.grecaptcha;
+  globalThis.fetch = stubs.fetch;
+  try {
+    return await run();
+  } finally {
+    globalThis.document = prev.document;
+    globalThis.grecaptcha = prev.grecaptcha;
+    globalThis.fetch = prev.fetch;
+  }
+}
+
+test('falls back to the next token action when Waze 403s the first', async () => {
+  const calls = [];
+  const { result, script } = await withInPageStubs(
+    {
+      document: docStub(JSON.stringify({ recaptchaActionSiteKey: 'site-key' })),
+      grecaptcha: {
+        enterprise: {
+          ready: (cb) => cb(),
+          execute: (key, opts) => {
+            calls.push(opts.action);
+            return Promise.resolve('tok-' + opts.action);
+          },
+        },
+      },
+      fetch: async (url, init) => {
+        const ok = init?.headers?.['x-recaptcha-token'] === 'tok-api';
+        return { ok, status: ok ? 200 : 403, text: async () => '{"alerts":[]}' };
+      },
+    },
+    async () => {
+      const { wazeInPageFetchGeoRss, buildWazeFetchScript } = await import('../desktop/waze-in-page.js');
+      const result = await wazeInPageFetchGeoRss({ url: WAZE_STUB_URL, actions: ['livemap', 'api'] });
+      return { result, script: buildWazeFetchScript(WAZE_STUB_URL) };
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.attempts, [
+    { action: 'livemap', status: 403 },
+    { action: 'api', status: 200 },
+  ]);
+  assert.deepEqual(calls, ['livemap', 'api']);
+  assert.match(script, /"actions":\["livemap","api"\]/);
+});
+
+test('sends no token header when the page has no recaptcha site key', async () => {
+  const seenHeaders = [];
+  const result = await withInPageStubs(
+    {
+      document: docStub('{}'),
+      grecaptcha: undefined,
+      fetch: async (url, init) => {
+        seenHeaders.push(init?.headers ?? {});
+        return { ok: true, status: 200, text: async () => '{"alerts":[]}' };
+      },
+    },
+    async () => {
+      const { wazeInPageFetchGeoRss } = await import('../desktop/waze-in-page.js');
+      return wazeInPageFetchGeoRss({ url: WAZE_STUB_URL, actions: ['livemap', 'api'] });
+    },
+  );
+
+  assert.equal(result.status, 200);
+  assert.equal(seenHeaders.length, 1);
+  for (const headers of seenHeaders) {
+    assert.ok(!('x-recaptcha-token' in headers), 'expected no x-recaptcha-token header');
+  }
+  assert.deepEqual(result.attempts, [{ action: null, status: 200 }]);
+});
+
+test('returns the last 403 when every action is rejected', async () => {
+  const calls = [];
+  const result = await withInPageStubs(
+    {
+      document: docStub(JSON.stringify({ recaptchaActionSiteKey: 'site-key' })),
+      grecaptcha: {
+        enterprise: {
+          ready: (cb) => cb(),
+          execute: (key, opts) => {
+            calls.push(opts.action);
+            return Promise.resolve('tok-' + opts.action);
+          },
+        },
+      },
+      fetch: async () => ({ ok: false, status: 403, text: async () => '{"alerts":[]}' }),
+    },
+    async () => {
+      const { wazeInPageFetchGeoRss } = await import('../desktop/waze-in-page.js');
+      return wazeInPageFetchGeoRss({ url: WAZE_STUB_URL, actions: ['livemap', 'api'] });
+    },
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 403);
+  assert.equal(result.attempts.length, 2);
+  assert.deepEqual(calls, ['livemap', 'api']);
+  assert.deepEqual(result.attempts.map((a) => a.action), ['livemap', 'api']);
+});
+
+test('mints the next action when execute() rejects', async () => {
+  const result = await withInPageStubs(
+    {
+      document: docStub(JSON.stringify({ recaptchaActionSiteKey: 'site-key' })),
+      grecaptcha: {
+        enterprise: {
+          ready: (cb) => cb(),
+          execute: (key, opts) =>
+            opts.action === 'livemap'
+              ? Promise.reject(new Error('mint failed'))
+              : Promise.resolve('tok-api'),
+        },
+      },
+      fetch: async (url, init) => {
+        const ok = init?.headers?.['x-recaptcha-token'] === 'tok-api';
+        return { ok, status: ok ? 200 : 403, text: async () => '{"alerts":[]}' };
+      },
+    },
+    async () => {
+      const { wazeInPageFetchGeoRss } = await import('../desktop/waze-in-page.js');
+      return wazeInPageFetchGeoRss({ url: WAZE_STUB_URL, actions: ['livemap', 'api'] });
+    },
+  );
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.attempts, [
+    { action: 'livemap', status: 403 },
+    { action: 'api', status: 200 },
+  ]);
+});
