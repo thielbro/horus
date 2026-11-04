@@ -67,3 +67,7 @@ mt_images/
 # Python bytecode cache
 __pycache__/
 *.pyc
+
+# spike scratch
+spikes/*/node_modules/
+spikes/*/package-lock.json

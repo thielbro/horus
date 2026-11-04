@@ -1,0 +1,10 @@
+{
+  "name": "spike-001-waze-rt-alerts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Throwaway spike: can we get live POLICE alerts over the Waze mobile RT protocol?",
+  "main": "spike.js",
+  "dependencies": {
+    "protobufjs": "^7.2.6"
+  }
+}
