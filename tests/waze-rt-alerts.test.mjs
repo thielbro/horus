@@ -67,3 +67,21 @@ test('classifyRtBatchError maps server errors to session/transient/rejected', as
   assert.equal(classifyRtBatchError({ element: [{ error: { code: 400, description: 'Bad proto element' } }] }), 'rejected');
   assert.equal(classifyRtBatchError({ element: [{ addAlertAction: {} }] }), null);
 });
+
+test('rt credentials cache round-trips and tolerates corruption', async () => {
+  const os = await import('node:os');
+  const fsp = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { loadRtCredentials, saveRtCredentials } = await mod();
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'horus-rt-'));
+  const file = path.join(dir, 'nested', 'creds.json');
+  assert.equal(await loadRtCredentials(file), null);                     // missing file
+  await saveRtCredentials(file, { installationId: 'i1', community: 'world_abc', secret: 'xyz' });
+  assert.deepEqual(await loadRtCredentials(file), { installationId: 'i1', community: 'world_abc', secret: 'xyz' });
+  await fsp.writeFile(file, 'not json');
+  assert.equal(await loadRtCredentials(file), null);                     // corrupt -> re-register
+  const mode = (await fsp.stat(file)).mode & 0o777;
+  // Windows (libuv) reports 0o666 regardless of chmod 0o600 — guard the assert.
+  if (process.platform !== 'win32') assert.equal(mode & 0o077, 0);         // owner-only
+});
+

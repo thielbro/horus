@@ -5,6 +5,9 @@
 // error semantics are copied verbatim from that verified live client.
 
 import protobuf from 'protobufjs';
+import fsp from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import rtProtoJson from './waze-rt.proto.json';
 
 export type RtRegion = 'na' | 'il' | 'row';
@@ -165,6 +168,40 @@ export function classifyRtBatchError(batchLike: unknown): RtErrorKind | null {
     if (le) return le.errorType === 2 || le.errorType === 0 ? 'transient' : 'rejected';
     const lr = el.loginResponse && el.loginResponse.loginError;
     if (lr) return 'rejected';
+  }
+  return null;
+}
+
+// ── anonymous-credentials cache ─────────────────────────────────────────────
+// Anonymous registration is capped (~10/day): credentials must be cached and
+// reused; a missing/corrupt cache is what triggers re-registration.
+
+export interface RtCredentials { installationId?: string; community: string; secret: string; }
+
+export function defaultRtCredsPath(): string {
+  return process.env.WAZE_RT_CREDS_FILE
+    ?? path.join(os.homedir(), '.horus', 'waze-rt-credentials.json');
+}
+
+export async function saveRtCredentials(file: string, creds: RtCredentials): Promise<void> {
+  await fsp.mkdir(path.dirname(file), { recursive: true });
+  await fsp.writeFile(file, JSON.stringify(creds));
+  try { await fsp.chmod(file, 0o600); } catch { /* Windows may not apply it — swallow */ }
+}
+
+// null means "no usable cache" — missing file, corrupt JSON, or wrong shape —
+// and is the caller's signal to re-register.
+export async function loadRtCredentials(file: string): Promise<RtCredentials | null> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await fsp.readFile(file, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (parsed && typeof parsed === 'object'
+    && typeof (parsed as RtCredentials).community === 'string'
+    && typeof (parsed as RtCredentials).secret === 'string') {
+    return parsed as RtCredentials;
   }
   return null;
 }
