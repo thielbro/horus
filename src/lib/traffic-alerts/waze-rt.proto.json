@@ -1,0 +1,1138 @@
+{
+  "options": {
+    "java_package": "app.sabre.wzsabre.waze",
+    "java_outer_classname": "WazeProto",
+    "optimize_for": "LITE_RUNTIME"
+  },
+  "nested": {
+    "Batch": {
+      "edition": "proto2",
+      "fields": {
+        "element": {
+          "rule": "repeated",
+          "type": "Element",
+          "id": 1001
+        },
+        "expirationGmt": {
+          "type": "int64",
+          "id": 1002
+        }
+      }
+    },
+    "Element": {
+      "edition": "proto2",
+      "fields": {
+        "requestId": {
+          "type": "int32",
+          "id": 1
+        },
+        "oldCommand": {
+          "type": "string",
+          "id": 2001
+        },
+        "error": {
+          "type": "ServerError",
+          "id": 2003
+        },
+        "reportAdsSetting": {
+          "type": "ReportAdsSettings",
+          "id": 2108
+        },
+        "responseTimestamp": {
+          "type": "ResponseTimestamp",
+          "id": 2150
+        },
+        "clientInfo": {
+          "type": "ClientInfo",
+          "id": 2184
+        },
+        "register": {
+          "type": "Register",
+          "id": 2219
+        },
+        "registerSuccessful": {
+          "type": "RegisterSuccessful",
+          "id": 2220
+        },
+        "uid": {
+          "type": "UID",
+          "id": 2221
+        },
+        "loginError": {
+          "type": "LoginError",
+          "id": 2224
+        },
+        "loginSuccessful": {
+          "type": "LoginSuccessful",
+          "id": 2225
+        },
+        "at": {
+          "type": "AT",
+          "id": 2384
+        },
+        "addAlertAction": {
+          "type": "AddAlertAction",
+          "id": 2708
+        },
+        "addUserReportedAlertRequest": {
+          "type": "AddUserReportedAlertRequest",
+          "id": 2737
+        },
+        "addUserReportedAlertResponse": {
+          "type": "AddUserReportedAlertResponse",
+          "id": 2738
+        },
+        "loginRequest": {
+          "type": "LoginRequest",
+          "id": 2744
+        },
+        "loginResponse": {
+          "type": "LoginResponse",
+          "id": 2745
+        }
+      }
+    },
+    "StringEntry": {
+      "edition": "proto2",
+      "fields": {
+        "key": {
+          "type": "string",
+          "id": 1
+        },
+        "value": {
+          "type": "string",
+          "id": 2
+        }
+      }
+    },
+    "StringMap": {
+      "edition": "proto2",
+      "fields": {
+        "entry": {
+          "rule": "repeated",
+          "type": "StringEntry",
+          "id": 1
+        }
+      }
+    },
+    "Coordinate": {
+      "edition": "proto2",
+      "fields": {
+        "lonTimes1000000": {
+          "type": "int32",
+          "id": 101
+        },
+        "latTimes1000000": {
+          "type": "int32",
+          "id": 102
+        }
+      }
+    },
+    "DeviceType": {
+      "edition": "proto2",
+      "values": {
+        "UNKNOWN_DEVICE_TYPE": 0,
+        "SYMBIAN_NO_TOUCH_SCREEN_DEVICE": 10,
+        "SYMBIAN_TOUCH_SCREEN_DEVICE": 11,
+        "IPHONE_DEVICE": 21,
+        "CE_NO_TOUCH_SCREEN_DEVICE": 30,
+        "CE_TOUCH_SCREEN_DEVICE": 31,
+        "ANDROID_DEVICE": 50,
+        "WP8_DEVICE": 80,
+        "LINUX_DEVICE": 90,
+        "WEB": 100
+      }
+    },
+    "AppType": {
+      "edition": "proto2",
+      "values": {
+        "UNKNOWN_APP_TYPE": 0,
+        "WAZE": 1,
+        "RIDER": 2,
+        "BROADCAST": 3,
+        "WAZE_BUILT_IN_DISPLAY": 4,
+        "WAZE_BUILT_IN_DISPLAY_PHONE": 5,
+        "WAZE_BUILT_IN_DISPLAY_CARPLAY": 6,
+        "WEB_CLIENT": 7,
+        "CARPOOL_ALERTS_ORCHESTRATOR": 8,
+        "WAZE_ANDROID_AUTOMOTIVE_OS": 9
+      }
+    },
+    "AppFlavor": {
+      "edition": "proto2",
+      "values": {
+        "UNKNOWN_APP_FLAVOR": 0,
+        "RELEASE": 1,
+        "FISHFOOD": 2,
+        "DOGFOOD": 3,
+        "PRE_BETA": 4,
+        "ALPHA": 5,
+        "DEV": 6,
+        "ONEOFF": 7,
+        "BETA": 8
+      }
+    },
+    "ClientApiType": {
+      "edition": "proto2",
+      "values": {
+        "UNKNOWN_CLIENT_API": 0,
+        "TRANSPORT": 1,
+        "AUDIO": 2
+      }
+    },
+    "SegmentDirection": {
+      "edition": "proto2",
+      "values": {
+        "SEGMENT_DIRECTION_UNSPECIFIED": 0,
+        "SEGMENT_DIRECTION_FORWARD": 1,
+        "SEGMENT_DIRECTION_BACKWARD": 2,
+        "SEGMENT_DIRECTION_BOTH": 3
+      }
+    },
+    "AlertType": {
+      "edition": "proto2",
+      "values": {
+        "UNKNOWN_TYPE": 0,
+        "CHIT_CHAT": 1,
+        "POLICE": 2,
+        "ACCIDENT": 3,
+        "JAM": 4,
+        "TRAFFIC_INFO": 5,
+        "HAZARD": 6,
+        "MISC": 7,
+        "CONSTRUCTION": 8,
+        "PARKING": 9,
+        "DYNAMIC": 10,
+        "CAMERA": 11,
+        "__NOT_IN_USE__PARKED": 12,
+        "ROAD_CLOSED": 13,
+        "SYSTEM_ROAD_CLOSED": 14,
+        "UNKNOWN_ALERT": 15,
+        "SOS": 16,
+        "CRASH_PRONE": 17,
+        "TURN_CLOSED": 19,
+        "NEW_BAD_WEATHER": 100,
+        "NEW_LANE_CLOSED": 101,
+        "PERMANENT_HAZARD": 103,
+        "PERSONAL_SAFETY": 104
+      }
+    },
+    "AlertSubType": {
+      "edition": "proto2",
+      "values": {
+        "NO_SUBTYPE": 0,
+        "POLICE_VISIBLE": 201,
+        "POLICE_HIDING": 202,
+        "POLICE_WITH_MOBILE_CAMERA": 203,
+        "ACCIDENT_MINOR": 301,
+        "ACCIDENT_MAJOR": 302,
+        "JAM_MODERATE_TRAFFIC": 401,
+        "JAM_HEAVY_TRAFFIC": 402,
+        "JAM_STAND_STILL_TRAFFIC": 403,
+        "JAM_LIGHT_TRAFFIC": 404,
+        "HAZARD_ON_ROAD": 601,
+        "HAZARD_ON_SHOULDER": 602,
+        "HAZARD_WEATHER": 603,
+        "HAZARD_ON_ROAD_OBJECT": 604,
+        "HAZARD_ON_ROAD_POT_HOLE": 605,
+        "HAZARD_ON_ROAD_ROAD_KILL": 606,
+        "HAZARD_ON_SHOULDER_CAR_STOPPED": 607,
+        "HAZARD_ON_SHOULDER_ANIMALS": 608,
+        "HAZARD_ON_SHOULDER_MISSING_SIGN": 609,
+        "HAZARD_WEATHER_FOG": 610,
+        "HAZARD_WEATHER_HAIL": 611,
+        "HAZARD_WEATHER_HEAVY_RAIN": 612,
+        "HAZARD_WEATHER_HEAVY_SNOW": 613,
+        "HAZARD_WEATHER_FLOOD": 614,
+        "HAZARD_WEATHER_MONSOON": 615,
+        "HAZARD_WEATHER_TORNADO": 616,
+        "HAZARD_WEATHER_HEAT_WAVE": 617,
+        "HAZARD_WEATHER_HURRICANE": 618,
+        "HAZARD_WEATHER_FREEZING_RAIN": 619,
+        "HAZARD_ON_ROAD_LANE_CLOSED": 620,
+        "HAZARD_ON_ROAD_OIL": 621,
+        "HAZARD_ON_ROAD_ICE": 622,
+        "HAZARD_ON_ROAD_CONSTRUCTION": 623,
+        "HAZARD_ON_ROAD_CAR_STOPPED": 624,
+        "HAZARD_ON_ROAD_TRAFFIC_LIGHT_FAULT": 625,
+        "HAZARD_ON_ROAD_EMERGENCY_VEHICLE": 626,
+        "__NOT_IN_USE__PARKED_ON": 1201,
+        "__NOT_IN_USE__PARKED_OFF": 1202,
+        "ROAD_CLOSED_HAZARD": 1301,
+        "ROAD_CLOSED_CONSTRUCTION": 1302,
+        "ROAD_CLOSED_EVENT": 1303,
+        "SOS_FLAT_TIRE": 1601,
+        "SOS_NO_FUEL": 1602,
+        "SOS_MEDICAL_HELP": 1603,
+        "SOS_MECHANICAL_PROBLEM": 1604,
+        "SOS_OTHER": 1605,
+        "SOS_BATTERY_ISSUE": 1606,
+        "CRASH_PRONE_SHORT_ALERT_LENGTH": 1701,
+        "CRASH_PRONE_LONG_ALERT_LENGTH": 1702,
+        "TURN_CLOSED_EVENT": 1901,
+        "BAD_WEATHER_DEFAULT": 2000,
+        "BAD_WEATHER_SLIPPERY_ROAD": 2001,
+        "LANE_CLOSURE_BLOCKED_LANES": 2002,
+        "LANE_CLOSURE_LEFT_LANE": 2003,
+        "LANE_CLOSURE_RIGHT_LANE": 2004,
+        "LANE_CLOSURE_CENTER_LANE": 2005,
+        "PERMANENT_HAZARD_SPEED_BUMP": 3001,
+        "PERMANENT_HAZARD_TOPES": 3002,
+        "PERMANENT_HAZARD_TOLL_BOOTH": 3003,
+        "PERMANENT_HAZARD_DANGEROUS_CURVE": 3004,
+        "PERMANENT_HAZARD_DANGEROUS_INTERSECTION": 3005,
+        "PERMANENT_HAZARD_DANGEROUS_SPLIT": 3006,
+        "PERMANENT_HAZARD_DANGEROUS_MERGE": 3007,
+        "PERMANENT_HAZARD_SCHOOL_ZONE": 3008,
+        "DEFAULT_PERSONAL_SAFETY": 4001,
+        "DEFAULT_CAMERA": 5001
+      }
+    },
+    "ClientInfo": {
+      "edition": "proto2",
+      "fields": {
+        "protocol": {
+          "type": "int32",
+          "id": 1
+        },
+        "device": {
+          "type": "string",
+          "id": 2
+        },
+        "clientVersion": {
+          "type": "string",
+          "id": 3
+        },
+        "lastPosition": {
+          "type": "Coordinate",
+          "id": 4
+        },
+        "manufacturer": {
+          "type": "string",
+          "id": 5
+        },
+        "model": {
+          "type": "string",
+          "id": 6
+        },
+        "name": {
+          "type": "string",
+          "id": 7
+        },
+        "width": {
+          "type": "int32",
+          "id": 8
+        },
+        "height": {
+          "type": "int32",
+          "id": 9
+        },
+        "applicationType": {
+          "type": "string",
+          "id": 10
+        },
+        "osVersion": {
+          "type": "string",
+          "id": 11
+        },
+        "applicatinModeBitmap": {
+          "type": "int32",
+          "id": 12
+        },
+        "clientAbTests": {
+          "type": "StringMap",
+          "id": 13
+        },
+        "returnText": {
+          "type": "bool",
+          "id": 14
+        },
+        "simulated": {
+          "type": "bool",
+          "id": 15
+        },
+        "locale": {
+          "type": "string",
+          "id": 16
+        },
+        "installationId": {
+          "type": "string",
+          "id": 17
+        },
+        "deviceType": {
+          "type": "DeviceType",
+          "id": 18
+        },
+        "appType": {
+          "type": "AppType",
+          "id": 19
+        },
+        "clientApi": {
+          "rule": "repeated",
+          "type": "ClientApi",
+          "id": 20
+        },
+        "environment": {
+          "type": "Environment",
+          "id": 21
+        },
+        "debugOptions": {
+          "type": "StringMap",
+          "id": 22
+        },
+        "userAgent": {
+          "type": "string",
+          "id": 23
+        },
+        "display": {
+          "rule": "repeated",
+          "type": "Display",
+          "id": 24
+        },
+        "osLanguageId": {
+          "type": "string",
+          "id": 25
+        },
+        "sessionUuid": {
+          "type": "string",
+          "id": 26
+        },
+        "isJailbroken": {
+          "type": "bool",
+          "id": 27
+        },
+        "currentTimeMillis": {
+          "type": "int64",
+          "id": 28
+        },
+        "deviceBrand": {
+          "type": "string",
+          "id": 29
+        },
+        "is_24HourFormat": {
+          "type": "bool",
+          "id": 30
+        },
+        "appFlavor": {
+          "type": "AppFlavor",
+          "id": 31
+        }
+      },
+      "nested": {
+        "ClientApi": {
+          "fields": {
+            "type": {
+              "type": "ClientApiType",
+              "id": 1
+            },
+            "packageName": {
+              "type": "string",
+              "id": 2
+            }
+          }
+        },
+        "Environment": {
+          "values": {
+            "STAGING": 1,
+            "AUTOPUSH": 2,
+            "PRODUCTION": 3
+          }
+        }
+      }
+    },
+    "Display": {
+      "edition": "proto2",
+      "fields": {
+        "type": {
+          "type": "Type",
+          "id": 1
+        },
+        "width": {
+          "type": "int32",
+          "id": 2
+        },
+        "height": {
+          "type": "int32",
+          "id": 3
+        }
+      },
+      "nested": {
+        "Type": {
+          "values": {
+            "UNKNOWN": 1,
+            "BUILT_IN": 2,
+            "CARPLAY": 3,
+            "ANDROID_AUTO": 4,
+            "SMART_DEVICE_LINK": 5,
+            "WEB_LINK": 6,
+            "PIONEER": 7,
+            "WEB": 8
+          }
+        }
+      }
+    },
+    "ReportAdsSettings": {
+      "edition": "proto2",
+      "fields": {
+        "advertisingId": {
+          "type": "string",
+          "id": 1
+        },
+        "optedOutOfTracking": {
+          "type": "bool",
+          "id": 2
+        }
+      }
+    },
+    "Register": {
+      "edition": "proto2",
+      "fields": {
+        "code": {
+          "type": "string",
+          "id": 1
+        }
+      }
+    },
+    "RegisterSuccessful": {
+      "edition": "proto2",
+      "fields": {
+        "username": {
+          "type": "string",
+          "id": 1
+        },
+        "password": {
+          "type": "string",
+          "id": 2
+        },
+        "token": {
+          "type": "string",
+          "id": 3
+        },
+        "userId": {
+          "type": "int64",
+          "id": 4
+        }
+      }
+    },
+    "PasswordCredential": {
+      "edition": "proto2",
+      "fields": {
+        "username": {
+          "type": "string",
+          "id": 1
+        },
+        "password": {
+          "type": "string",
+          "id": 2
+        }
+      }
+    },
+    "TokenCredential": {
+      "edition": "proto2",
+      "fields": {
+        "token": {
+          "type": "string",
+          "id": 1
+        }
+      }
+    },
+    "LoginRequest": {
+      "edition": "proto2",
+      "oneofs": {
+        "credential": {
+          "oneof": [
+            "passwordCredential",
+            "tokenCredential"
+          ]
+        }
+      },
+      "fields": {
+        "passwordCredential": {
+          "type": "PasswordCredential",
+          "id": 1
+        },
+        "tokenCredential": {
+          "type": "TokenCredential",
+          "id": 2
+        },
+        "reason": {
+          "type": "LoginReason",
+          "id": 3
+        },
+        "logoutOtherDevices": {
+          "type": "bool",
+          "id": 4,
+          "options": {
+            "default": true
+          }
+        },
+        "excludedLoginResponses": {
+          "rule": "repeated",
+          "type": "ExcludedLoginResponse",
+          "id": 5
+        }
+      },
+      "nested": {
+        "LoginReason": {
+          "values": {
+            "NORMAL": 0,
+            "SIGN_IN": 1
+          }
+        },
+        "ExcludedLoginResponse": {
+          "values": {
+            "FORMAT_UNSPECIFIED": 0,
+            "USER_PROFILE": 1,
+            "LOGIN_ENCOURAGEMENT": 2,
+            "GET_MEETINGS": 3,
+            "CONSENT": 4,
+            "POINTS": 6
+          }
+        }
+      }
+    },
+    "LoginSuccess": {
+      "edition": "proto2",
+      "fields": {
+        "serverSessionId": {
+          "type": "int64",
+          "id": 1
+        },
+        "globalUserId": {
+          "type": "string",
+          "id": 2
+        },
+        "secretKey": {
+          "type": "string",
+          "id": 3
+        },
+        "sessionId": {
+          "type": "string",
+          "id": 4
+        }
+      }
+    },
+    "LoginError": {
+      "edition": "proto2",
+      "fields": {
+        "reason": {
+          "type": "int64",
+          "id": 1
+        },
+        "errorType": {
+          "type": "AuthErrorType",
+          "id": 2
+        }
+      },
+      "nested": {
+        "AuthErrorType": {
+          "values": {
+            "UNKNOWN_ERROR": 0,
+            "WRONG_USER_PASSWORD": 1,
+            "INTERNAL_ISSUES": 2,
+            "NOT_AUTHORIZED": 3,
+            "REFRESH_TOKEN": 4,
+            "ANOTHER_DEVICE_LOGGED_IN": 5,
+            "INVALID_TOKEN": 6,
+            "UNAUTHENTICATED_TOKEN": 7,
+            "TOKEN_QUOTA_EXCEEDED": 8,
+            "APP_VERSION_NOT_SUPPORTED": 9
+          }
+        }
+      }
+    },
+    "LoginResponse": {
+      "edition": "proto2",
+      "oneofs": {
+        "response": {
+          "oneof": [
+            "loginSuccess",
+            "loginError"
+          ]
+        }
+      },
+      "fields": {
+        "loginSuccess": {
+          "type": "LoginSuccess",
+          "id": 1
+        },
+        "loginError": {
+          "type": "LoginError",
+          "id": 2
+        }
+      }
+    },
+    "UID": {
+      "edition": "proto2",
+      "fields": {
+        "id": {
+          "type": "int64",
+          "id": 1
+        },
+        "secretKey": {
+          "type": "string",
+          "id": 2
+        },
+        "protocol": {
+          "type": "int32",
+          "id": 3
+        }
+      }
+    },
+    "AddAlertAction": {
+      "edition": "proto2",
+      "fields": {
+        "realtimeAlert": {
+          "type": "RealtimeAlert",
+          "id": 1
+        }
+      }
+    },
+    "RealtimeAlert": {
+      "edition": "proto2",
+      "fields": {
+        "id": {
+          "type": "int64",
+          "id": 1
+        },
+        "alertInfo": {
+          "type": "AlertInfo",
+          "id": 2
+        },
+        "alertReportingInfo": {
+          "type": "AlertReportingInfo",
+          "id": 3
+        },
+        "notifyAlerterShown": {
+          "type": "bool",
+          "id": 5
+        },
+        "alertUuid": {
+          "type": "string",
+          "id": 6
+        },
+        "alerterShownToken": {
+          "type": "string",
+          "id": 7
+        }
+      }
+    },
+    "AlertInfo": {
+      "edition": "proto2",
+      "fields": {
+        "type": {
+          "type": "AlertType",
+          "id": 1
+        },
+        "subType": {
+          "type": "AlertSubType",
+          "id": 2
+        },
+        "position": {
+          "type": "Coordinate",
+          "id": 3
+        },
+        "segDirection": {
+          "type": "SegmentDirection",
+          "id": 5
+        },
+        "azymuth": {
+          "type": "int32",
+          "id": 6
+        },
+        "onRoute": {
+          "type": "bool",
+          "id": 7
+        },
+        "priority": {
+          "type": "int32",
+          "id": 8
+        }
+      }
+    },
+    "AlertReportingInfo": {
+      "edition": "proto2",
+      "fields": {
+        "primaryAlertId": {
+          "type": "int64",
+          "id": 1
+        },
+        "kind": {
+          "type": "int32",
+          "id": 2
+        },
+        "description": {
+          "type": "string",
+          "id": 3
+        },
+        "reportTime": {
+          "type": "int64",
+          "id": 4
+        },
+        "reporterUsername": {
+          "type": "string",
+          "id": 5
+        },
+        "currentUserIsReporter": {
+          "type": "bool",
+          "id": 6
+        },
+        "reportImageId": {
+          "type": "string",
+          "id": 7
+        },
+        "alertAddress": {
+          "type": "AlertAddress",
+          "id": 8
+        },
+        "thumbsUpCount": {
+          "type": "int32",
+          "id": 9
+        },
+        "currentUserThumbedUp": {
+          "type": "bool",
+          "id": 10
+        },
+        "secondsToReport": {
+          "type": "int32",
+          "id": 11
+        },
+        "shouldPingUser": {
+          "type": "bool",
+          "id": 12
+        },
+        "archive": {
+          "type": "bool",
+          "id": 13
+        }
+      }
+    },
+    "AlertAddress": {
+      "edition": "proto2",
+      "fields": {
+        "locationNearByReport": {
+          "type": "string",
+          "id": 1
+        },
+        "street": {
+          "type": "string",
+          "id": 2
+        },
+        "city": {
+          "type": "string",
+          "id": 3
+        }
+      }
+    },
+    "ServerError": {
+      "edition": "proto2",
+      "fields": {
+        "code": {
+          "type": "int32",
+          "id": 10101
+        },
+        "description": {
+          "type": "string",
+          "id": 10102
+        },
+        "requestId": {
+          "type": "string",
+          "id": 10103
+        },
+        "commandName": {
+          "type": "string",
+          "id": 10105
+        },
+        "serviceName": {
+          "type": "string",
+          "id": 10106
+        },
+        "exceptionType": {
+          "type": "string",
+          "id": 10107
+        },
+        "exceptionDetail": {
+          "type": "string",
+          "id": 10108
+        }
+      }
+    },
+    "ResponseTimestamp": {
+      "edition": "proto2",
+      "fields": {}
+    },
+    "LoginSuccessful": {
+      "edition": "proto2",
+      "fields": {}
+    },
+    "AT": {
+      "edition": "proto2",
+      "fields": {}
+    },
+    "CoordinateWithAlt": {
+      "edition": "proto2",
+      "fields": {
+        "lonTimes1000000": {
+          "type": "int32",
+          "id": 101
+        },
+        "latTimes1000000": {
+          "type": "int32",
+          "id": 102
+        },
+        "altTimes1000000": {
+          "type": "int32",
+          "id": 103
+        }
+      }
+    },
+    "SegmentNodes": {
+      "edition": "proto2",
+      "fields": {
+        "fromNode": {
+          "type": "int64",
+          "id": 1
+        },
+        "toNode": {
+          "type": "int64",
+          "id": 2
+        }
+      }
+    },
+    "GpsPosition": {
+      "edition": "proto2",
+      "fields": {
+        "coordinate": {
+          "type": "CoordinateWithAlt",
+          "id": 1
+        },
+        "horizontalAccuracyMeters": {
+          "type": "double",
+          "id": 2
+        },
+        "timeEpochMs": {
+          "type": "int64",
+          "id": 3
+        }
+      }
+    },
+    "UserPosition": {
+      "edition": "proto2",
+      "fields": {
+        "gpsPosition": {
+          "type": "GpsPosition",
+          "id": 1
+        },
+        "segmentNodes": {
+          "type": "SegmentNodes",
+          "id": 2
+        }
+      }
+    },
+    "Timestamp": {
+      "edition": "proto2",
+      "fields": {
+        "seconds": {
+          "type": "int64",
+          "id": 1
+        },
+        "nanos": {
+          "type": "int32",
+          "id": 2
+        }
+      }
+    },
+    "ReportingManner": {
+      "edition": "proto2",
+      "values": {
+        "REPORTING_MANNER_UNSPECIFIED": 0,
+        "REPORTING_MANNER_DEFAULT": 1,
+        "REPORTING_MANNER_VOICE": 2,
+        "REPORTING_MANNER_VOICE_CONVERSATION": 3
+      }
+    },
+    "PoliceAlertSubType": {
+      "edition": "proto2",
+      "values": {
+        "POLICE_UNSPECIFIED": 0,
+        "POLICE_DEFAULT": 1,
+        "POLICE_HIDDEN_REPORT": 2,
+        "POLICE_MOBILE_CAMERA": 3
+      }
+    },
+    "PoliceDetails": {
+      "edition": "proto2",
+      "fields": {
+        "type": {
+          "type": "PoliceAlertSubType",
+          "id": 1
+        }
+      }
+    },
+    "CrashReportSubType": {
+      "edition": "proto2",
+      "values": {
+        "CRASH_REPORT_UNSPECIFIED": 0,
+        "CRASH_REPORT_DEFAULT": 1,
+        "CRASH_REPORT_PILE_UP": 2,
+        "CRASH_REPORT_MAJOR": 3,
+        "CRASH_REPORT_MINOR": 4
+      }
+    },
+    "CrashDetails": {
+      "edition": "proto2",
+      "fields": {
+        "type": {
+          "type": "CrashReportSubType",
+          "id": 1
+        }
+      }
+    },
+    "TrafficReportSubType": {
+      "edition": "proto2",
+      "values": {
+        "TRAFFIC_REPORT_UNSPECIFIED": 0,
+        "TRAFFIC_REPORT_DEFAULT": 1,
+        "TRAFFIC_REPORT_STANDSTILL": 2,
+        "TRAFFIC_REPORT_LIGHT": 3,
+        "TRAFFIC_REPORT_MODERATE": 4,
+        "TRAFFIC_REPORT_HEAVY": 5
+      }
+    },
+    "TrafficDetails": {
+      "edition": "proto2",
+      "fields": {
+        "type": {
+          "type": "TrafficReportSubType",
+          "id": 1
+        }
+      }
+    },
+    "HazardReportSubType": {
+      "edition": "proto2",
+      "values": {
+        "HAZARD_REPORT_UNSPECIFIED": 0,
+        "HAZARD_REPORT_DEFAULT": 1,
+        "HAZARD_REPORT_CONSTRUCTION": 2,
+        "HAZARD_REPORT_VEHICLE_STOPPED": 3,
+        "HAZARD_REPORT_OBJECT_ON_ROAD": 4,
+        "HAZARD_REPORT_POTHOLE": 5,
+        "HAZARD_REPORT_BROKEN_TRAFFIC_LIGHT": 6,
+        "HAZARD_REPORT_OIL": 7,
+        "HAZARD_REPORT_ANIMALS": 8,
+        "HAZARD_REPORT_MISSING_SIGN": 9,
+        "HAZARD_REPORT_ROAD_KILL": 10,
+        "HAZARD_REPORT_SHOULDER": 11,
+        "HAZARD_REPORT_SHOULDER_VEHICLE_STOPPED": 12,
+        "HAZARD_REPORT_EMERGENCY_VEHICLE": 13
+      }
+    },
+    "HazardOnRoadDetails": {
+      "edition": "proto2",
+      "fields": {
+        "type": {
+          "type": "HazardReportSubType",
+          "id": 1
+        }
+      }
+    },
+    "AlertDetails": {
+      "edition": "proto2",
+      "oneofs": {
+        "details": {
+          "oneof": [
+            "traffic",
+            "police",
+            "crash",
+            "hazardOnRoad"
+          ]
+        }
+      },
+      "fields": {
+        "traffic": {
+          "type": "TrafficDetails",
+          "id": 1
+        },
+        "police": {
+          "type": "PoliceDetails",
+          "id": 2
+        },
+        "crash": {
+          "type": "CrashDetails",
+          "id": 3
+        },
+        "hazardOnRoad": {
+          "type": "HazardOnRoadDetails",
+          "id": 4
+        }
+      }
+    },
+    "AddUserReportedAlertRequest": {
+      "edition": "proto2",
+      "fields": {
+        "userPosition": {
+          "type": "UserPosition",
+          "id": 1
+        },
+        "azymuth": {
+          "type": "int32",
+          "id": 2
+        },
+        "alertDetails": {
+          "type": "AlertDetails",
+          "id": 3
+        },
+        "segmentDirection": {
+          "type": "SegmentDirection",
+          "id": 4
+        },
+        "reportTime": {
+          "type": "Timestamp",
+          "id": 5
+        },
+        "isOfflineDelayedReport": {
+          "type": "bool",
+          "id": 6
+        },
+        "reportingManner": {
+          "type": "ReportingManner",
+          "id": 7
+        }
+      }
+    },
+    "AddUserReportedAlertResponse": {
+      "edition": "proto2",
+      "fields": {
+        "status": {
+          "type": "AddAlertStatus",
+          "id": 1
+        },
+        "receivedPointsCount": {
+          "type": "int32",
+          "id": 2
+        },
+        "clientAlertId": {
+          "type": "int64",
+          "id": 3
+        },
+        "alertDetails": {
+          "type": "AlertDetails",
+          "id": 4
+        },
+        "alertUuid": {
+          "type": "string",
+          "id": 5
+        }
+      },
+      "nested": {
+        "AddAlertStatus": {
+          "values": {
+            "STATUS_UNSPECIFIED": 0,
+            "SUCCESS": 1,
+            "FAILURE": 2
+          }
+        }
+      }
+    }
+  }
+}
