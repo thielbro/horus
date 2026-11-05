@@ -94,3 +94,81 @@ test('rt credentials cache round-trips and tolerates corruption', async () => {
   if (process.platform !== 'win32') assert.equal(mode & 0o077, 0);         // owner-only
 });
 
+// ── createRtTransport integration: fake fetch answering by URL path, real
+// vendored proto building the wire bodies (framing + parsing exercised for real).
+
+function makeRtFakeFetch(Batch) {
+  const calls = [];
+  // The RT server answers with raw protobuf bytes — encode the fixture objects
+  // straight to the wire (the plan draft's base64 string round-trip double-encoded).
+  const wire = (obj) => Buffer.from(Batch.encode(Batch.fromObject(obj)).finish());
+  const fakeFetch = async (url) => {
+    const u = String(url);
+    calls.push(u);
+    if (u.endsWith('/static')) {
+      return { status: 200, headers: new Headers(), arrayBuffer: async () => wire({ element: [{ registerSuccessful: { username: 'world_fake', password: 'pw_fake', userId: '1' } }] }) };
+    }
+    if (u.endsWith('/login')) {
+      return { status: 200, headers: new Headers({ 'set-cookie': 'Waze-Session-Affinity=abc;' }), arrayBuffer: async () => wire({ element: [{ loginResponse: { loginSuccess: { serverSessionId: '123', secretKey: 'aAbB' } } }] }) };
+    }
+    // /command: one POLICE alert, every command answers with the same one — the
+    // client merges by uuid so the sweep must still collapse to a single alert.
+    return { status: 200, headers: new Headers(), arrayBuffer: async () => wire({ element: [{ addAlertAction: { realtimeAlert: {
+      alertUuid: 'p1', id: '11',
+      alertInfo: { position: { lonTimes1000000: (174.76e6 | 0), latTimes1000000: (-36.84e6 | 0) }, type: 2, azymuth: 0 },
+      alertReportingInfo: { reportTime: Math.floor(Date.now() / 1000), alertAddress: { street: 'Queens St', city: 'Auckland' } },
+    } } }] }) };
+  };
+  return { calls, fakeFetch };
+}
+
+test('rt transport returns GeoRSS-shaped alerts the existing pipeline normalizes', async () => {
+  const { createRtTransport, loadRtRoot } = await mod();
+  const { scrapeWazePoliceCameraAlerts } = await import('../src/lib/traffic-alerts/index.ts');
+  const os = await import('node:os'); const fsp = await import('node:fs/promises'); const path = await import('node:path');
+  const root = await loadRtRoot();
+  const Batch = root.lookupType('Batch');
+  const credsFile = path.join(await fsp.mkdtemp(path.join(os.tmpdir(), 'horus-rt-')), 'creds.json');
+  const { calls, fakeFetch } = makeRtFakeFetch(Batch);
+
+  const result = await scrapeWazePoliceCameraAlerts({
+    bbox: [-36.90, 174.70, -36.80, 174.85],           // one tile (span < 1 deg)
+    transport: createRtTransport({ fetchImpl: fakeFetch, credsPath: credsFile }),
+  });
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.alerts.length, 1);
+  const a = result.alerts[0];
+  assert.equal(a.kind, 'police');
+  assert.equal(a.provider, 'waze');
+  assert.equal(a.id, 'p1');
+  assert.equal(a.type, 'POLICE');
+  assert.ok(Math.abs(a.lat - -36.84) < 1e-6 && Math.abs(a.lng - 174.76) < 1e-6);
+  assert.ok(a.reportTime && Date.parse(a.reportTime) > 0);
+  assert.equal(a.description, 'Queens St');
+  // credentials were persisted so future scrapes skip /static (register is capped):
+  assert.equal(JSON.parse(await fsp.readFile(credsFile, 'utf8')).community, 'world_fake');
+  assert.equal(calls.filter((u) => u.endsWith('/static')).length, 1);
+});
+
+test('rt transport registers and logs in once across the tiles of one scrape', async () => {
+  const { createRtTransport, loadRtRoot } = await mod();
+  const { scrapeWazePoliceCameraAlerts } = await import('../src/lib/traffic-alerts/index.ts');
+  const os = await import('node:os'); const fsp = await import('node:fs/promises'); const path = await import('node:path');
+  const root = await loadRtRoot();
+  const Batch = root.lookupType('Batch');
+  const credsFile = path.join(await fsp.mkdtemp(path.join(os.tmpdir(), 'horus-rt-')), 'creds.json');
+  const { calls, fakeFetch } = makeRtFakeFetch(Batch);
+
+  const result = await scrapeWazePoliceCameraAlerts({
+    bbox: [33.80, -118.55, 34.20, -118.05],           // LA, region na
+    maxTileSpanDegrees: 0.25,                         // 0.4 x 0.5 deg -> exactly 4 tiles
+    transport: createRtTransport({ fetchImpl: fakeFetch, credsPath: credsFile }),
+  });
+  assert.deepEqual(result.errors, []);
+  // One RT session per scrape: register is capped (~10/day), logins are shared even
+  // though tiles run 2-at-a-time and four sweeps hit /command.
+  assert.equal(calls.filter((u) => u.endsWith('/static')).length, 1);
+  assert.equal(calls.filter((u) => u.endsWith('/login')).length, 1);
+  assert.ok(calls.filter((u) => u.endsWith('/command')).length === 4 * 6);
+});
+

@@ -9,6 +9,8 @@ import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { WazeTransportError } from './errors.ts';
+import type { BBox, WazeGeoRssTransport } from './types.ts';
 import rtProtoJson from './waze-rt.proto.json';
 
 export type RtRegion = 'na' | 'il' | 'row';
@@ -527,5 +529,113 @@ export class WazeRtClient {
     }
     return { alerts: [...merged.values()], removed: [...removed] };
   }
+}
+
+// ── createRtTransport: RT sweep exposed as a WazeGeoRssTransport ───────────
+
+export interface RtTransportOptions {
+  fetchImpl?: typeof globalThis.fetch;
+  credsPath?: string;
+  debugLog?: (message: string) => void;
+  timeoutMsPerTile?: number; // reserved; default per-command 10_500 wait + 20_000 backstop
+}
+
+// Wrap anything thrown inside the RT path into the shared transport-error
+// taxonomy the scrape pipeline reports: session 401, rejected 403, transient
+// 504, HTTP 5xx 502, anything else 500 — always transport 'rt'.
+function asRtTransportError(error: unknown): WazeTransportError {
+  if (error instanceof WazeTransportError) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof RtProtocolError) {
+    const status = error.kind === 'session' ? 401 : error.kind === 'rejected' ? 403 : 504;
+    return new WazeTransportError(message, status, 'rt');
+  }
+  const http = Number((error as { status?: unknown } | null)?.status);
+  if (Number.isFinite(http) && http >= 500 && http < 600) return new WazeTransportError(message, 502, 'rt');
+  return new WazeTransportError(message, 500, 'rt');
+}
+
+export function createRtTransport(options: RtTransportOptions = {}): WazeGeoRssTransport {
+  const credsPath = options.credsPath ?? defaultRtCredsPath();
+  let rootPromise: Promise<RtRoot> | undefined;             // lazy descriptor load
+  let client: WazeRtClient | null = null;                   // ONE session per transport (= per scrape)
+  let sessionPromise: Promise<WazeRtClient> | null = null;  // concurrent tiles share the handshake
+  let sessionForRegion: RtRegion | null = null;
+
+  const newClient = (root: RtRoot, region: RtRegion, bbox: BBox, creds: RtCredentials | null) =>
+    new WazeRtClient({
+      root,
+      region,
+      lon: (bbox[1] + bbox[3]) / 2,
+      lat: (bbox[0] + bbox[2]) / 2,
+      creds,
+      ...options,
+    });
+
+  async function buildSession(root: RtRoot, region: RtRegion, bbox: BBox, signal?: AbortSignal): Promise<WazeRtClient> {
+    const creds = await loadRtCredentials(credsPath);
+    let fresh = newClient(root, region, bbox, creds);
+    try {
+      await fresh.ensureSession(signal);
+    } catch (error) {
+      // Stale cached creds (server says session/rejected on login): drop the
+      // cache and re-register once — register is capped, so never more than that.
+      if (error instanceof RtProtocolError && error.kind !== 'transient') {
+        await fsp.rm(credsPath, { force: true }).catch(() => {});
+        fresh = newClient(root, region, bbox, null);
+        try {
+          await fresh.ensureSession(signal);
+        } catch (retryError) {
+          throw asRtTransportError(retryError);
+        }
+      } else {
+        throw asRtTransportError(error);
+      }
+    }
+    if (fresh.credentials) await saveRtCredentials(credsPath, fresh.credentials);
+    return fresh;
+  }
+
+  function ensureClient(root: RtRoot, region: RtRegion, bbox: BBox, signal?: AbortSignal): Promise<WazeRtClient> {
+    // Synchronous check-and-claim: two tiles of the same region starting at the
+    // same time must never race two registrations (the ~10/day cap).
+    if (client && sessionForRegion === region) return Promise.resolve(client);
+    if (sessionPromise && sessionForRegion === region) return sessionPromise;
+    sessionForRegion = region;
+    const pending = buildSession(root, region, bbox, signal);
+    sessionPromise = pending;
+    pending.catch(() => {
+      if (sessionPromise === pending) { // failed handshake: let the next tile retry
+        sessionPromise = null;
+        sessionForRegion = null;
+        client = null;
+      }
+    });
+    return pending;
+  }
+
+  return {
+    // The GeoRSS url is ignored — the RT sweep answers from context.bbox.
+    async fetchGeoRss(_url, { bbox, signal }) {
+      const root = await (rootPromise ??= loadRtRoot());
+      const session = await ensureClient(root, rtRegionForBbox(bbox), bbox, signal);
+      try {
+        const { alerts } = await session.fetchBox(bbox, signal);
+        // Shape == GeoRSS: RtAlert records feed normalizeWazeAlert unchanged
+        // (uuid/lat/lon/type/pubMillis/street), so the pipeline needs zero changes.
+        return { alerts };
+      } catch (error) {
+        if (error instanceof RtProtocolError && error.kind === 'session') {
+          // Mid-sweep session expiry: drop the creds and the shared session so the
+          // NEXT tile rebuilds. The failed tile's retry is the Task 6 chain's job.
+          await fsp.rm(credsPath, { force: true }).catch(() => {});
+          client = null;
+          sessionPromise = null;
+          sessionForRegion = null;
+        }
+        throw asRtTransportError(error);
+      }
+    },
+  };
 }
 
