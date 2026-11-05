@@ -5,6 +5,7 @@
 // error semantics are copied verbatim from that verified live client.
 
 import protobuf from 'protobufjs';
+import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,8 +17,8 @@ export const RT_HOSTS: Record<RtRegion, string> = {
   il: 'rt-xlb-il.waze.com',
   row: 'rt-xlb-row.waze.com',
 };
-// Kept module-private until Task 4 (WazeRtClient) needs them for its circleToBox
-// handshake box and ±500 m jitter — the deliberate two lint warnings until then.
+// Degree-per-metre helpers for the client's 1500 m circleToBox handshake box and
+// the ±500 m clientInfo jitter (WazeRtCodec semantics, spike.js:22-23).
 const M_PER_DEG_LAT = 110_574.0;
 const mPerDegLon = (lat: number) => Math.cos((lat * Math.PI) / 180) * 111_320.0;
 const f6 = (v: number) => v.toFixed(6);
@@ -77,7 +78,11 @@ export function buildProtoLine(elementObj: Record<string, unknown>): string {
 interface RawElement {
   error?: { code?: number; description?: string } | null;
   loginError?: { errorType?: number; reason?: string } | null;
-  loginResponse?: { loginError?: { errorType?: number; reason?: string } | null } | null;
+  loginResponse?: {
+    loginError?: { errorType?: number; reason?: string } | null;
+    loginSuccess?: { serverSessionId?: unknown; secretKey?: string | null; globalUserId?: unknown } | null;
+  } | null;
+  registerSuccessful?: { username?: string | null; password?: string | null; userId?: unknown } | null;
   oldCommand?: string;
   addAlertAction?: { realtimeAlert?: {
     alertUuid?: string | null; id?: unknown;
@@ -209,5 +214,318 @@ export async function loadRtCredentials(file: string): Promise<RtCredentials | n
     return parsed as RtCredentials;
   }
   return null;
+}
+
+// ── RT client (port of spike.js CookieJar:34 + WazeRt:56) ──────────────────
+// Wire behaviour copied verbatim from the live-proven spike; the deltas are
+// injected fetch/debug logging, AbortSignal threading, and error classification
+// routed through classifyRtBatchError instead of the spike's inline errKind throw.
+
+const PROTOCOL_VERSION = 234;
+const APP_VERSION = '5.17.1.0';
+const RT_PATHS = {
+  static: '/rtserver/distrib/static',
+  login: '/rtserver/distrib/login',
+  command: '/rtserver/distrib/command',
+};
+const WAIT_LOGIN = '8500';
+const WAIT_COMMAND = '10500';
+
+// In-band protocol failure carrying the spike's errKind taxonomy. The transport
+// layer (asRtTransportError) and the Task 6 fallback chain key off `kind`;
+// `status` preserves the HTTP code for plain transport errors.
+export class RtProtocolError extends Error {
+  readonly kind: RtErrorKind;
+  readonly transport = 'rt';
+  readonly status?: number;
+
+  constructor(message: string, kind: RtErrorKind, status?: number) {
+    super(message);
+    this.name = 'RtProtocolError';
+    this.kind = kind;
+    if (status !== undefined) this.status = status;
+  }
+}
+
+// Login sets a Waze-Session-Affinity cookie every later request must carry
+// (port of spike.js:34 CookieJar).
+class RtCookieJar {
+  private readonly map = new Map<string, string>();
+  absorb(resp: { headers: { getSetCookie?: () => string[]; get(name: string): string | null } }): void {
+    let sc: string[] = [];
+    if (typeof resp.headers.getSetCookie === 'function') sc = resp.headers.getSetCookie();
+    else { const v = resp.headers.get('set-cookie'); if (v) sc = [v]; }
+    for (const c of sc) {
+      const kv = c.split(';')[0];
+      const i = kv.indexOf('=');
+      if (i > 0) this.map.set(kv.slice(0, i), kv.slice(i + 1));
+    }
+  }
+  header(): string | undefined {
+    return this.map.size ? [...this.map.entries()].map(([k, v]) => `${k}=${v}`).join('; ') : undefined;
+  }
+  clear(): void { this.map.clear(); }
+}
+
+// Raw command lines (verbatim from WazeRtCodec via spike.js:257-268).
+const seeMeLine = () => 'SeeMe,1,2,T,T,T,1,-1,1,7';
+const setMoodLine = () => 'SetMood,1';
+const locationLine = (lon: number, lat: number) => `Location,${lon},${lat}`;
+// box = [lonMin, latMin, lonMax, latMax]
+function circleToBox(lon: number, lat: number, radiusM: number): [number, number, number, number] {
+  const dLat = radiusM / M_PER_DEG_LAT, dLon = radiusM / mPerDegLon(lat);
+  return [lon - dLon, lat - dLat, lon + dLon, lat + dLat];
+}
+
+// First error element, human-readable. classifyRtBatchError is a pure message-less
+// ladder (pinned by tests), so building the thrown message is the client's job.
+function describeRtBatchError(batch: unknown): string {
+  for (const el of (batch as RawBatch | null | undefined)?.element ?? []) {
+    if (el.error && Number(el.error.code)) return `server error ${el.error.code}: ${el.error.description ?? ''}`;
+    if (el.loginError) return `login error: ${el.loginError.errorType ?? el.loginError.reason ?? ''}`;
+    const lr = el.loginResponse?.loginError;
+    if (lr) return `login error (nested): ${lr.errorType ?? lr.reason ?? ''}`;
+  }
+  return 'unknown batch error';
+}
+
+// Port of spike.js:304 parseRemoved — RmAlert ids the server retracts mid-sweep.
+function parseRtRemoved(batch: RtBatch): string[] {
+  const ids: string[] = [];
+  for (const el of (batch as unknown as RawBatch).element || []) {
+    const oc = (el.oldCommand || '').trim();
+    if (oc.startsWith('RmAlert,')) ids.push(oc.slice('RmAlert,'.length).trim());
+  }
+  return ids;
+}
+
+export interface WazeRtClientOptions {
+  root: RtRoot;
+  region: RtRegion;
+  lon: number;
+  lat: number;
+  // RtCredentials accepts the optional installationId so a cached account keeps
+  // the same device identity across scrapes (register is capped — it must persist).
+  creds?: RtCredentials | null;
+  installationId?: string;
+  fetchImpl?: typeof globalThis.fetch;
+  debugLog?: (message: string) => void;
+}
+
+export class WazeRtClient {
+  private readonly Batch: protobuf.Type;
+  private readonly UID: protobuf.Type;
+  private readonly base: string;
+  private readonly cookies = new RtCookieJar();
+  private readonly lon: number;
+  private readonly lat: number;
+  // Fixed device profile (matches one of the 8 the upstream client rotates).
+  private readonly device = { manufacturer: 'Google', model: 'Pixel 8', osVersion: '15-SDK35', screenW: 1080, screenH: 2400 };
+  private readonly installationId: string;
+  private readonly fetchImpl?: typeof globalThis.fetch;
+  private readonly debugLog?: (message: string) => void;
+  private seq = 1;
+  private creds: RtCredentials | null = null;
+  private session: { serverSessionId: string; secretKey: string; globalUserId: string } | null = null;
+
+  constructor(opts: WazeRtClientOptions) {
+    this.Batch = opts.root.lookupType('Batch');
+    this.UID = opts.root.lookupType('UID');
+    this.base = `https://${RT_HOSTS[opts.region] || RT_HOSTS.row}`;
+    this.lon = opts.lon;
+    this.lat = opts.lat;
+    this.installationId = opts.installationId ?? opts.creds?.installationId ?? randomUUID();
+    this.fetchImpl = opts.fetchImpl;
+    this.debugLog = opts.debugLog;
+    if (opts.creds) {
+      this.creds = { installationId: this.installationId, community: opts.creds.community, secret: opts.creds.secret };
+    }
+  }
+
+  // null until register() succeeds or credentials were injected. Carries the
+  // installationId so the caller's credential cache can persist the device identity.
+  get credentials(): RtCredentials | null { return this.creds; }
+
+  private clientInfoLine(): string {
+    // jitter +-500 m like the official client. NOTE: fromObject requires camelCase keys.
+    const lonOff = ((Math.random() - 0.5) * 1000.0) / mPerDegLon(this.lat);
+    const latOff = ((Math.random() - 0.5) * 1000.0) / M_PER_DEG_LAT;
+    return buildProtoLine({
+      clientInfo: {
+        protocol: PROTOCOL_VERSION,
+        clientVersion: APP_VERSION,
+        lastPosition: {
+          lonTimes1000000: Math.round((this.lon + lonOff) * 1e6) | 0,
+          latTimes1000000: Math.round((this.lat + latOff) * 1e6) | 0,
+        },
+        manufacturer: this.device.manufacturer,
+        model: this.device.model,
+        osVersion: this.device.osVersion,
+        locale: 'en',
+        installationId: this.installationId,
+        deviceType: 50,   // ANDROID_DEVICE
+        appType: 1,       // WAZE
+        display: [{ type: 2, width: this.device.screenW, height: this.device.screenH }], // BUILT_IN
+        osLanguageId: 'en',
+        sessionUuid: randomUUID(),
+        currentTimeMillis: Date.now(),
+        appFlavor: 5,     // ALPHA
+      },
+    });
+  }
+
+  private async post(
+    url: string,
+    body: string,
+    headers: Record<string, string>,
+    signal?: AbortSignal,
+  ): Promise<{ code: number; body: Buffer }> {
+    const h: Record<string, string> = { 'content-type': 'binary/octet-stream', ...headers };
+    const ck = this.cookies.header();
+    if (ck) h.cookie = ck;
+    const doFetch = this.fetchImpl ?? globalThis.fetch;
+    // The caller's signal AND a 20 s backstop: a hung RT host can never pin a tile.
+    const resp = await doFetch(url, {
+      method: 'POST',
+      headers: h,
+      body: Buffer.from(body, 'utf8'),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
+    });
+    this.cookies.absorb(resp);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    return { code: resp.status, body: buf };
+  }
+
+  // Anonymous registration is capped server-side (~10/day): the caller must
+  // persist the returned credentials (Task 3 cache) and reuse them.
+  async register(signal?: AbortSignal): Promise<void> {
+    const body = this.clientInfoLine() + '\n' + buildProtoLine({ register: {} });
+    const r = await this.post(this.base + RT_PATHS.static, body, {
+      'user-agent': APP_VERSION,
+      'x-waze-network-version': '3',
+      'sequence-number': String(this.seq++),
+    }, signal);
+    if (r.code >= 400) throw Object.assign(new Error(`register HTTP ${r.code}`), { status: r.code });
+    if (!r.body.length) throw new Error('empty register response');
+    const batch = this.Batch.decode(r.body);
+    const kind = classifyRtBatchError(batch);
+    if (kind) throw new RtProtocolError(`register: ${describeRtBatchError(batch)}`, kind);
+    for (const el of (batch as unknown as RawBatch).element || []) {
+      const rs = el.registerSuccessful;
+      if (rs && rs.username && rs.password) {
+        this.creds = { installationId: this.installationId, community: rs.username, secret: rs.password };
+        this.debugLog?.(`[spike] registered anonymous account: ${rs.username}`);
+        return;
+      }
+    }
+    throw new Error(`register: no RegisterSuccessful element (${r.body.length}B)`);
+  }
+
+  async login(signal?: AbortSignal): Promise<void> {
+    if (!this.creds) throw new Error('login before register');
+    this.cookies.clear();
+    const creds = this.creds;
+    const body = this.clientInfoLine() + '\n'
+      + buildProtoLine({ loginRequest: { passwordCredential: { username: creds.community, password: creds.secret }, reason: 0 } }) + '\n'
+      + buildProtoLine({ reportAdsSetting: {} });
+    const r = await this.post(this.base + RT_PATHS.login, body, {
+      'user-agent': `waze/${APP_VERSION}`,
+      'cache-control': 'no-cache',
+      'sequence-number': String(this.seq++),
+      'x-waze-network-version': '3',
+      'x-waze-wait-timeout': WAIT_LOGIN,
+    }, signal);
+    if (r.code >= 400) throw new RtProtocolError(`login HTTP ${r.code}`, r.code < 500 ? 'rejected' : 'transient', r.code);
+    const batch = this.Batch.decode(r.body);
+    const kind = classifyRtBatchError(batch);
+    if (kind) throw new RtProtocolError(`login: ${describeRtBatchError(batch)}`, kind);
+    for (const el of (batch as unknown as RawBatch).element || []) {
+      const s = el.loginResponse && el.loginResponse.loginSuccess;
+      if (s && Number(s.serverSessionId) !== 0 && s.secretKey) {
+        this.session = { serverSessionId: String(s.serverSessionId), secretKey: String(s.secretKey), globalUserId: String(s.globalUserId ?? '') };
+        this.seq = 2; // upstream resets the sequence after login
+        this.debugLog?.(`[spike] login OK sessionId=${this.session.serverSessionId}`);
+        return;
+      }
+    }
+    throw new Error(`login: no LoginSuccess element (${r.body.length}B)`);
+  }
+
+  // Port of spike.js:214 — UID message (session id + secret key) base64'd into
+  // the uid header, same framing style as buildProtoLine but not wrapped in a Batch.
+  private uidHeader(): string {
+    if (!this.session) throw new Error('command before login');
+    const uid = this.UID.fromObject({ id: this.session.serverSessionId, secretKey: this.session.secretKey });
+    return Buffer.from(this.UID.encode(uid).finish()).toString('base64');
+  }
+
+  async command(payload: string, opts: { attempt?: number; signal?: AbortSignal } = {}): Promise<RtBatch> {
+    const attempt = opts.attempt ?? 1;
+    const r = await this.post(this.base + RT_PATHS.command, payload, {
+      'user-agent': APP_VERSION,
+      'cache-control': 'no-cache',
+      'sequence-number': String(this.seq++),
+      'x-waze-network-version': '3',
+      'x-waze-wait-timeout': WAIT_COMMAND,
+      'uid': this.uidHeader(),
+    }, opts.signal);
+    if (r.code >= 400) throw new RtProtocolError(`command HTTP ${r.code}`, r.code < 500 ? 'session' : 'transient', r.code);
+    if (!r.body.length) throw new Error('empty command response');
+    const batch = this.Batch.decode(r.body);
+    const kind = classifyRtBatchError(batch);
+    if (kind) {
+      // A fresh account's first /command almost always draws an in-band 504 Retry —
+      // absorb with one retry (spike.js:234-240).
+      if (kind === 'transient' && attempt < 2) {
+        this.debugLog?.(`[spike] transient in-band error (${describeRtBatchError(batch)}) — retrying`);
+        await new Promise((res) => setTimeout(res, 1200));
+        return this.command(payload, { attempt: attempt + 1, signal: opts.signal });
+      }
+      throw new RtProtocolError(describeRtBatchError(batch), kind);
+    }
+    return batch;
+  }
+
+  // Register once per client when creds are missing, then ALWAYS login: logins are
+  // cheap and a fresh session per scrape is by design (the server never re-sends
+  // alerts within one session).
+  async ensureSession(signal?: AbortSignal): Promise<void> {
+    if (!this.creds) await this.register(signal);
+    await this.login(signal);
+  }
+
+  // Sweep one tile (replaces the spike's fetchArea, spike.js:313-338): handshake
+  // SeeMe/SetMood/Location/MapDisplayed on a 1500 m circle at the tile centre, then
+  // 5 shrinking MapDisplayed boxes over the full tile (x0.5 steps, x0.75 pre-shrink
+  // per command, 10 s wall-clock deadline checked before each command — the server
+  // thins big viewports; small boxes recover near-driver detail). bbox is
+  // [south, west, north, east]; internal boxes are [west, south, east, north].
+  async fetchBox(
+    bbox: readonly [number, number, number, number],
+    signal?: AbortSignal,
+  ): Promise<{ alerts: RtAlert[]; removed: string[] }> {
+    const [south, west, north, east] = bbox;
+    const tileBox: [number, number, number, number] = [west, south, east, north];
+    const merged = new Map<string, RtAlert>();
+    const removed = new Set<string>();
+    const merge = (batch: RtBatch) => {
+      for (const a of parseRtAlerts(batch)) merged.set(a.uuid, a);
+      for (const id of parseRtRemoved(batch)) removed.add(id);
+    };
+    const hb = seeMeLine() + '\n' + setMoodLine() + '\n'
+      + locationLine(this.lon, this.lat) + '\n'
+      + (() => { const [x0, y0, x1, y1] = circleToBox(this.lon, this.lat, 1500); return mapDisplayedCommand(x0, y0, x1, y1); })();
+    merge(await this.command(hb, { signal }));
+    const steps = 5;
+    const boxes: [number, number, number, number][] = [];
+    { let b = tileBox;
+      for (let i = 0; i < steps; i++) { boxes.push(b); b = shrinkBox(b, 0.5); } }
+    const deadline = Date.now() + 10_000;
+    for (const zoom of boxes) {
+      if (Date.now() >= deadline) break;
+      merge(await this.command(mapDisplayedCommand(...shrinkBox(zoom, 0.75)), { signal }));
+    }
+    return { alerts: [...merged.values()], removed: [...removed] };
+  }
 }
 
