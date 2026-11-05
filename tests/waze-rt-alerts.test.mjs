@@ -26,12 +26,14 @@ test('rtRegion routes tiles to the right RT host', async () => {
   assert.equal(rtRegionForBbox([-36.9, 174.7, -36.8, 174.85]), 'row'); // Auckland
 });
 
-test('clientInfo line round-trips through the vendored proto (camelCase guard)', async () => {
+test('clientInfo line round-trips through the vendored proto (camelCase keys encode for real)', async () => {
   const { buildProtoLine, loadRtRoot } = await mod();
   const root = await loadRtRoot();
   const Batch = root.lookupType('Batch');
-  // protobufjs message properties are camelCase — snake_case keys silently encode
-  // EMPTY messages and Waze answers "500 Bad proto element". This test guards that.
+  // The landmine this guards: snake_case keys (client_version, last_position)
+  // silently encode EMPTY sub-messages on protobufjs 7.6.6, and Waze answers
+  // "500 Bad proto element". Note 7.6.6's create() also accepts camelCase, so
+  // this pins camelCase-correctness, not fromObject-vs-create.
   const line = buildProtoLine({ clientInfo: { protocol: 234, clientVersion: '5.17.1.0' } });
   assert.ok(line.startsWith('ProtoBase64,'));
   const bytes = Buffer.from(line.slice('ProtoBase64,'.length), 'base64');
@@ -66,6 +68,13 @@ test('classifyRtBatchError maps server errors to session/transient/rejected', as
   assert.equal(classifyRtBatchError({ element: [{ error: { code: 500, description: 'Please relogin' } }] }), 'session');
   assert.equal(classifyRtBatchError({ element: [{ error: { code: 400, description: 'Bad proto element' } }] }), 'rejected');
   assert.equal(classifyRtBatchError({ element: [{ addAlertAction: {} }] }), null);
+  // LoginError ladder (Task 5's stale-creds path keys off these):
+  assert.equal(classifyRtBatchError({ element: [{ loginError: { errorType: 2 } }] }), 'transient');
+  assert.equal(classifyRtBatchError({ element: [{ loginError: { errorType: 1 } }] }), 'rejected');
+  assert.equal(classifyRtBatchError({ element: [{ loginError: { errorType: 0 } }] }), 'transient');
+  assert.equal(classifyRtBatchError({ element: [{ loginResponse: { loginError: { errorType: 1 } } }] }), 'rejected');
+  // A non-fatal error element must not mask a co-located loginError (spike fallthrough).
+  assert.equal(classifyRtBatchError({ element: [{ error: { code: 200, description: 'ok' }, loginError: { errorType: 1 } }] }), 'rejected');
 });
 
 test('rt credentials cache round-trips and tolerates corruption', async () => {

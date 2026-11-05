@@ -16,6 +16,8 @@ export const RT_HOSTS: Record<RtRegion, string> = {
   il: 'rt-xlb-il.waze.com',
   row: 'rt-xlb-row.waze.com',
 };
+// Kept module-private until Task 4 (WazeRtClient) needs them for its circleToBox
+// handshake box and ±500 m jitter — the deliberate two lint warnings until then.
 const M_PER_DEG_LAT = 110_574.0;
 const mPerDegLon = (lat: number) => Math.cos((lat * Math.PI) / 180) * 111_320.0;
 const f6 = (v: number) => v.toFixed(6);
@@ -162,7 +164,8 @@ export function classifyRtBatchError(batchLike: unknown): RtErrorKind | null {
       if (/relogin|unknown userid|secretkey missing|secret key missing/.test(desc)) return 'session';
       if (code >= 400 && code < 500) return 'rejected';
       if (code >= 500) return 'transient';
-      continue; // non-fatal server error — ignore and keep scanning (spike.js:146)
+      // non-fatal server error (code < 400) — ignore it but still inspect this
+      // element's loginError/loginResponse below (spike.js:146-157 falls through).
     }
     const le = el.loginError;
     if (le) return le.errorType === 2 || le.errorType === 0 ? 'transient' : 'rejected';
@@ -179,8 +182,10 @@ export function classifyRtBatchError(batchLike: unknown): RtErrorKind | null {
 export interface RtCredentials { installationId?: string; community: string; secret: string; }
 
 export function defaultRtCredsPath(): string {
-  return process.env.WAZE_RT_CREDS_FILE
-    ?? path.join(os.homedir(), '.horus', 'waze-rt-credentials.json');
+  // Empty-string env vars are plausible (desktop/main.js uses ??=), so a blank
+  // override must not become a real path.
+  return process.env.WAZE_RT_CREDS_FILE?.trim()
+    || path.join(os.homedir(), '.horus', 'waze-rt-credentials.json');
 }
 
 export async function saveRtCredentials(file: string, creds: RtCredentials): Promise<void> {
