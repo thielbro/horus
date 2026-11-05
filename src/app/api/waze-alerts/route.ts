@@ -13,11 +13,15 @@ import { scrapeWazePoliceCameraAlerts, type WazeTransportMode } from '@/lib/traf
  *
  * Pass ?bbox=s,w,n,e (required — there is no global default; scraping Waze is expensive).
  *
- * Transport caveat: Waze blocks plain server-side fetches (403) and headless browsers.
- * `transport=auto` (default) tries HTTP first, then falls back to a headed Chromium
- * session via Playwright, which briefly opens a visible browser window. Playwright is a
- * devDependency, so the browser fallback only works in development; in a packaged build
- * only the (usually 403-ing) HTTP path is available. See WAZE_SCRAPER_HANDOFF.md.
+ * Transport: `transport=rt` uses Waze's mobile RT protocol (protobuf over POST to
+ * rt-xlb-{am|il|row}.waze.com) — the primary path and the only one that still carries
+ * real-time user reports such as POLICE; the web GeoRSS feed is server-side sanitized
+ * down to closures/jams. `transport=auto` (default) runs RT first per tile and falls
+ * back, once per failed tile, to the legacy GeoRSS chain (Electron proxy → plain HTTP →
+ * headed Chromium via Playwright). `transport=http` / `transport=browser` are
+ * GeoRSS-only fallbacks: plain HTTP usually 403s, and the headed session briefly opens
+ * a visible window (Playwright is a devDependency, so it is dev-only; packaged builds
+ * use the Electron proxy). See WAZE_SCRAPER_HANDOFF.md.
  */
 
 // Playwright drives a real Chromium process — force the Node runtime, never edge,
