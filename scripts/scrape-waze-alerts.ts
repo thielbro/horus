@@ -110,8 +110,8 @@ function createFixtureTransport(path: string) {
 }
 
 function parseTransport(value: string): WazeTransportMode {
-  if (value === 'auto' || value === 'http' || value === 'browser') return value;
-  throw new Error('--transport must be one of auto, http, browser');
+  if (value === 'auto' || value === 'rt' || value === 'http' || value === 'browser') return value;
+  throw new Error('--transport must be one of auto, rt, http, browser');
 }
 
 function parsePositiveNumber(key: string, value: string): number {

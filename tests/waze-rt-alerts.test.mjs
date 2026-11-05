@@ -172,3 +172,18 @@ test('rt transport registers and logs in once across the tiles of one scrape', a
   assert.ok(calls.filter((u) => u.endsWith('/command')).length === 4 * 6);
 });
 
+test('auto transport prefers rt and falls back to the georss chain when rt fails', async () => {
+  const { createRtFallbackChain } = await mod();
+  const rtOk = { fetchGeoRss: async () => ({ alerts: [] }) };
+  // 1) rt works -> fallback never called
+  let fellBack = 0;
+  const fb = { fetchGeoRss: async () => { fellBack++; return { alerts: [] }; } };
+  await createRtFallbackChain(rtOk, fb).fetchGeoRss('u', { bbox: [0, 0, 1, 1], env: 'row' });
+  assert.equal(fellBack, 0);
+  // 2) rt fails with a transport error -> fallback answers
+  const { WazeTransportError } = await import('../src/lib/traffic-alerts/errors.ts');
+  const rtBad = { fetchGeoRss: async () => { throw new WazeTransportError('rt boom', 504, 'rt'); } };
+  await createRtFallbackChain(rtBad, fb).fetchGeoRss('u', { bbox: [0, 0, 1, 1], env: 'row' });
+  assert.equal(fellBack, 1);
+});
+

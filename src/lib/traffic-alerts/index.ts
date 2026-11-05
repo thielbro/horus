@@ -23,3 +23,9 @@ export {
   scrapeWazePoliceCameraAlerts,
   summarizeWazeErrors,
 } from './waze.ts';
+export {
+  createRtFallbackChain,
+  createRtTransport,
+  loadRtRoot,
+} from './waze-rt.ts';
+export type { RtTransportOptions } from './waze-rt.ts';

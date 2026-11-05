@@ -12,6 +12,7 @@ import type {
   WazeScrapeResult,
   WazeTransportMode,
 } from './types.ts';
+import { createRtFallbackChain, createRtTransport } from './waze-rt.ts';
 
 const WAZE_GEORSS_ENDPOINT = 'https://www.waze.com/live-map/api/georss';
 const WAZE_LIVE_MAP_URL = 'https://www.waze.com/live-map';
@@ -175,10 +176,19 @@ export function dedupeAlerts(alerts: WazePoliceCameraAlert[]): WazePoliceCameraA
 
 function resolveTransport(transport: WazeTransportMode | WazeGeoRssTransport, options: { browserHeadless: boolean }): WazeGeoRssTransport {
   if (typeof transport !== 'string') return transport;
-  // In packaged Electron builds, WAZE_ELECTRON_PROXY points to a tiny HTTP server in the
-  // main process that routes requests through a real hidden BrowserWindow (with real Waze
-  // session cookies + reCAPTCHA). Playwright is a devDependency and is not available in
-  // production, so this is the only browser-capable transport in a packaged build.
+  if (transport === 'rt') return createRtTransport();
+  // 'auto' = RT first, legacy chain as per-tile fallback; explicit http/browser stay legacy.
+  const legacy = legacyChain(transport, options);
+  return transport === 'auto' ? createRtFallbackChain(createRtTransport(), legacy) : legacy;
+}
+
+// The pre-RT chain, moved VERBATIM from the old resolveTransport body (electron proxy /
+// http / browser / auto). In packaged Electron builds, WAZE_ELECTRON_PROXY points to a
+// tiny HTTP server in the main process that routes requests through a real hidden
+// BrowserWindow (with real Waze session cookies + reCAPTCHA). Playwright is a
+// devDependency and is not available in production, so this is the only browser-capable
+// transport in a packaged build.
+function legacyChain(transport: 'auto' | 'http' | 'browser', options: { browserHeadless: boolean }): WazeGeoRssTransport {
   const electronProxy = process.env.WAZE_ELECTRON_PROXY;
   if (electronProxy && transport !== 'http' && transport !== 'browser') {
     return createElectronProxyTransport(electronProxy);

@@ -35,7 +35,7 @@ const RATE_LIMIT_PER_MIN = 6;
 const MAX_BBOX_AREA_DEGREES = 4;
 
 function parseTransport(value: string | null): WazeTransportMode {
-  return value === 'http' || value === 'browser' ? value : 'auto';
+  return value === 'rt' || value === 'http' || value === 'browser' ? value : 'auto';
 }
 
 export async function GET(request: Request) {

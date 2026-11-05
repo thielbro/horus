@@ -558,8 +558,7 @@ function asRtTransportError(error: unknown): WazeTransportError {
 export function createRtTransport(options: RtTransportOptions = {}): WazeGeoRssTransport {
   const credsPath = options.credsPath ?? defaultRtCredsPath();
   let rootPromise: Promise<RtRoot> | undefined;             // lazy descriptor load
-  let client: WazeRtClient | null = null;                   // ONE session per transport (= per scrape)
-  let sessionPromise: Promise<WazeRtClient> | null = null;  // concurrent tiles share the handshake
+  let sessionPromise: Promise<WazeRtClient> | null = null;  // ONE session per transport; concurrent tiles share the handshake
   let sessionForRegion: RtRegion | null = null;
 
   const newClient = (root: RtRoot, region: RtRegion, bbox: BBox, creds: RtCredentials | null) =>
@@ -599,7 +598,6 @@ export function createRtTransport(options: RtTransportOptions = {}): WazeGeoRssT
   function ensureClient(root: RtRoot, region: RtRegion, bbox: BBox, signal?: AbortSignal): Promise<WazeRtClient> {
     // Synchronous check-and-claim: two tiles of the same region starting at the
     // same time must never race two registrations (the ~10/day cap).
-    if (client && sessionForRegion === region) return Promise.resolve(client);
     if (sessionPromise && sessionForRegion === region) return sessionPromise;
     sessionForRegion = region;
     const pending = buildSession(root, region, bbox, signal);
@@ -608,7 +606,6 @@ export function createRtTransport(options: RtTransportOptions = {}): WazeGeoRssT
       if (sessionPromise === pending) { // failed handshake: let the next tile retry
         sessionPromise = null;
         sessionForRegion = null;
-        client = null;
       }
     });
     return pending;
@@ -629,12 +626,37 @@ export function createRtTransport(options: RtTransportOptions = {}): WazeGeoRssT
           // Mid-sweep session expiry: drop the creds and the shared session so the
           // NEXT tile rebuilds. The failed tile's retry is the Task 6 chain's job.
           await fsp.rm(credsPath, { force: true }).catch(() => {});
-          client = null;
           sessionPromise = null;
           sessionForRegion = null;
         }
         throw asRtTransportError(error);
       }
+    },
+  };
+}
+
+// ── createRtFallbackChain: RT-first transport with a per-tile legacy fallback ──
+
+// Mode 'auto' wiring: try the RT sweep for the tile; on ANY error answer the same
+// tile from the legacy chain, exactly once. rt is never retried at this level — the
+// RT call already consumed (or tried) the capped register budget, so an rt-level
+// retry here would burn it again; recovery is the NEXT tile's fresh RT call.
+export function createRtFallbackChain(
+  rt: WazeGeoRssTransport,
+  fallback: WazeGeoRssTransport,
+): WazeGeoRssTransport {
+  return {
+    async fetchGeoRss(url, context) {
+      try {
+        return await rt.fetchGeoRss(url, context);
+      } catch {
+        return fallback.fetchGeoRss(url, context);
+      }
+    },
+    // The RT leg has no close(); optional-chain both so either shape works.
+    async close() {
+      await rt.close?.();
+      await fallback.close?.();
     },
   };
 }

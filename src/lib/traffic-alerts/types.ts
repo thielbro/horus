@@ -2,7 +2,7 @@ export type BBox = [south: number, west: number, north: number, east: number];
 
 export type WazeAlertKind = 'police' | 'camera';
 
-export type WazeTransportMode = 'auto' | 'http' | 'browser';
+export type WazeTransportMode = 'auto' | 'rt' | 'http' | 'browser';
 
 export interface WazePoliceCameraAlert {
   id: string;

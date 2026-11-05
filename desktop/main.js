@@ -592,6 +592,11 @@ async function startEmbeddedServer() {
   const apiKeys = readSettingsFile().apiKeys || {};
   // Launch the bundled scanner/intel backends (idempotent) and point the engine at them.
   const backendOverrides = await startManagedBackends(apiKeys);
+  // Packaged app writes RT credentials into userData (register is capped ~10/day, so the
+  // cache must survive launches). Set BEFORE buildEngineEnv snapshots process.env into
+  // engineEnv below, which is what the forked Next server child actually inherits;
+  // ??= keeps any explicit shell/system override winning.
+  process.env.WAZE_RT_CREDS_FILE ??= path.join(app.getPath('userData'), 'waze-rt-credentials.json');
   const engineEnv = buildEngineEnv(process.env, apiKeys, backendOverrides);
 
   // Start the Waze browser proxy so the packaged build can bypass Waze's server-side
