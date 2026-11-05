@@ -1,6 +1,7 @@
 import type { Browser, Page } from 'playwright';
 import { buildWazeFetchScript, WAZE_TOKEN_ACTIONS, type WazeInPageFetchResult } from '../../../desktop/waze-in-page.js';
 import { envForBbox, parseBbox, tileBbox, validateBbox } from './bbox.ts';
+import { WazeTransportError } from './errors.ts';
 import type {
   BBox,
   ScrapeWazePoliceCameraAlertsOptions,
@@ -492,14 +493,3 @@ function stableStringify(value: unknown): string {
     .join(',')}}`;
 }
 
-class WazeTransportError extends Error {
-  readonly status: number;
-  readonly transport: string;
-
-  constructor(message: string, status: number, transport: string) {
-    super(message);
-    this.name = 'WazeTransportError';
-    this.status = status;
-    this.transport = transport;
-  }
-}
